@@ -1,0 +1,116 @@
+{
+  "services": {
+    "extbuild": {
+      "build": {
+        "context": "docker-build"
+      },
+      "stop_grace_period": 15000000000
+    },
+    "extservice": {
+      "image": "docker://alpine:latest",
+      "hostname": "service.example.org",
+      "entrypoint": [
+        "entrypoint.sh",
+        "arg1",
+        "arg2"
+      ],
+      "environment": {
+        "ADDITIONALVAR": "val",
+        "MYBASEVAR": "baseval",
+        "MYVAR1": "MYVALFROMFILE_OVERWRITTEN_IN_ENVIRONMENT",
+        "MYVAR2": "MYEXTVALFROMFILE2",
+        "MYVAR3": "MYBASEVALFROMFILE3"
+      },
+      "ports": [
+        {
+          "target": 9000,
+          "published": 9000,
+          "protocol": "tcp"
+        },
+        {
+          "target": 80,
+          "published": 80,
+          "protocol": "tcp"
+        },
+        {
+          "target": 25,
+          "published": 25,
+          "protocol": "tcp"
+        }
+      ],
+      "mounts": {
+        "/data": "volumes/datavol",
+        "/etc/additional.cf": "additional.cf",
+        "/etc/target.cf": "reference-model-base/conf.cf"
+      },
+      "stop_grace_period": 10000000000
+    },
+    "myservice": {
+      "image": "docker://owncloud:latest",
+      "hostname": "owncloud.example.org",
+      "entrypoint": [
+        "entrypoint.sh"
+      ],
+      "environment": {
+        "HTTP_HOST": "myservice.example.org",
+        "HTTP_PORT": "5550",
+        "MYVAR1": "MYVALFROMFILE_OVERWRITTEN_IN_ENVIRONMENT",
+        "MYVAR2": "MYEXTVALFROMFILE2"
+      },
+      "ports": [
+        {
+          "target": 5555,
+          "published": 3330,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5556,
+          "published": 3331,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5557,
+          "published": 3332,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5558,
+          "published": 3333,
+          "protocol": "tcp"
+        },
+        {
+          "target": 3330,
+          "published": 2220,
+          "protocol": "udp"
+        },
+        {
+          "target": 3331,
+          "published": 2221,
+          "protocol": "udp"
+        }
+      ],
+      "shared_keys": {
+        "http/myservice.example.org": "myservice:5550"
+      },
+      "stop_grace_period": 10000000000
+    },
+    "selfbuilt1": {
+      "build": {
+        "context": "docker-build"
+      },
+      "stop_grace_period": 10000000000
+    },
+    "selfbuilt2": {
+      "build": {
+        "context": "docker-build",
+        "dockerfile": "Dockerfile-alternate",
+        "args": {
+          "buildno": "1",
+          "featureenabled": "true",
+          "myprop": "myvalue"
+        }
+      },
+      "stop_grace_period": 10000000000
+    }
+  }
+}

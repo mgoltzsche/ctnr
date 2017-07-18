@@ -1,0 +1,47 @@
+version: '2'
+services:
+  myservice:
+    image: owncloud:latest
+    hostname: owncloud.example.org
+    entrypoint: entrypoint.sh
+    ports:
+      - "3330-3333:5555-5558"
+      - "2220-2221:3330-3331/udp"
+    env_file:
+      - ./extended.env
+    environment:
+      MYVAR1: MYVALFROMFILE_OVERWRITTEN_IN_ENVIRONMENT
+      HTTP_HOST: myservice.example.org
+      HTTP_PORT: 5550
+  extservice:
+    extends:
+      file: ./reference-model-base/reference-model-base.yml
+      service: baseservice
+    env_file:
+      - ./extended.env
+    environment:
+      - MYVAR1=MYVALFROMFILE_OVERWRITTEN_IN_ENVIRONMENT
+      - ADDITIONALVAR=val
+    ports:
+      - "80"
+      - "25:25"
+    volumes:
+      - "./additional.cf:/etc/additional.cf"
+  selfbuilt1:
+    build: ./docker-build
+  selfbuilt2:
+    build:
+      context: ./docker-build
+      dockerfile: Dockerfile-alternate
+      args:
+        buildno: 1
+        myprop: myvalue
+        featureenabled: true
+  extbuild:
+    extends:
+      file: ./reference-model-base/reference-model-base.yml
+      service: baseselfbuilt
+    stop_grace_period: "15s"
+volumes:
+  datavol:
+    external: true
