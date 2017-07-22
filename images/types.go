@@ -2,6 +2,7 @@ package images
 
 import (
 	"github.com/containers/image/signature"
+	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/log"
 	spec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -27,5 +28,6 @@ type Images struct {
 	imageDirectory string
 	trustPolicy    *signature.PolicyContext
 	pullPolicy     PullPolicy
+	context        *types.SystemContext
 	debug          log.Logger
 }

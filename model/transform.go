@@ -5,18 +5,46 @@ import (
 	"fmt"
 	//"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/images"
-	//"github.com/opencontainers/runc/libcontainer/specconv"
-	"github.com/mgoltzsche/cntnr/libcontainer/specconv"
+	"github.com/opencontainers/runc/libcontainer/specconv"
+	//"github.com/mgoltzsche/cntnr/libcontainer/specconv"
 	//"github.com/opencontainers/image-tools/image"
+	"github.com/mgoltzsche/cntnr/log"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-func loadImage(service *Service, imgs *images.Images) (*images.Image, error) {
-	// TODO: build image
+type RuntimeBundleBuilder struct {
+	Dir   string
+	Image *images.Image
+	Spec  *specs.Spec
+}
+
+func (b *RuntimeBundleBuilder) Build(debug log.Logger) error {
+	//err = image.UnpackLayout(img.Directory, containerDir, "latest")
+	//err = image.CreateRuntimeBundleLayout(img.Directory, containerDir, "latest", "rootfs")
+	err := b.Image.Unpack(filepath.Join(b.Dir, b.Spec.Root.Path), debug)
+	if err != nil {
+		return fmt.Errorf("Unpacking OCI layout of image %q (%s) failed: %v", b.Image.Name, b.Image.Directory, err)
+	}
+	j, err := json.MarshalIndent(b.Spec, "", "  ")
+	if err != nil {
+		return fmt.Errorf("Cannot unmarshal OCI runtime spec for %s: %v", b.Dir, err)
+	}
+	err = ioutil.WriteFile(filepath.Join(b.Dir, "config.json"), j, 0770)
+	if err != nil {
+		return fmt.Errorf("Cannot write OCI runtime spec: %v", err)
+	}
+	return nil
+}
+
+func (service *Service) NewRuntimeBundleBuilder(bundleDir string, imgs *images.Images, rootless bool) (*RuntimeBundleBuilder, error) {
+	if service.Name == "" {
+		return nil, fmt.Errorf("Service has no name")
+	}
 	if service.Image == "" {
 		return nil, fmt.Errorf("Service %q has no image", service.Name)
 	}
@@ -24,39 +52,14 @@ func loadImage(service *Service, imgs *images.Images) (*images.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	return img, nil
+	spec, err := service.toSpec(img, rootless)
+	if err != nil {
+		return nil, err
+	}
+	return &RuntimeBundleBuilder{bundleDir, img, spec}, nil
 }
 
-func CreateRuntimeBundle(containerDir string, service *Service, imgs *images.Images, rootless bool) error {
-	if service.Name == "" {
-		return fmt.Errorf("Service has no name")
-	}
-	img, err := loadImage(service, imgs)
-	if err != nil {
-		return err
-	}
-	if img == nil {
-		return fmt.Errorf("Service %q has no loaded image", service.Name)
-	}
-	//err = image.UnpackLayout(img.Directory, containerDir, "latest")
-	//err = image.CreateRuntimeBundleLayout(img.Directory, containerDir, "latest", "rootfs")
-	err = img.Unpack(containerDir)
-	if err != nil {
-		return fmt.Errorf("Unpacking OCI layout of image %q (%s) failed: %v", service.Image, img.Directory, err)
-	}
-	spec, err := transform(service, img, rootless)
-	b, err := json.MarshalIndent(spec, "", "  ")
-	if err != nil {
-		return fmt.Errorf("Cannot unmarshal OCI runtime spec for service %q in %s: %v", service.Name, containerDir, err)
-	}
-	err = ioutil.WriteFile(filepath.Join(containerDir, "config.json"), b, 0770)
-	if err != nil {
-		return fmt.Errorf("Cannot write OCI runtime spec for service %q in %s: %v", service.Name, containerDir, err)
-	}
-	return nil
-}
-
-func transform(service *Service, img *images.Image, rootless bool) (*specs.Spec, error) {
+func (service *Service) toSpec(img *images.Image, rootless bool) (*specs.Spec, error) {
 	spec := specconv.Example()
 
 	err := applyService(img, service, spec)
@@ -66,11 +69,84 @@ func transform(service *Service, img *images.Image, rootless bool) (*specs.Spec,
 
 	if rootless {
 		specconv.ToRootless(spec)
+	} else {
+		// Add Linux capabilities
+		add := []string{
+			"CAP_KILL",
+			"CAP_CHOWN",
+			"CAP_FSETID",
+			"CAP_SETGID",
+			"CAP_SETUID",
+			"CAP_NET_BIND_SERVICE",
+			"CAP_NET_RAW",
+		}
+		c := spec.Process.Capabilities
+		addCap(&c.Bounding, add)
+		addCap(&c.Effective, add)
+		addCap(&c.Inheritable, add)
+		addCap(&c.Permitted, add)
+		addCap(&c.Ambient, add)
+	}
+
+	// Add network
+	/*if spec.Linux.Resources == nil {
+		spec.Linux.Resources = &specs.LinuxResources{}
+	}
+	if spec.Linux.Resources.Network == nil {
+		spec.Linux.Resources.Network = &specs.LinuxNetwork{}
+	}
+	spec.Linux.Resources.Network.ClassID = ""
+	spec.Linux.Resources.Network.Priorities = []specs.LinuxInterfacePriority{
+		{"eth0", 2},
+		{"lo", 1},
+	}*/
+
+	// Use host networks by removing 'network' namespace
+	nss := spec.Linux.Namespaces
+	for i, ns := range nss {
+		if ns.Type == "network" {
+			spec.Linux.Namespaces = append(nss[0:i], nss[i+1:]...)
+			break
+		}
+	}
+
+	// Add custom network hook
+	hookBinary, err := filepath.Abs(os.Args[0])
+	if err != nil || hookBinary == "" {
+		return nil, fmt.Errorf("Cannot get absolute hook binary path: %v", err)
+	}
+	if os.Getenv("CNI_PATH") == "" {
+		return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to directories with CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
+	}
+
+	spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: "network", Path: "/var/run/netns/" + service.Name})
+	spec.Hooks = &specs.Hooks{
+		Prestart: []specs.Hook{{
+			Path: hookBinary,
+			Args: []string{"net", "create", service.Name, "default"},
+		}},
+		Poststop: []specs.Hook{{
+			Path: hookBinary,
+			Args: []string{"net", "delete", service.Name},
+		}},
 	}
 
 	return spec, nil
 }
 
+func addCap(c *[]string, add []string) {
+	m := map[string]bool{}
+	for _, e := range *c {
+		m[e] = true
+	}
+	for _, e := range add {
+		if _, ok := m[e]; !ok {
+			*c = append(*c, e)
+		}
+	}
+}
+
+// See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
 func applyService(img *images.Image, service *Service, spec *specs.Spec) error {
 	if service.Hostname == "" {
 		// TODO: set container ID as hostname
@@ -90,10 +166,11 @@ func applyService(img *images.Image, service *Service, spec *specs.Spec) error {
 		cmd = []string{}
 	}
 	if service.Entrypoint != nil {
-		entrypoint = append(entrypoint, service.Entrypoint...)
+		entrypoint = service.Entrypoint
+		cmd = []string{}
 	}
 	if service.Command != nil {
-		cmd = append(cmd, service.Command...)
+		cmd = service.Command
 	}
 	spec.Process.Args = append(entrypoint, cmd...)
 
@@ -122,6 +199,9 @@ func applyService(img *images.Image, service *Service, spec *specs.Spec) error {
 	spec.Process.Cwd = imgCfg.WorkingDir
 	if service.Cwd != "" {
 		spec.Process.Cwd = service.Cwd
+	}
+	if spec.Process.Cwd == "" {
+		spec.Process.Cwd = "/"
 	}
 
 	spec.Process.Terminal = service.Tty

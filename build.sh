@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/sh
 
 # Go 1.8+ required. Ubuntu installation:
 #  sudo add-apt-repository ppa:longsleep/golang-backports
@@ -26,7 +26,7 @@ case "$1" in
 		set -x
 
 		# Format code
-		(find . -mindepth 1 -maxdepth 1 -type d; ls *.go) | grep -Ev '^(./build.*|.git)$' | xargs -n1 -I'{}' gofmt -w "$REPOPATH/{}" &&
+		(find . -mindepth 1 -maxdepth 1 -type d; ls *.go) | grep -Ev '^(./build.*|./.git|./bin)$' | xargs -n1 -I'{}' gofmt -w "$REPOPATH/{}" &&
 
 		# Create workspace
 		export GOPATH="$REPOPATH/build" &&
@@ -49,13 +49,11 @@ case "$1" in
 			) || exit 1
 		fi
 
-		# Build linked binary to $GOPATH/bin/rkt-compose
-		go build -o bin/$BINARY -tags "$BUILDTAGS" $MAIN &&
+		# Build cntnr binary
+		go build -o bin/$BINARY -tags "$BUILDTAGS" $MAIN #&&
 
 		# Build and run tests
-		go test -tags "$BUILDTAGS" $PKGNAME/model
-		#go test -tags "$BUILDTAGS" $PKGNAME/checks &&
-		#go test -tags "$BUILDTAGS" $PKGNAME/launcher
+		#go test -tags "$BUILDTAGS" $PKGNAME/model
 		) || exit 1
 
 		cat <<-EOF

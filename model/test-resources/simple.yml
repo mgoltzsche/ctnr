@@ -1,9 +1,12 @@
 version: '2'
 services:
   myservice:
-    image: owncloud:latest
-    hostname: owncloud.example.org
-    entrypoint: entrypoint.sh
+    image: alpine:latest
+    hostname: alpine
+    #entrypoint: ["/bin/sh", "-c", "echo start; sleep 3; echo end"]
+    #entrypoint: cat -
+    tty: true
+    #stdin_open: true
     ports:
       - "3330-3333:5555-5558"
       - "2220-2221:3330-3331/udp"

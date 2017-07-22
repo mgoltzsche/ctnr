@@ -1,0 +1,7 @@
+version: '2'
+services:
+  owncloud:
+    image: owncloud:latest
+    hostname: owncloud
+#    entrypoint: /bin/sh
+#    tty: true

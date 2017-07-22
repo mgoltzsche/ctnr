@@ -22,12 +22,12 @@ import (
 
 var toIdRegexp = regexp.MustCompile("[^a-z0-9]+")
 
-func NewImages(imageDirectory string, pullPolicy PullPolicy, debug log.Logger) (*Images, error) {
+func NewImages(imageDirectory string, pullPolicy PullPolicy, ctx *types.SystemContext, debug log.Logger) (*Images, error) {
 	trustPolicy, err := createTrustPolicyContext()
 	if err != nil {
 		return nil, fmt.Errorf("Error loading trust policy: %v", err)
 	}
-	return &Images{map[string]*Image{}, imageDirectory, trustPolicy, pullPolicy, debug}, nil
+	return &Images{map[string]*Image{}, imageDirectory, trustPolicy, pullPolicy, ctx, debug}, nil
 }
 
 func (self *Images) Image(name string) (*Image, error) {
@@ -121,20 +121,12 @@ func (self *Images) copyImage(src, dest string) error {
 	if err != nil {
 		return fmt.Errorf("Invalid image destination %s: %v", dest, err)
 	}
-	systemCtx := &types.SystemContext{
-		RegistriesDirPath:           "",
-		DockerCertPath:              "",
-		DockerInsecureSkipTLSVerify: true,
-		OSTreeTmpDirPath:            "ostree-tmp-dir",
-		// TODO: add docker auth
-		//DockerAuthConfig: dockerAuth,
-	}
 	return copy.Image(self.trustPolicy, destRef, srcRef, &copy.Options{
 		RemoveSignatures: false,
 		SignBy:           "",
 		ReportWriter:     os.Stdout,
-		SourceCtx:        systemCtx,
-		DestinationCtx:   systemCtx,
+		SourceCtx:        self.context,
+		DestinationCtx:   self.context,
 	})
 }
 
