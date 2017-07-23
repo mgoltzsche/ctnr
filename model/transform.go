@@ -12,6 +12,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -41,7 +42,7 @@ func (b *RuntimeBundleBuilder) Build(debug log.Logger) error {
 	return nil
 }
 
-func (service *Service) NewRuntimeBundleBuilder(bundleDir string, imgs *images.Images, rootless bool) (*RuntimeBundleBuilder, error) {
+func (service *Service) NewRuntimeBundleBuilder(containerID, bundleDir string, imgs *images.Images, rootless bool) (*RuntimeBundleBuilder, error) {
 	if service.Name == "" {
 		return nil, fmt.Errorf("Service has no name")
 	}
@@ -52,14 +53,14 @@ func (service *Service) NewRuntimeBundleBuilder(bundleDir string, imgs *images.I
 	if err != nil {
 		return nil, err
 	}
-	spec, err := service.toSpec(img, rootless)
+	spec, err := service.toSpec(containerID, img, rootless)
 	if err != nil {
 		return nil, err
 	}
 	return &RuntimeBundleBuilder{bundleDir, img, spec}, nil
 }
 
-func (service *Service) toSpec(img *images.Image, rootless bool) (*specs.Spec, error) {
+func (service *Service) toSpec(containerID string, img *images.Image, rootless bool) (*specs.Spec, error) {
 	spec := specconv.Example()
 
 	err := applyService(img, service, spec)
@@ -104,34 +105,54 @@ func (service *Service) toSpec(img *images.Image, rootless bool) (*specs.Spec, e
 	// Use host networks by removing 'network' namespace
 	nss := spec.Linux.Namespaces
 	for i, ns := range nss {
-		if ns.Type == "network" {
+		if ns.Type == specs.NetworkNamespace {
 			spec.Linux.Namespaces = append(nss[0:i], nss[i+1:]...)
 			break
 		}
 	}
 
-	// Add custom network hook
-	hookBinary, err := filepath.Abs(os.Args[0])
-	if err != nil || hookBinary == "" {
-		return nil, fmt.Errorf("Cannot get absolute hook binary path: %v", err)
-	}
-	if os.Getenv("CNI_PATH") == "" {
-		return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to directories with CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
-	}
+	// Add network hooks
+	networks := []string{"default"}
+	if len(networks) > 0 {
+		cniBinary, err := exec.LookPath("cnitool")
+		if err != nil {
+			return nil, fmt.Errorf("cnitool not installed! %v", err)
+		}
+		cniPluginPaths := os.Getenv("CNI_PATH")
+		if cniPluginPaths == "" {
+			return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
+		}
+		// TODO: add more CNI env vars
+		cniEnv := []string{
+			"PATH=" + os.Getenv("PATH"),
+			"CNI_PATH=" + cniPluginPaths,
+		}
+		netns := "/var/run/netns/" + containerID
+		spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace, Path: netns})
+		spec.Hooks = &specs.Hooks{
+			Prestart: []specs.Hook{},
+			Poststop: []specs.Hook{},
+		}
 
-	spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: "network", Path: "/var/run/netns/" + service.Name})
-	spec.Hooks = &specs.Hooks{
-		Prestart: []specs.Hook{{
-			Path: hookBinary,
-			Args: []string{"net", "create", service.Name, "default"},
-		}},
-		Poststop: []specs.Hook{{
-			Path: hookBinary,
-			Args: []string{"net", "delete", service.Name},
-		}},
+		for _, network := range networks {
+			addHook(&spec.Hooks.Prestart, specs.Hook{
+				Path: cniBinary,
+				Args: []string{"cnitool", "add", network, netns},
+				Env:  cniEnv,
+			})
+			addHook(&spec.Hooks.Poststop, specs.Hook{
+				Path: cniBinary,
+				Args: []string{"cnitool", "del", network, netns},
+				Env:  cniEnv,
+			})
+		}
 	}
 
 	return spec, nil
+}
+
+func addHook(h *[]specs.Hook, a specs.Hook) {
+	*h = append(*h, a)
 }
 
 func addCap(c *[]string, add []string) {

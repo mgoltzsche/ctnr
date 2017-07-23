@@ -28,26 +28,27 @@ var (
 	debugLog = log.NewNopLogger()
 )
 
+func usageError() {
+	fmt.Fprintf(os.Stderr, "Usage: %s OPTIONS ARGUMENTS\n", os.Args[0])
+	fmt.Fprint(os.Stderr, "\nArguments:\n")
+	fmt.Fprintf(os.Stderr, "  run FILE\n\tRuns pod from docker-compose.yml or pod.json file\n")
+	fmt.Fprintf(os.Stderr, "  image info IMAGE\n\tPrints image metadata in JSON\n")
+	fmt.Fprintf(os.Stderr, "  net add NAME\n\tAdds network NET to process' current network namespace using CNI\n")
+	fmt.Fprintf(os.Stderr, "  net del NAME\n\tDeletes network NET from process' current network namespace\n")
+	fmt.Fprint(os.Stderr, "\nOptions:\n")
+	flag.PrintDefaults()
+	os.Exit(1)
+}
+
 func initFlags() {
 	usr, err := user.Current()
 	if err != nil {
 		errorLog.Printf("Cannot get user's home directory: %v", err)
-		os.Exit(1)
+		os.Exit(2)
 	}
 	rootless = usr.Uid != "0"
 	defaultImgDir := filepath.Join(usr.HomeDir, ".cntnr", "images")
 	defaultContainerDir := filepath.Join(usr.HomeDir, ".cntnr", "containers")
-
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s OPTIONS ARGUMENTS\n", os.Args[0])
-		fmt.Fprint(os.Stderr, "\nArguments:\n")
-		fmt.Fprintf(os.Stderr, "  run FILE\n\tRuns pod from docker-compose.yml or pod.json file\n")
-		fmt.Fprintf(os.Stderr, "  image config IMAGE\n\tPrints image metadata in JSON\n")
-		fmt.Fprintf(os.Stderr, "  net create CONTAINERID NET\n\tCreates a new container namespace CONTAINERID with network NET using CNI\n")
-		fmt.Fprintf(os.Stderr, "  net delete CONTAINERID\n\tDeletes the network namespace\n")
-		fmt.Fprint(os.Stderr, "\nOptions:\n")
-		flag.PrintDefaults()
-	}
 
 	// global options
 	flag.BoolVar(&verbose, "verbose", false, "enables verbose log output")
@@ -68,43 +69,40 @@ func main() {
 	switch flag.Arg(0) {
 	case "run":
 		if flag.NArg() != 2 {
-			flag.Usage()
-			os.Exit(1)
+			usageError()
 		}
-		err = run(flag.Arg(1))
+		err = runCompose(flag.Arg(1))
 	case "image":
 		switch flag.Arg(1) {
-		case "config":
+		case "info":
 			if flag.NArg() != 3 {
-				flag.Usage()
-				os.Exit(1)
+				usageError()
 			}
 			err = printImageConfig(flag.Arg(2))
 		default:
 			errorLog.Printf("Invalid argument %q", flag.Arg(1))
-			os.Exit(1)
+			usageError()
 		}
 	case "net":
 		switch flag.Arg(1) {
-		case "create":
-			if flag.NArg() != 4 {
-				flag.Usage()
+		case "add":
+			if flag.NArg() < 3 {
+				usageError()
 				os.Exit(1)
 			}
-			err = net.CreateNetNS(flag.Arg(2), flag.Arg(3))
-		case "delete":
-			if flag.NArg() != 3 {
-				flag.Usage()
+			err = net.AddNet(flag.Args()[2:])
+		case "del":
+			if flag.NArg() < 3 {
+				usageError()
 				os.Exit(1)
 			}
-			err = net.DeleteNetNS(flag.Arg(2))
+			err = net.DelNet(flag.Args()[2:])
 		default:
 			errorLog.Printf("Invalid argument %q", flag.Arg(1))
-			os.Exit(1)
+			usageError()
 		}
 	default:
-		errorLog.Printf("Invalid argument %q", flag.Arg(0))
-		os.Exit(1)
+		usageError()
 	}
 
 	if err != nil {
@@ -113,7 +111,7 @@ func main() {
 	}
 }
 
-func run(file string) error {
+func runCompose(file string) error {
 	project, err := model.LoadProject(file, "./volumes", warnLog)
 	if err != nil {
 		return fmt.Errorf("Could not load project: %v", err)
@@ -130,7 +128,7 @@ func run(file string) error {
 	manager := run.NewContainerManager(debugLog)
 	for _, s := range project.Services {
 		containerId := s.Name
-		b, err := createRuntimeBundle(&s, imgs, filepath.Join(containerDir, containerId))
+		b, err := createRuntimeBundle(&s, imgs, containerId, filepath.Join(containerDir, containerId))
 		if err != nil {
 			return err
 		}
@@ -192,8 +190,8 @@ func imageContext() *types.SystemContext {
 	return c
 }
 
-func createRuntimeBundle(s *model.Service, imgs *images.Images, dir string) (*model.RuntimeBundleBuilder, error) {
-	b, err := s.NewRuntimeBundleBuilder(dir, imgs, rootless)
+func createRuntimeBundle(s *model.Service, imgs *images.Images, id, dir string) (*model.RuntimeBundleBuilder, error) {
+	b, err := s.NewRuntimeBundleBuilder(id, dir, imgs, rootless)
 	if err != nil {
 		return nil, err
 	}

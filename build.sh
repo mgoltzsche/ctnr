@@ -50,27 +50,13 @@ case "$1" in
 		fi
 
 		# Build cntnr binary
-		go build -o bin/$BINARY -tags "$BUILDTAGS" $MAIN #&&
+		go build -o bin/$BINARY -tags "$BUILDTAGS" $PKGNAME/cmd/cntnr #&&
 
 		# Build and run tests
 		#go test -tags "$BUILDTAGS" $PKGNAME/model
 		) || exit 1
 
-		cat <<-EOF
-			___________________________________________________
-
-			$BINARY has been built and tested successfully!
-
-			Expose binary in \$PATH:
-			  export PATH="$REPOPATH/bin:\$PATH"
-
-			Run example pod:
-			  $BINARY -name=examplepod -uuid-file=/var/run/examplepod.uuid run test-resources/example-docker-compose-images.yml
-
-			Run consul and example pod registered at consul (requires free IP: 172.16.28.2):
-			  $BINARY -name=consul -uuid-file=/var/run/consul.uuid -net=default:IP=172.16.28.2 run test-resources/consul.yml &
-			  $BINARY -name=examplepod -uuid-file=/var/run/example.uuid -consul-ip=172.16.28.2 run test-resources/example-docker-compose-images.yml
-		EOF
+		echo "$BINARY has been built successfully!"
 	;;
 	run)
 		set -x
