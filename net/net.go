@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"github.com/containernetworking/cni/libcni"
 	//"github.com/vishvananda/netns"
-	"golang.org/x/sys/unix"
+	//"golang.org/x/sys/unix"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -53,17 +56,17 @@ func DelNetNS(file string) error {
 // Resolves the configured network by name
 // and adds it to the process' current network namespace.
 func AddNet(netNames []string) error {
-	err := runCmd("/bin/ip", "netns", "list")
-	fmt.Printf("## %v\n", err)
-	//ns, err := currentNetns()
-	//fmt.Println("## " + ns)
-
 	cni := newCNI()
-	rt, err := runtimeConf()
+	s, err := readOciHookState()
 	if err != nil {
 		return err
 	}
-	for _, netName := range netNames {
+
+	for i, netName := range netNames {
+		rt, err := runtimeConf(s, "eth"+strconv.Itoa(i))
+		if err != nil {
+			return err
+		}
 		netconf, err := networkConf(netName)
 		if err != nil {
 			return err
@@ -76,16 +79,21 @@ func AddNet(netNames []string) error {
 		fmt.Println()
 		// TODO: populate IP contained in result
 	}
-	return err
+	return nil
 }
 
 func DelNet(netNames []string) (err error) {
 	cni := newCNI()
-	rt, err := runtimeConf()
+	s, err := readOciHookState()
 	if err != nil {
 		return err
 	}
-	for _, netName := range netNames {
+
+	for i, netName := range netNames {
+		rt, err := runtimeConf(s, "eth"+strconv.Itoa(i))
+		if err != nil {
+			return err
+		}
 		netconf, err := networkConf(netName)
 		if err != nil {
 			return err
@@ -120,8 +128,8 @@ func networkConf(netName string) (*libcni.NetworkConfigList, error) {
 	return netconf, nil
 }
 
-func runtimeConf() (*libcni.RuntimeConf, error) {
-	netns, err := currentNetns()
+func runtimeConf(s *specs.State, ifName string) (*libcni.RuntimeConf, error) {
+	netns, err := getProcessNetns(s.Pid)
 	if err != nil {
 		return nil, err
 	}
@@ -141,9 +149,9 @@ func runtimeConf() (*libcni.RuntimeConf, error) {
 		}
 	}
 	return &libcni.RuntimeConf{
-		ContainerID:    "cni",
+		ContainerID:    s.ID,
 		NetNS:          netns,
-		IfName:         "eth0",
+		IfName:         ifName,
 		Args:           cniArgs,
 		CapabilityArgs: capabilityArgs,
 	}, nil
@@ -159,14 +167,26 @@ func runtimeConf() (*libcni.RuntimeConf, error) {
 		return "", err
 	}
 	defer ns.Close()
-	return ns.UniqueId(), nil
+	return ns.UniqueID(), nil
 }*/
 
-func currentNetns() (netnsPath string, err error) {
+/*func currentNetns() (netnsPath string, err error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
 	netnsPath = fmt.Sprintf("/proc/%d/task/%d/ns/net", os.Getpid(), unix.Gettid())
+	_, err = os.Readlink(netnsPath)
+	if err != nil {
+		return netnsPath, fmt.Errorf("Cannot get current network namespace %q: %s", netnsPath, err)
+	}
+	return netnsPath, nil
+}*/
+
+func getProcessNetns(pid int) (netnsPath string, err error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	netnsPath = fmt.Sprintf("/proc/%d/ns/net", pid)
 	_, err = os.Readlink(netnsPath)
 	if err != nil {
 		return netnsPath, fmt.Errorf("Cannot get current network namespace %q: %s", netnsPath, err)
@@ -200,4 +220,20 @@ func parseArgs(args string) ([][2]string, error) {
 	}
 
 	return result, nil
+}
+
+func readOciHookState() (state *specs.State, err error) {
+	state = &specs.State{}
+	// Read hook data from stdin
+	b, err := ioutil.ReadAll(os.Stdin)
+	if err != nil {
+		return state, fmt.Errorf("Cannot read OCI state from stdin: %v", err)
+	}
+
+	// Umarshal the hook state
+	if err := json.Unmarshal(b, state); err != nil {
+		return state, fmt.Errorf("Cannot unmarshal OCI state from stdin: %v", err)
+	}
+
+	return state, nil
 }

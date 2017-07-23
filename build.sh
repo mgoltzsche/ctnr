@@ -50,10 +50,10 @@ case "$1" in
 		fi
 
 		# Build cntnr binary
-		go build -o bin/$BINARY -tags "$BUILDTAGS" $PKGNAME/cmd/cntnr #&&
+		go build -o bin/$BINARY -tags "$BUILDTAGS" $PKGNAME/cmd/cntnr &&
 
 		# Build and run tests
-		#go test -tags "$BUILDTAGS" $PKGNAME/model
+		go test -tags "$BUILDTAGS" $PKGNAME/model
 		) || exit 1
 
 		echo "$BINARY has been built successfully!"

@@ -12,7 +12,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"io/ioutil"
 	"os"
-	"os/exec"
+	//"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -112,11 +112,12 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 	}
 
 	// Add network hooks
-	networks := []string{"default"}
+	networks := []string{"default", "test"}
 	if len(networks) > 0 {
-		cniBinary, err := exec.LookPath("cnitool")
+		//hookBinary, err := exec.LookPath("cnitool")
+		hookBinary, err := os.Executable()
 		if err != nil {
-			return nil, fmt.Errorf("cnitool not installed! %v", err)
+			return nil, fmt.Errorf("Cannot find network hook binary! %v", err)
 		}
 		cniPluginPaths := os.Getenv("CNI_PATH")
 		if cniPluginPaths == "" {
@@ -127,25 +128,22 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 			"PATH=" + os.Getenv("PATH"),
 			"CNI_PATH=" + cniPluginPaths,
 		}
-		netns := "/var/run/netns/" + containerID
-		spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace, Path: netns})
+		spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 		spec.Hooks = &specs.Hooks{
 			Prestart: []specs.Hook{},
 			Poststop: []specs.Hook{},
 		}
 
-		for _, network := range networks {
-			addHook(&spec.Hooks.Prestart, specs.Hook{
-				Path: cniBinary,
-				Args: []string{"cnitool", "add", network, netns},
-				Env:  cniEnv,
-			})
-			addHook(&spec.Hooks.Poststop, specs.Hook{
-				Path: cniBinary,
-				Args: []string{"cnitool", "del", network, netns},
-				Env:  cniEnv,
-			})
-		}
+		addHook(&spec.Hooks.Prestart, specs.Hook{
+			Path: hookBinary,
+			Args: append([]string{"cntnr", "net", "add"}, networks...),
+			Env:  cniEnv,
+		})
+		addHook(&spec.Hooks.Poststop, specs.Hook{
+			Path: hookBinary,
+			Args: append([]string{"cntnr", "net", "del"}, networks...),
+			Env:  cniEnv,
+		})
 	}
 
 	return spec, nil

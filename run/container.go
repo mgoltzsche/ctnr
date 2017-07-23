@@ -3,7 +3,7 @@ package run
 import (
 	"fmt"
 	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/net"
+	//"github.com/mgoltzsche/cntnr/net"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"os"
 	"os/exec"
@@ -32,10 +32,6 @@ func (c *RuncContainer) ID() string {
 }
 
 func (c *RuncContainer) Start() (err error) {
-	err = c.createNetworkNamespace()
-	if err != nil {
-		return
-	}
 	err = c.cmd.Start()
 	if err != nil {
 		err = fmt.Errorf("Container %q start failed: %v", c.id, err)
@@ -76,42 +72,12 @@ func (c *RuncContainer) Stop() (err error) {
 	}
 	close(quit)
 
-	e := c.deleteNetworkNamespace()
-	if e != nil {
-		os.Stderr.WriteString(e.Error())
-	}
-
 	return err
 }
 
 func (c *RuncContainer) Delete() error {
 	//return os.RemoveAll(c.cmd.Dir)
 	return nil
-}
-
-func (c *RuncContainer) createNetworkNamespace() (err error) {
-	netns := c.getNetworkNamespace()
-	if netns != "" {
-		err = net.CreateNetNS(netns)
-	}
-	return
-}
-
-func (c *RuncContainer) deleteNetworkNamespace() (err error) {
-	netns := c.getNetworkNamespace()
-	if netns != "" {
-		err = net.DelNetNS(netns)
-	}
-	return
-}
-
-func (c *RuncContainer) getNetworkNamespace() string {
-	for _, ns := range c.spec.Linux.Namespaces {
-		if ns.Type == specs.NetworkNamespace && ns.Path != "" {
-			return ns.Path
-		}
-	}
-	return ""
 }
 
 func NewContainer(id, runtimeBundleDir, rootDir string, spec *specs.Spec, bindStdin bool, error, debug log.Logger) (Container, error) {

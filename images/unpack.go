@@ -11,6 +11,7 @@ import (
 )
 
 // See https://github.com/opencontainers/image-tools/blob/master/image/manifest.go#unpackLayer
+// TODO: Replace with image-tools when image tools includes runtime-spec v1.0.0 since current older dependency causes conflict
 func unpackLayer(src, dest string) error {
 	fr, err := os.OpenFile(src, os.O_RDONLY, 0444)
 	if err != nil {
