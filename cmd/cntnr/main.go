@@ -10,9 +10,13 @@ import (
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/net"
 	"github.com/mgoltzsche/cntnr/run"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"io/ioutil"
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 var (
@@ -21,6 +25,15 @@ var (
 	imgDir       string
 	containerDir string
 	rootless     bool
+
+	// network options
+	hostname      string
+	interfaceName string
+	hostsEntries  = HostsMap(map[string]string{})
+	dnsNameserver = StringList([]string{})
+	dnsSearch     = StringList([]string{})
+	dnsOptions    = StringList([]string{})
+	dnsDomain     string
 
 	// runtime vars
 	errorLog = log.NewStdLogger(os.Stderr)
@@ -33,11 +46,42 @@ func usageError() {
 	fmt.Fprint(os.Stderr, "\nArguments:\n")
 	fmt.Fprintf(os.Stderr, "  run FILE\n\tRuns pod from docker-compose.yml or pod.json file\n")
 	fmt.Fprintf(os.Stderr, "  image info IMAGE\n\tPrints image metadata in JSON\n")
-	fmt.Fprintf(os.Stderr, "  net add NAME\n\tAdds network NET to process' current network namespace using CNI\n")
-	fmt.Fprintf(os.Stderr, "  net del NAME\n\tDeletes network NET from process' current network namespace\n")
+	fmt.Fprintf(os.Stderr, "  net init [NAME1 [NAME2]]\n\tAdds networks to process' current network namespace using CNI and writes container's /etc/hostname, /etc/hosts and /etc/resolv.conf\n")
+	fmt.Fprintf(os.Stderr, "  net del [NAME1 [NAME2]]\n\tDeletes network NET from process' current network namespace\n")
 	fmt.Fprint(os.Stderr, "\nOptions:\n")
 	flag.PrintDefaults()
 	os.Exit(1)
+}
+
+type StringList []string
+
+func (l *StringList) Set(v string) error {
+	*l = append([]string(*l), v)
+	return nil
+}
+
+func (l *StringList) String() string {
+	return strings.Join([]string(*l), " ")
+}
+
+type HostsMap map[string]string
+
+func (m *HostsMap) Set(v string) error {
+	s := strings.SplitN(v, "=", 2)
+	ip := strings.Trim(s[0], " ")
+	if len(s) != 2 || ip == "" || strings.Trim(s[1], " ") == "" {
+		return fmt.Errorf("Invalid hosts entry argument: %q. Expected format: IP=NAME", v)
+	}
+	(*m)[ip] = (*m)[ip] + " " + strings.Trim(s[1], " ")
+	return nil
+}
+
+func (m *HostsMap) String() string {
+	s := ""
+	for ip, name := range *m {
+		s += fmt.Sprintf("%-15s  %s\n", ip, name)
+	}
+	return s
 }
 
 func initFlags() {
@@ -54,6 +98,17 @@ func initFlags() {
 	flag.BoolVar(&verbose, "verbose", false, "enables verbose log output")
 	flag.StringVar(&imgDir, "image-dir", defaultImgDir, "Directory to store images")
 	flag.StringVar(&containerDir, "container-dir", defaultContainerDir, "Directory to store OCI runtime bundles")
+}
+
+func parseNetworkFlags(f *flag.FlagSet, args []string) error {
+	f.StringVar(&interfaceName, "pub-if", "", "Network interface to map hostname to. Default is eth0 when network added else lo")
+	f.StringVar(&hostname, "hostname", "", "hostname as written to /etc/hostname and /etc/hosts")
+	f.Var(&hostsEntries, "hosts-entry", "Entries in form of IP=NAME that are written to /etc/hosts")
+	f.Var(&dnsNameserver, "dns", "List of DNS nameservers to write in /etc/resolv.conf")
+	f.Var(&dnsSearch, "dns-search", "List of DNS search domains to write in /etc/resolv.conf")
+	f.Var(&dnsOptions, "dns-opt", "List of DNS options to write in /etc/resolv.conf")
+	f.StringVar(&dnsDomain, "dns-domain", "", "DNS domain")
+	return f.Parse(args)
 }
 
 func main() {
@@ -85,18 +140,50 @@ func main() {
 		}
 	case "net":
 		switch flag.Arg(1) {
-		case "add":
-			if flag.NArg() < 3 {
-				usageError()
-				os.Exit(1)
+		case "init":
+			fs := flag.NewFlagSet("init", flag.ContinueOnError)
+			err = parseNetworkFlags(fs, flag.Args()[2:])
+			if err != nil {
+				break
 			}
-			err = net.AddNet(flag.Args()[2:])
+			netMan := containerNetworkManager()
+			pubIf := interfaceName
+			if pubIf == "" {
+				if len(fs.Args()) > 0 {
+					pubIf = "eth0"
+				} else {
+					pubIf = "lo"
+				}
+			}
+			for i, n := range fs.Args() {
+				if _, err = netMan.AddNet("eth"+strconv.Itoa(i), n); err != nil {
+					break
+				}
+			}
+			netMan.SetHostname(hostname)
+			netMan.AddHostsEntries(hostsEntries)
+			err = netMan.AddHostnameHostsEntry(pubIf)
+			if err != nil {
+				break
+			}
+			netMan.AddDNS(net.DNS{
+				dnsNameserver,
+				dnsSearch,
+				dnsOptions,
+				dnsDomain,
+			})
+			err = netMan.Apply()
 		case "del":
 			if flag.NArg() < 3 {
 				usageError()
 				os.Exit(1)
 			}
-			err = net.DelNet(flag.Args()[2:])
+			netMan := containerNetworkManager()
+			for i, n := range flag.Args()[2:] {
+				if e := netMan.DelNet("eth"+strconv.Itoa(i), n); e != nil && err == nil {
+					err = e
+				}
+			}
 		default:
 			errorLog.Printf("Invalid argument %q", flag.Arg(1))
 			usageError()
@@ -109,6 +196,46 @@ func main() {
 		errorLog.Println(err)
 		os.Exit(2)
 	}
+}
+
+func parseHostMapping(a []string) (map[string]string, error) {
+	m := map[string]string{}
+	for _, e := range a {
+		s := strings.SplitN(e, "=", 2)
+		ip := strings.Trim(s[0], " ")
+		if len(s) != 2 || ip == "" || strings.Trim(s[1], " ") == "" {
+			return m, fmt.Errorf("Invalid hosts entry argument: %q. Expected format: IP=NAME", e)
+		}
+		m[ip] = strings.Trim(s[1], " ") + " " + m[ip]
+	}
+	return m, nil
+}
+
+func containerNetworkManager() *net.ContainerNetManager {
+	m, err := net.NewContainerNetManager(readContainerState())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot create container network manager: %s", err)
+		os.Exit(1)
+	}
+	return m
+}
+
+func readContainerState() *specs.State {
+	state := &specs.State{}
+	// Read hook data from stdin
+	b, err := ioutil.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot read OCI state from stdin: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Umarshal the hook state
+	if err := json.Unmarshal(b, state); err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot unmarshal OCI state from stdin: %v\n", err)
+		os.Exit(1)
+	}
+
+	return state
 }
 
 func runCompose(file string) error {

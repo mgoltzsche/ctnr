@@ -2,7 +2,8 @@ version: '2'
 services:
   myservice:
     image: alpine:latest
-    hostname: alpine
+    hostname: service
+    domainname: example.org
     #entrypoint: ["/bin/sh", "-c", "echo start; sleep 3; echo end"]
     #entrypoint: cat -
     tty: true

@@ -66,6 +66,7 @@ func (c *RuncContainer) Stop() (err error) {
 			if err != nil && !c.cmd.ProcessState.Exited() {
 				err = fmt.Errorf("Failed to kill container %s: %s", c.id, err)
 			}
+			c.cmd.Wait()
 		}
 		<-quit
 	case <-quit:

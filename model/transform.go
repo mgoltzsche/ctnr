@@ -72,7 +72,7 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 		specconv.ToRootless(spec)
 	} else {
 		// Add Linux capabilities
-		add := []string{
+		cap := []string{
 			"CAP_KILL",
 			"CAP_CHOWN",
 			"CAP_FSETID",
@@ -82,68 +82,111 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 			"CAP_NET_RAW",
 		}
 		c := spec.Process.Capabilities
-		addCap(&c.Bounding, add)
-		addCap(&c.Effective, add)
-		addCap(&c.Inheritable, add)
-		addCap(&c.Permitted, add)
-		addCap(&c.Ambient, add)
+		addCap(&c.Bounding, cap)
+		addCap(&c.Effective, cap)
+		addCap(&c.Inheritable, cap)
+		addCap(&c.Permitted, cap)
+		addCap(&c.Ambient, cap)
 	}
 
-	// Add network
-	/*if spec.Linux.Resources == nil {
-		spec.Linux.Resources = &specs.LinuxResources{}
-	}
-	if spec.Linux.Resources.Network == nil {
-		spec.Linux.Resources.Network = &specs.LinuxNetwork{}
-	}
-	spec.Linux.Resources.Network.ClassID = ""
-	spec.Linux.Resources.Network.Priorities = []specs.LinuxInterfacePriority{
-		{"eth0", 2},
-		{"lo", 1},
-	}*/
+	if !rootless {
+		// Limit resources
+		if spec.Linux == nil {
+			spec.Linux = &specs.Linux{}
+		}
+		if spec.Linux.Resources == nil {
+			spec.Linux.Resources = &specs.LinuxResources{}
+		}
+		spec.Linux.Resources.Pids = &specs.LinuxPids{32771}
+		spec.Linux.Resources.HugepageLimits = []specs.LinuxHugepageLimit{
+			{
+				Pagesize: "2MB",
+				Limit:    9223372036854772000,
+			},
+		}
+		// TODO: limit memory, cpu and blockIO access
 
-	// Use host networks by removing 'network' namespace
-	nss := spec.Linux.Namespaces
-	for i, ns := range nss {
-		if ns.Type == specs.NetworkNamespace {
-			spec.Linux.Namespaces = append(nss[0:i], nss[i+1:]...)
-			break
+		// Add network
+		/*if spec.Linux.Resources == nil {
+			spec.Linux.Resources = &specs.LinuxResources{}
 		}
-	}
+		if spec.Linux.Resources.Network == nil {
+			spec.Linux.Resources.Network = &specs.LinuxNetwork{}
+		}
+		spec.Linux.Resources.Network.ClassID = ""
+		spec.Linux.Resources.Network.Priorities = []specs.LinuxInterfacePriority{
+			{"eth0", 2},
+			{"lo", 1},
+		}*/
 
-	// Add network hooks
-	networks := []string{"default", "test"}
-	if len(networks) > 0 {
-		//hookBinary, err := exec.LookPath("cnitool")
-		hookBinary, err := os.Executable()
-		if err != nil {
-			return nil, fmt.Errorf("Cannot find network hook binary! %v", err)
-		}
-		cniPluginPaths := os.Getenv("CNI_PATH")
-		if cniPluginPaths == "" {
-			return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
-		}
-		// TODO: add more CNI env vars
-		cniEnv := []string{
-			"PATH=" + os.Getenv("PATH"),
-			"CNI_PATH=" + cniPluginPaths,
-		}
-		spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
-		spec.Hooks = &specs.Hooks{
-			Prestart: []specs.Hook{},
-			Poststop: []specs.Hook{},
+		// Use host networks by removing 'network' namespace
+		nss := spec.Linux.Namespaces
+		for i, ns := range nss {
+			if ns.Type == specs.NetworkNamespace {
+				spec.Linux.Namespaces = append(nss[0:i], nss[i+1:]...)
+				break
+			}
 		}
 
-		addHook(&spec.Hooks.Prestart, specs.Hook{
-			Path: hookBinary,
-			Args: append([]string{"cntnr", "net", "add"}, networks...),
-			Env:  cniEnv,
-		})
-		addHook(&spec.Hooks.Poststop, specs.Hook{
-			Path: hookBinary,
-			Args: append([]string{"cntnr", "net", "del"}, networks...),
-			Env:  cniEnv,
-		})
+		// Separate domainname from hostname
+		hostname := service.Hostname
+		domainname := service.Domainname
+		if hostname == "" {
+			hostname = containerID
+		} else {
+			dotPos := strings.Index(hostname, ".")
+			if dotPos != -1 {
+				domainname = hostname[dotPos+1:]
+				hostname = hostname[:dotPos]
+			}
+		}
+		fqn := strings.Trim(hostname+"."+domainname, ".")
+		spec.Hostname = hostname
+
+		// Add network hooks
+		networks := []string{"default", "test"}
+		if len(networks) > 0 {
+			//hookBinary, err := exec.LookPath("cnitool")
+			hookBinary, err := os.Executable()
+			if err != nil {
+				return nil, fmt.Errorf("Cannot find network hook binary! %v", err)
+			}
+			cniPluginPaths := os.Getenv("CNI_PATH")
+			if cniPluginPaths == "" {
+				return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
+			}
+			// TODO: add more CNI env vars
+			cniEnv := []string{
+				"PATH=" + os.Getenv("PATH"),
+				"CNI_PATH=" + cniPluginPaths,
+			}
+			spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+			spec.Hooks = &specs.Hooks{
+				Prestart: []specs.Hook{},
+				Poststop: []specs.Hook{},
+			}
+
+			hookArgs := []string{"cntnr", "net", "init", "-hostname=" + fqn}
+			for _, dnsip := range service.Dns {
+				hookArgs = append(hookArgs, "--dns="+dnsip)
+			}
+			for _, search := range service.DnsSearch {
+				hookArgs = append(hookArgs, "--dns-search="+search)
+			}
+			for ip, host := range service.ExtraHosts {
+				hookArgs = append(hookArgs, "--hosts-entry="+ip+"="+host)
+			}
+			addHook(&spec.Hooks.Prestart, specs.Hook{
+				Path: hookBinary,
+				Args: append(hookArgs, networks...),
+				Env:  cniEnv,
+			})
+			/*addHook(&spec.Hooks.Poststop, specs.Hook{
+				Path: hookBinary,
+				Args: append([]string{"cntnr", "net", "del"}, networks...),
+				Env:  cniEnv,
+			})*/
+		}
 	}
 
 	return spec, nil
@@ -167,13 +210,6 @@ func addCap(c *[]string, add []string) {
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
 func applyService(img *images.Image, service *Service, spec *specs.Spec) error {
-	if service.Hostname == "" {
-		// TODO: set container ID as hostname
-	} else {
-		spec.Hostname = service.Hostname
-	}
-	// TODO: domainname must be written into container's resolv.conf
-
 	// Apply args
 	imgCfg := img.Config.Config
 	entrypoint := imgCfg.Entrypoint

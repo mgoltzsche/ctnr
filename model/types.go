@@ -18,8 +18,10 @@ type Service struct {
 	Build      *ImageBuild `json:"build,omitempty"`
 	Hostname   string      `json:"hostname,omitempty"`
 	Domainname string      `json:"domainname,omitempty"`
-	/*Dns             []string          `json:"dns,omitempty"`
-	DnsSearch       []string          `json:"dns_search,omitempty"`*/
+	// TODO: read dns, search, extra_hosts from docker compose
+	Dns             []string          `json:"dns,omitempty"`
+	DnsSearch       []string          `json:"dns_search,omitempty"`
+	ExtraHosts      map[string]string `json:"extra_hosts,omitempty"`
 	Entrypoint      []string          `json:"entrypoint,omitempty"`
 	Command         []string          `json:"command,omitempty"`
 	Cwd             string            `json:"working_dir,omitempty"`

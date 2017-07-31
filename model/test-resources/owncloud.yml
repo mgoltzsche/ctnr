@@ -3,5 +3,6 @@ services:
   owncloud:
     image: owncloud:latest
     hostname: owncloud
+    domainname: owncloud.example.org
 #    entrypoint: /bin/sh
 #    tty: true
