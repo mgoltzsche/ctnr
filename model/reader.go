@@ -130,13 +130,13 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 	}
 
 	if s.Entrypoint != nil {
-		d.Entrypoint, err = toStringArray(s.Entrypoint, sub, l+".entrypoint")
+		d.Entrypoint, err = toStringArray(s.Entrypoint, sub, []string{}, l+".entrypoint")
 		if err != nil {
 			return
 		}
 	}
 	if s.Command != nil {
-		d.Command, err = toStringArray(s.Command, sub, l+".command")
+		d.Command, err = toStringArray(s.Command, sub, []string{}, l+".command")
 		if err != nil {
 			return
 		}
@@ -180,6 +180,24 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 	if s.Domainname != "" {
 		d.Domainname = sub(s.Domainname)
 	}
+	if s.Dns != nil {
+		d.Dns, err = toStringArray(s.Dns, sub, d.Dns, l+".dns")
+		if err != nil {
+			return
+		}
+	}
+	if s.DnsSearch != nil {
+		d.DnsSearch, err = toStringArray(s.DnsSearch, sub, d.DnsSearch, l+".dns_search")
+		if err != nil {
+			return
+		}
+	}
+	if s.ExtraHosts != nil {
+		d.ExtraHosts, err = toExtraHosts(s.ExtraHosts, sub, d.ExtraHosts, l+".extra_hosts")
+		if err != nil {
+			return
+		}
+	}
 	d.Expose = toExpose(s.Expose, sub, d.Expose, l+".expose")
 	d.Ports, err = toPorts(s.Ports, sub, d.Ports, l+".ports")
 	if err != nil {
@@ -205,6 +223,25 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 		}
 	}
 	return
+}
+
+func toExtraHosts(h []string, sub Substitution, r []ExtraHost, path string) ([]ExtraHost, error) {
+	if r == nil {
+		r = []ExtraHost{}
+	}
+	for _, l := range h {
+		s := strings.SplitN(l, ":", 2)
+		if len(s) != 2 {
+			return r, fmt.Errorf("Invalid entry at %s: %s. Expected format: HOST:IP", path, l)
+		}
+		host := sub(s[0])
+		ip := sub(s[1])
+		if host == "" || ip == "" {
+			return r, fmt.Errorf("Empty host or IP at %s: %s", path, l)
+		}
+		r = append(r, ExtraHost{host, ip})
+	}
+	return r, nil
 }
 
 func toExpose(p []string, sub Substitution, r []string, path string) []string {
@@ -302,6 +339,7 @@ func toPortRange(rangeExpr string, path string) (from, to int, err error) {
 	return
 }
 
+// TODO: also support long volume syntax and single volume path
 func toVolumeMounts(dcVols []string, sub Substitution, volDir, baseFile, destBaseFile string, r map[string]string, path string) (map[string]string, error) {
 	if r == nil {
 		r = map[string]string{}
@@ -366,7 +404,7 @@ func toHealthCheckDescriptor(c *dcHealthCheck, sub Substitution, path string) (*
 	if c == nil {
 		return nil, nil
 	} else {
-		test, err := toStringArray(c.Test, sub, path)
+		test, err := toStringArray(c.Test, sub, []string{}, path)
 		if err != nil {
 			return nil, err
 		}
@@ -403,22 +441,23 @@ func toHealthCheckDescriptor(c *dcHealthCheck, sub Substitution, path string) (*
 	}
 }
 
-func toStringArray(v interface{}, sub Substitution, path string) ([]string, error) {
+func toStringArray(v interface{}, sub Substitution, r []string, path string) ([]string, error) {
+	if r == nil {
+		r = []string{}
+	}
 	switch v.(type) {
 	case []interface{}:
 		l := v.([]interface{})
-		r := make([]string, len(l))
-		for i, u := range l {
-			r[i] = toString(u, sub, path)
+		for _, u := range l {
+			r = append(r, toString(u, sub, path))
 		}
-		return r, nil
 	case string:
-		return strings.Split(strings.Trim(sub(v.(string)), " "), " "), nil
+		r = append(r, strings.Split(strings.Trim(sub(v.(string)), " "), " ")...)
 	case nil:
-		return []string{}, nil
 	default:
-		return nil, fmt.Errorf("string or []string expected at %s but was: %s", path, v)
+		return r, fmt.Errorf("string or []string expected at %s but was: %s", path, v)
 	}
+	return r, nil
 }
 
 func toStringMap(v interface{}, sub Substitution, r map[string]string, path string) (map[string]string, error) {
@@ -560,6 +599,9 @@ type dcService struct {
 	Build           interface{} // string or map[interface{}]interface{}
 	Hostname        string
 	Domainname      string
+	Dns             interface{}    `yaml:"dns"`
+	DnsSearch       interface{}    `yaml:"dns_search"`
+	ExtraHosts      []string       `yaml:"extra_hosts"`
 	Entrypoint      interface{}    // string or array
 	Command         interface{}    // string or array
 	WorkingDir      string         `yaml:"working_dir"`

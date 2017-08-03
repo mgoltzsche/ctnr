@@ -19,6 +19,12 @@ import (
 	"strings"
 )
 
+type ipConfig struct {
+	interfaceName string
+	version       string
+	address       net.IPNet
+}
+
 type ContainerNetManager struct {
 	state          *specs.State
 	rootfs         string
@@ -32,6 +38,8 @@ type ContainerNetManager struct {
 	capabilityArgs map[string]interface{}
 	dns            DNS
 	hosts          map[string]string
+	hostsOrder     []string
+	//ips            []*ipConfig
 }
 
 func NewContainerNetManager(s *specs.State) (*ContainerNetManager, error) {
@@ -78,7 +86,7 @@ func NewContainerNetManager(s *specs.State) (*ContainerNetManager, error) {
 		}
 	}
 
-	// Get rootfs
+	// Get rootfs and load bundle
 	if s.Bundle == "" {
 		return nil, fmt.Errorf("No bundle specified in container state")
 	}
@@ -104,7 +112,9 @@ func NewContainerNetManager(s *specs.State) (*ContainerNetManager, error) {
 		cniArgs:        cniArgs,
 		capabilityArgs: capabilityArgs,
 		dns:            DNS{[]string{}, []string{}, []string{}, ""},
-		hosts:          defaultHosts(),
+		hosts:          map[string]string{},
+		hostsOrder:     []string{},
+		//ips:            []*ipConfig{},
 	}, nil
 }
 
@@ -124,8 +134,15 @@ func (m *ContainerNetManager) AddNet(ifName, netName string) (r types.Result, er
 		r = rs
 		m.dns.Nameserver = append(m.dns.Nameserver, rs.DNS.Nameservers...)
 		m.dns.Search = append(m.dns.Search, rs.DNS.Search...)
-		m.dns.Domain = rs.DNS.Domain
 		m.dns.Options = append(m.dns.Options, rs.DNS.Options...)
+		if rs.DNS.Domain != "" && m.dns.Domain == "" {
+			m.dns.Domain = rs.DNS.Domain
+		}
+		/*for _, ip := range rs.IPs {
+			fmt.Println(ip.Interface, "##")
+			itrfc := rs.Interfaces[*ip.Interface]
+			m.ips = append(m.ips, &ipConfig{itrfc.Name, ip.Version, net.IPNet(ip.Address)})
+		}*/
 	}
 	return
 }
@@ -143,25 +160,25 @@ func (m *ContainerNetManager) SetHostname(hostname string) {
 }
 
 func (m *ContainerNetManager) AddHostnameHostsEntry(ifName string) error {
-	// TODO: use IP from CNI result
 	ip, err := m.getIP(ifName)
 	if err != nil {
 		return err
 	}
-	// Handle FQN
 	hostname := m.hostname
 	dotPos := strings.Index(hostname, ".")
-	if dotPos != -1 {
-		hostname = hostname + " " + hostname[:dotPos]
+	if dotPos == -1 {
+		m.AddHostsEntry(hostname, ip)
+	} else {
+		// Handle FQN
+		m.AddHostsEntry(hostname, ip)
+		m.AddHostsEntry(hostname[:dotPos], ip)
 	}
-	m.hosts[ip] = strings.Trim(hostname+" "+m.hosts[ip], " ")
 	return nil
 }
 
-func (m *ContainerNetManager) AddHostsEntries(hosts map[string]string) {
-	for ip, host := range hosts {
-		m.hosts[ip] = strings.Trim(m.hosts[ip]+" "+host, " ")
-	}
+func (m *ContainerNetManager) AddHostsEntry(host, ip string) {
+	m.hostsOrder = append(m.hostsOrder, host)
+	m.hosts[host] = ip
 }
 
 func (m *ContainerNetManager) AddDNS(dns DNS) {
@@ -191,7 +208,7 @@ func (m *ContainerNetManager) Apply() error {
 	hostname := m.hostname
 	dotPos := strings.Index(hostname, ".")
 	if dotPos != -1 {
-		hostname = hostname + " " + hostname[:dotPos]
+		hostname = hostname[:dotPos]
 	}
 	if err := writeFile(filepath.Join(etcDir, "hostname"), hostname+"\n"); err != nil {
 		return fmt.Errorf("Cannot write hostname file: %s", err)
@@ -202,12 +219,21 @@ func (m *ContainerNetManager) Apply() error {
 	}
 	// Write /etc/hosts if not empty
 	if len(m.hosts) > 0 {
-		return writeHostsFile(filepath.Join(etcDir, "hosts"), m.hosts)
+		return writeHostsFile(filepath.Join(etcDir, "hosts"), m.hosts, m.hostsOrder)
 	}
 	return nil
 }
 
 func (m *ContainerNetManager) getIP(ifName string) (string, error) {
+	// TODO: maybe use IP from CNI result
+
+	/*for _, ip := range m.ips {
+		if ip.interfaceName == ifName {
+			return ip.address.IP.String(), nil
+		}
+	}
+	return "", fmt.Errorf("Cannot find IP for interface %q", ifName)*/
+
 	// Enter container's network namespace
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -294,54 +320,6 @@ func (m *ContainerNetManager) netConf(netName string) (*libcni.NetworkConfig, er
 	return c, nil
 }
 
-func CreateNetNS(file string) error {
-	// TODO: clean this up
-	if strings.Index(file, "/var/run/netns/") != 0 {
-		return fmt.Errorf("Only named network namespaces in /var/run/netns/ are supported")
-	}
-	name := file[15:]
-	return runCmd("ip", "netns", "add", name)
-	/*runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	ns, err := netns.New()
-	if err != nil {
-		return err
-	}
-	defer ns.Close()
-	netnsFile, err := os.Readlink(fmt.Sprint("/proc/self/fd/", int(ns)))
-	if err != nil {
-		return fmt.Errorf("Cannot resolve file descriptor to network namespace: %v", err)
-	}
-	// DOESN'T WORK: link net:[4026532631] /var/run/netns/myservice: no such file or directory
-	if err = os.Symlink(netnsFile, file); err != nil {
-		return err
-	}
-	return nil*/
-}
-
-func DelNetNS(file string) error {
-	// TODO: clean this up
-	if strings.Index(file, "/var/run/netns/") != 0 {
-		return fmt.Errorf("Only named network namespaces in /var/run/netns/ are supported")
-	}
-	name := file[15:]
-	return runCmd("ip", "netns", "delete", name)
-	//return os.Remove(file)
-}
-
-func runCmd(c string, args ...string) error {
-	cmd := exec.Command(c, args...)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("%s%s: %v", out.String(), strings.Join(append([]string{c}, args...), " "), err)
-	}
-	return nil
-}
-
 func getProcessNetns(pid int) (netnsPath string, err error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -368,4 +346,44 @@ func parseCniArgs(args string) ([][2]string, error) {
 	}
 
 	return result, nil
+}
+
+func CreateNetNS(file string) error {
+	// TODO: clean this up
+	if strings.Index(file, "/var/run/netns/") != 0 {
+		return fmt.Errorf("Only named network namespaces in /var/run/netns/ are supported")
+	}
+	name := file[15:]
+	return runCmd("ip", "netns", "add", name)
+	/* // anonymous network namespace
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	ns, err := netns.New()
+	if err != nil {
+		return err
+	}
+	defer ns.Close()
+	return fmt.Sprint("/proc/self/fd/", int(ns)), nil */
+}
+
+func DelNetNS(file string) error {
+	// TODO: clean this up
+	if strings.Index(file, "/var/run/netns/") != 0 {
+		return fmt.Errorf("Only named network namespaces in /var/run/netns/ are supported")
+	}
+	name := file[15:]
+	return runCmd("ip", "netns", "delete", name)
+}
+
+func runCmd(c string, args ...string) error {
+	cmd := exec.Command(c, args...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("%s%s: %v", out.String(), strings.Join(append([]string{c}, args...), " "), err)
+	}
+	return nil
 }

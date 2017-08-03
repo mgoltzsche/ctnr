@@ -173,19 +173,19 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 			for _, search := range service.DnsSearch {
 				hookArgs = append(hookArgs, "--dns-search="+search)
 			}
-			for ip, host := range service.ExtraHosts {
-				hookArgs = append(hookArgs, "--hosts-entry="+ip+"="+host)
+			for _, e := range service.ExtraHosts {
+				hookArgs = append(hookArgs, "--hosts-entry="+e.Name+"="+e.Ip)
 			}
 			addHook(&spec.Hooks.Prestart, specs.Hook{
 				Path: hookBinary,
 				Args: append(hookArgs, networks...),
 				Env:  cniEnv,
 			})
-			/*addHook(&spec.Hooks.Poststop, specs.Hook{
+			addHook(&spec.Hooks.Poststop, specs.Hook{
 				Path: hookBinary,
 				Args: append([]string{"cntnr", "net", "del"}, networks...),
 				Env:  cniEnv,
-			})*/
+			})
 		}
 	}
 

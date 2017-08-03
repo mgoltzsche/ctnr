@@ -29,7 +29,7 @@ var (
 	// network options
 	hostname      string
 	interfaceName string
-	hostsEntries  = HostsMap(map[string]string{})
+	hostsEntries  = KVList([][2]string{})
 	dnsNameserver = StringList([]string{})
 	dnsSearch     = StringList([]string{})
 	dnsOptions    = StringList([]string{})
@@ -64,19 +64,19 @@ func (l *StringList) String() string {
 	return strings.Join([]string(*l), " ")
 }
 
-type HostsMap map[string]string
+type KVList [][2]string
 
-func (m *HostsMap) Set(v string) error {
+func (m *KVList) Set(v string) error {
 	s := strings.SplitN(v, "=", 2)
-	ip := strings.Trim(s[0], " ")
-	if len(s) != 2 || ip == "" || strings.Trim(s[1], " ") == "" {
-		return fmt.Errorf("Invalid hosts entry argument: %q. Expected format: IP=NAME", v)
+	k := strings.Trim(s[0], " ")
+	if len(s) != 2 || k == "" || strings.Trim(s[1], " ") == "" {
+		return fmt.Errorf("Invalid KV argument: %q. Expected format: KEY=VALUE", v)
 	}
-	(*m)[ip] = (*m)[ip] + " " + strings.Trim(s[1], " ")
+	(*m) = append((*m), [2]string{k, strings.Trim(s[1], " ")})
 	return nil
 }
 
-func (m *HostsMap) String() string {
+func (m *KVList) String() string {
 	s := ""
 	for ip, name := range *m {
 		s += fmt.Sprintf("%-15s  %s\n", ip, name)
@@ -161,10 +161,12 @@ func main() {
 				}
 			}
 			netMan.SetHostname(hostname)
-			netMan.AddHostsEntries(hostsEntries)
 			err = netMan.AddHostnameHostsEntry(pubIf)
 			if err != nil {
 				break
+			}
+			for _, kv := range hostsEntries {
+				netMan.AddHostsEntry(kv[0], kv[1])
 			}
 			netMan.AddDNS(net.DNS{
 				dnsNameserver,

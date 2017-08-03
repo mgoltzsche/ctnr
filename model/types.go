@@ -13,15 +13,14 @@ type Project struct {
 }
 
 type Service struct {
-	Name       string      `json:"-"`
-	Image      string      `json:"image,omitempty"`
-	Build      *ImageBuild `json:"build,omitempty"`
-	Hostname   string      `json:"hostname,omitempty"`
-	Domainname string      `json:"domainname,omitempty"`
-	// TODO: read dns, search, extra_hosts from docker compose
+	Name            string            `json:"-"`
+	Image           string            `json:"image,omitempty"`
+	Build           *ImageBuild       `json:"build,omitempty"`
+	Hostname        string            `json:"hostname,omitempty"`
+	Domainname      string            `json:"domainname,omitempty"`
 	Dns             []string          `json:"dns,omitempty"`
 	DnsSearch       []string          `json:"dns_search,omitempty"`
-	ExtraHosts      map[string]string `json:"extra_hosts,omitempty"`
+	ExtraHosts      []ExtraHost       `json:"extra_hosts,omitempty"`
 	Entrypoint      []string          `json:"entrypoint,omitempty"`
 	Command         []string          `json:"command,omitempty"`
 	Cwd             string            `json:"working_dir,omitempty"`
@@ -36,6 +35,11 @@ type Service struct {
 	SharedKeys      map[string]string `json:"shared_keys,omitempty"`
 	StopSignal      string            `json:"stop_signal,omitempty"`
 	StopGracePeriod time.Duration     `json:"stop_grace_period"`
+}
+
+type ExtraHost struct {
+	Name string `json:"name"`
+	Ip   string `json:"ip"`
 }
 
 type ImageBuild struct {
