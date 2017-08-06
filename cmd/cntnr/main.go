@@ -180,6 +180,7 @@ func main() {
 				usageError()
 				os.Exit(1)
 			}
+			// TODO: Make sure all network resources are removed properly since currently IP/interface stay reserved
 			netMan := containerNetworkManager()
 			for i, n := range flag.Args()[2:] {
 				if e := netMan.DelNet("eth"+strconv.Itoa(i), n); e != nil && err == nil {
@@ -257,7 +258,9 @@ func runCompose(file string) error {
 	manager := run.NewContainerManager(debugLog)
 	for _, s := range project.Services {
 		containerId := s.Name
-		b, err := createRuntimeBundle(&s, imgs, containerId, filepath.Join(containerDir, containerId))
+		bundleDir := filepath.Join(containerDir, containerId)
+		vols := model.NewVolumeResolver(project, bundleDir)
+		b, err := createRuntimeBundle(&s, imgs, vols, containerId, bundleDir)
 		if err != nil {
 			return err
 		}
@@ -319,8 +322,8 @@ func imageContext() *types.SystemContext {
 	return c
 }
 
-func createRuntimeBundle(s *model.Service, imgs *images.Images, id, dir string) (*model.RuntimeBundleBuilder, error) {
-	b, err := s.NewRuntimeBundleBuilder(id, dir, imgs, rootless)
+func createRuntimeBundle(s *model.Service, imgs *images.Images, vols model.VolumeResolver, id, dir string) (*model.RuntimeBundleBuilder, error) {
+	b, err := s.NewRuntimeBundleBuilder(id, dir, imgs, vols, rootless)
 	if err != nil {
 		return nil, err
 	}

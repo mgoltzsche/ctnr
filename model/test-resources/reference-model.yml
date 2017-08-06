@@ -37,6 +37,10 @@ services:
         buildno: 1
         myprop: myvalue
         featureenabled: true
+    volumes:
+      - type: volume
+        source: ~/mydata
+        target: /data
   extbuild:
     extends:
       file: ./reference-model-base/reference-model-base.yml

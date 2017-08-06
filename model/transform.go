@@ -42,7 +42,7 @@ func (b *RuntimeBundleBuilder) Build(debug log.Logger) error {
 	return nil
 }
 
-func (service *Service) NewRuntimeBundleBuilder(containerID, bundleDir string, imgs *images.Images, rootless bool) (*RuntimeBundleBuilder, error) {
+func (service *Service) NewRuntimeBundleBuilder(containerID, bundleDir string, imgs *images.Images, vols VolumeResolver, rootless bool) (*RuntimeBundleBuilder, error) {
 	if service.Name == "" {
 		return nil, fmt.Errorf("Service has no name")
 	}
@@ -53,14 +53,14 @@ func (service *Service) NewRuntimeBundleBuilder(containerID, bundleDir string, i
 	if err != nil {
 		return nil, err
 	}
-	spec, err := service.toSpec(containerID, img, rootless)
+	spec, err := service.toSpec(containerID, img, vols, rootless)
 	if err != nil {
 		return nil, err
 	}
 	return &RuntimeBundleBuilder{bundleDir, img, spec}, nil
 }
 
-func (service *Service) toSpec(containerID string, img *images.Image, rootless bool) (*specs.Spec, error) {
+func (service *Service) toSpec(containerID string, img *images.Image, vols VolumeResolver, rootless bool) (*specs.Spec, error) {
 	spec := specconv.Example()
 
 	err := applyService(img, service, spec)
@@ -89,6 +89,15 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 		addCap(&c.Ambient, cap)
 	}
 
+	// Add mounts
+	for _, m := range service.Volumes {
+		mount, err := m.toMount(vols)
+		if err != nil {
+			return nil, err
+		}
+		spec.Mounts = append(spec.Mounts, mount)
+	}
+
 	if !rootless {
 		// Limit resources
 		if spec.Linux == nil {
@@ -106,7 +115,7 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 		}
 		// TODO: limit memory, cpu and blockIO access
 
-		// Add network
+		// Add network priority
 		/*if spec.Linux.Resources == nil {
 			spec.Linux.Resources = &specs.LinuxResources{}
 		}
@@ -128,7 +137,7 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 			}
 		}
 
-		// Separate domainname from hostname
+		// Add hostname
 		hostname := service.Hostname
 		domainname := service.Domainname
 		if hostname == "" {
@@ -146,7 +155,7 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 		// Add network hooks
 		networks := []string{"default", "test"}
 		if len(networks) > 0 {
-			//hookBinary, err := exec.LookPath("cnitool")
+			//hookBinary, err := exec.LookPath("cntnr-hooks")
 			hookBinary, err := os.Executable()
 			if err != nil {
 				return nil, fmt.Errorf("Cannot find network hook binary! %v", err)
@@ -190,6 +199,31 @@ func (service *Service) toSpec(containerID string, img *images.Image, rootless b
 	}
 
 	return spec, nil
+}
+
+func (m VolumeMount) toMount(vols VolumeResolver) (r specs.Mount, err error) {
+	t := m.Type
+	if t == "" {
+		t = "bind"
+	}
+	src := m.Source
+	if m.IsNamedVolume() {
+		// Mount named volume
+		src, err = vols.Named(m.Source)
+	} else if src == "" {
+		// Mount anonymous volume
+		src = vols.Anonymous(m.Target)
+	} else {
+		// Mount filepath
+		src = vols.Path(m.Source)
+	}
+	r = specs.Mount{
+		Type:        t,
+		Destination: m.Target,
+		Source:      src,
+		Options:     m.Options,
+	}
+	return
 }
 
 func addHook(h *[]specs.Hook, a specs.Hook) {

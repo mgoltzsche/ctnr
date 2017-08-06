@@ -2,7 +2,7 @@
   "services": {
     "extbuild": {
       "build": {
-        "context": "docker-build"
+        "context": "./docker-build"
       },
       "stop_grace_period": 15000000000
     },
@@ -38,11 +38,20 @@
           "protocol": "tcp"
         }
       ],
-      "mounts": {
-        "/data": "volumes/datavol",
-        "/etc/additional.cf": "additional.cf",
-        "/etc/target.cf": "reference-model-base/conf.cf"
-      },
+      "volumes": [
+        {
+          "source": "./reference-model-base/conf.cf",
+          "target": "/etc/target.cf"
+        },
+        {
+          "source": "datavol",
+          "target": "/data"
+        },
+        {
+          "source": "./additional.cf",
+          "target": "/etc/additional.cf"
+        }
+      ],
       "stop_grace_period": 10000000000
     },
     "myservice": {
@@ -89,20 +98,17 @@
           "protocol": "udp"
         }
       ],
-      "shared_keys": {
-        "http/myservice.example.org": "myservice:5550"
-      },
       "stop_grace_period": 10000000000
     },
     "selfbuilt1": {
       "build": {
-        "context": "docker-build"
+        "context": "./docker-build"
       },
       "stop_grace_period": 10000000000
     },
     "selfbuilt2": {
       "build": {
-        "context": "docker-build",
+        "context": "./docker-build",
         "dockerfile": "Dockerfile-alternate",
         "args": {
           "buildno": "1",
@@ -110,7 +116,18 @@
           "myprop": "myvalue"
         }
       },
+      "volumes": [
+        {
+          "source": "~/mydata",
+          "target": "/data"
+        }
+      ],
       "stop_grace_period": 10000000000
+    }
+  },
+  "volumes": {
+    "datavol": {
+      "external": "datavol"
     }
   }
 }

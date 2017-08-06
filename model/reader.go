@@ -60,6 +60,7 @@ func convertCompose(c *dockerCompose, sub Substitution, volDir string, r *Projec
 	if c.Services == nil || len(c.Services) == 0 {
 		return fmt.Errorf("No services defined in %s", c.Dir)
 	}
+	toVolumes(c, sub, &r.Volumes, ".volumes")
 	r.Services = map[string]Service{}
 	for k, v := range c.Services {
 		s := NewService(k)
@@ -76,25 +77,45 @@ func convertCompose(c *dockerCompose, sub Substitution, volDir string, r *Projec
 			}
 		}
 
-		// Apply special HTTP_* keys
-		// TODO: unify this by marking env vars as syncable with a KV store
-		if httpHost := s.Environment["HTTP_HOST"]; httpHost != "" {
-			httpPort := s.Environment["HTTP_PORT"]
-			if httpPort == "" {
-				return fmt.Errorf("HTTP_HOST without HTTP_PORT env var defined in service %q" + s.Name)
-			}
-			s.SharedKeys = map[string]string{}
-			s.SharedKeys["http/"+httpHost] = s.Name + ":" + httpPort
-		}
 		r.Services[k] = *s
 	}
+	return nil
+}
+
+func toVolumes(c *dockerCompose, sub Substitution, rp *map[string]Volume, path string) error {
+	r := map[string]Volume{}
+	for name, info := range c.Volumes {
+		name = sub(name)
+		externalName := ""
+		switch t := info.(type) {
+		case nil:
+		case map[interface{}]interface{}:
+			ext := info.(map[interface{}]interface{})["external"]
+			switch ext.(type) {
+			case map[interface{}]interface{}:
+				externalName = toString(ext.(map[interface{}]interface{})["name"], sub, path+"."+name+".external.name")
+			default:
+				isext, err := toBool(ext, sub, path+"."+name+".external")
+				if err != nil {
+					return err
+				}
+				if isext {
+					externalName = name
+				}
+			}
+		default:
+			return fmt.Errorf("Unsupported entry type %v at %s", t, path+".name")
+		}
+		r[name] = Volume{"", externalName}
+	}
+	*rp = r
 	return nil
 }
 
 func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, volDir string, p *Project, d *Service, envFileEnv map[string]string) (err error) {
 	l := "service." + d.Name
 
-	// Extend service
+	// Extend service (convert recursively)
 	if s.Extends != nil {
 		var yml *dockerCompose
 		if s.Extends.File == "" {
@@ -115,7 +136,7 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 		}
 	}
 
-	// Image
+	// Convert properties
 	if s.Image != "" {
 		if s.Build == nil {
 			d.Image = "docker://" + sub(s.Image)
@@ -124,8 +145,7 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 		}
 	}
 
-	d.Build, err = toImageBuild(s.Build, sub, d.Build, c.Dir, p.Dir, l+".build")
-	if err != nil {
+	if err = toImageBuild(s.Build, sub, &d.Build, c.Dir, p.Dir, l+".build"); err != nil {
 		return
 	}
 
@@ -192,15 +212,11 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 			return
 		}
 	}
-	if s.ExtraHosts != nil {
-		d.ExtraHosts, err = toExtraHosts(s.ExtraHosts, sub, d.ExtraHosts, l+".extra_hosts")
-		if err != nil {
-			return
-		}
+	if err = toExtraHosts(s.ExtraHosts, sub, &d.ExtraHosts, l+".extra_hosts"); err != nil {
+		return
 	}
-	d.Expose = toExpose(s.Expose, sub, d.Expose, l+".expose")
-	d.Ports, err = toPorts(s.Ports, sub, d.Ports, l+".ports")
-	if err != nil {
+	toExpose(s.Expose, sub, &d.Expose, l+".expose")
+	if err = toPorts(s.Ports, sub, &d.Ports, l+".ports"); err != nil {
 		return
 	}
 	if s.StopSignal != "" {
@@ -212,8 +228,7 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 			return
 		}
 	}
-	d.Mounts, err = toVolumeMounts(s.Volumes, sub, volDir, c.Dir, p.Dir, d.Mounts, l+".volumes")
-	if err != nil {
+	if err = toVolumeMounts(s.Volumes, sub, volDir, c.Dir, p.Dir, &d.Volumes, l+".volumes"); err != nil {
 		return
 	}
 	if d.HealthCheck != nil {
@@ -225,31 +240,31 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 	return
 }
 
-func toExtraHosts(h []string, sub Substitution, r []ExtraHost, path string) ([]ExtraHost, error) {
+func toExtraHosts(h []string, sub Substitution, rp *[]ExtraHost, path string) error {
+	r := *rp
 	if r == nil {
 		r = []ExtraHost{}
 	}
 	for _, l := range h {
 		s := strings.SplitN(l, ":", 2)
 		if len(s) != 2 {
-			return r, fmt.Errorf("Invalid entry at %s: %s. Expected format: HOST:IP", path, l)
+			return fmt.Errorf("Invalid entry at %s: %s. Expected format: HOST:IP", path, l)
 		}
 		host := sub(s[0])
 		ip := sub(s[1])
 		if host == "" || ip == "" {
-			return r, fmt.Errorf("Empty host or IP at %s: %s", path, l)
+			return fmt.Errorf("Empty host or IP at %s: %s", path, l)
 		}
 		r = append(r, ExtraHost{host, ip})
 	}
-	return r, nil
+	*rp = r
+	return nil
 }
 
-func toExpose(p []string, sub Substitution, r []string, path string) []string {
+func toExpose(p []string, sub Substitution, rp *[]string, path string) {
+	r := *rp
 	if r == nil {
 		r = []string{}
-	}
-	if p == nil {
-		return r
 	}
 	m := map[string]bool{}
 	for _, e := range p {
@@ -259,21 +274,22 @@ func toExpose(p []string, sub Substitution, r []string, path string) []string {
 			r = append(r, e)
 		}
 	}
-	return r
+	*rp = r
 }
 
-func toPorts(p []string, sub Substitution, r []PortBinding, path string) ([]PortBinding, error) {
+func toPorts(p []string, sub Substitution, rp *[]PortBinding, path string) error {
+	r := *rp
 	if r == nil {
 		r = []PortBinding{}
 	}
 	if p == nil {
-		return r, nil
+		return nil
 	}
 	for _, e := range p {
 		e = sub(e)
 		sp := strings.Split(e, "/")
 		if len(sp) > 2 {
-			return r, fmt.Errorf("Invalid port entry %q at %s", e, path)
+			return fmt.Errorf("Invalid port entry %q at %s", e, path)
 		}
 		prot := "tcp"
 		if len(sp) == 2 {
@@ -281,7 +297,7 @@ func toPorts(p []string, sub Substitution, r []PortBinding, path string) ([]Port
 		}
 		s := strings.Split(sp[0], ":")
 		if len(s) > 2 {
-			return r, fmt.Errorf("Invalid port entry %q at %s", e, path)
+			return fmt.Errorf("Invalid port entry %q at %s", e, path)
 		}
 		var hostPortExpr, targetPortExpr string
 		switch len(s) {
@@ -294,29 +310,30 @@ func toPorts(p []string, sub Substitution, r []PortBinding, path string) ([]Port
 		}
 		hostFrom, hostTo, err := toPortRange(hostPortExpr, path)
 		if err != nil {
-			return r, err
+			return err
 		}
 		targetFrom, targetTo, err := toPortRange(targetPortExpr, path)
 		if err != nil {
-			return r, err
+			return err
 		}
 		rangeSize := targetTo - targetFrom
 		if (hostTo - hostFrom) != rangeSize {
-			return r, fmt.Errorf("Port %q's range size differs between host and destination at %s", e, path)
+			return fmt.Errorf("Port %q's range size differs between host and destination at %s", e, path)
 		}
 		for d := 0; d <= rangeSize; d++ {
 			targetPort := targetFrom + d
 			pubPort := hostFrom + d
 			if targetPort < 0 || targetPort > 65535 {
-				return r, fmt.Errorf("Target port %d exceeded range", targetPort)
+				return fmt.Errorf("Target port %d exceeded range", targetPort)
 			}
 			if pubPort < 0 || pubPort > 65535 {
-				return r, fmt.Errorf("Published port %d exceeded range", pubPort)
+				return fmt.Errorf("Published port %d exceeded range", pubPort)
 			}
 			r = append(r, PortBinding{uint16(targetPort), uint16(pubPort), prot})
 		}
 	}
-	return r, nil
+	*rp = r
+	return nil
 }
 
 func toPortRange(rangeExpr string, path string) (from, to int, err error) {
@@ -339,41 +356,78 @@ func toPortRange(rangeExpr string, path string) (from, to int, err error) {
 	return
 }
 
-// TODO: also support long volume syntax and single volume path
-func toVolumeMounts(dcVols []string, sub Substitution, volDir, baseFile, destBaseFile string, r map[string]string, path string) (map[string]string, error) {
+func toVolumeMounts(dcVols []interface{}, sub Substitution, volDir, baseFile, destBaseFile string, rp *[]VolumeMount, path string) (err error) {
+	r := *rp
 	if r == nil {
-		r = map[string]string{}
-	}
-	if dcVols == nil {
-		return r, nil
+		r = []VolumeMount{}
 	}
 	for _, e := range dcVols {
-		e = sub(e)
-		s := strings.SplitN(e, ":", 2)
-		if len(s) != 2 {
-			return nil, fmt.Errorf("Invalid volume entry %q at %s", e, path)
+		var src, tgt string
+		opts := []string{}
+
+		switch t := e.(type) {
+		case string:
+			str := sub(e.(string))
+			s := strings.SplitN(str, ":", 3)
+			switch len(s) {
+			case 1:
+				tgt = s[0]
+			default:
+				src = s[0]
+				tgt = s[1]
+				opts = s[2:]
+			}
+		case map[interface{}]interface{}:
+			m := e.(map[interface{}]interface{})
+			vtype := toString(m["type"], sub, path+".type")
+			src = toString(m["source"], sub, path+".source")
+			tgt = toString(m["target"], sub, path+".target")
+			if vtype == "" {
+				vtype = "volume"
+			}
+			optMap, err := toStringMap(m[vtype], sub, map[string]string{}, path+"."+vtype)
+			if err != nil {
+				return err
+			}
+			for k, v := range optMap {
+				if v == "" {
+					opts = append(opts, k)
+				} else {
+					opts = append(opts, k+"="+v)
+				}
+			}
+		default:
+			return fmt.Errorf("Unsupported element type %v at %s", t, path)
 		}
-		src := s[0]
-		if len(src) == 0 || src[0] == '/' || src[0:2] == "./" || src[0:3] == "../" {
-			// filesystem path
-			src = translatePath(src, baseFile, destBaseFile)
-		} else {
-			// named volume reference
-			src = filepath.Join(volDir, src)
+
+		if tgt == "" {
+			return fmt.Errorf("No volume mount target specified at %s: %v", path, e)
 		}
-		r[s[1]] = src
+
+		v := VolumeMount{
+			Source:  src,
+			Target:  tgt,
+			Options: opts,
+		}
+
+		if len(src) > 0 && !v.IsNamedVolume() {
+			v.Source = translatePath(src, baseFile, destBaseFile)
+		}
+
+		r = append(r, v)
 	}
-	return r, nil
+	*rp = r
+	return nil
 }
 
-func toImageBuild(s interface{}, sub Substitution, d *ImageBuild, baseFile, destBaseFile, path string) (r *ImageBuild, err error) {
-	r = d
+func toImageBuild(s interface{}, sub Substitution, rp **ImageBuild, baseFile, destBaseFile, path string) (err error) {
 	switch s.(type) {
 	case string:
 		ctx := translatePath(sub(s.(string)), baseFile, destBaseFile)
-		return &ImageBuild{ctx, "", nil}, nil
+		*rp = &ImageBuild{ctx, "", nil}
 	case map[interface{}]interface{}:
 		m := s.(map[interface{}]interface{})
+		r := *rp
 		if r == nil {
 			r = &ImageBuild{}
 		}
@@ -393,6 +447,7 @@ func toImageBuild(s interface{}, sub Substitution, d *ImageBuild, baseFile, dest
 				}
 			}
 		}
+		*rp = r
 	case nil:
 	default:
 		err = fmt.Errorf("string or []string expected at %s but was: %s", path, s)
@@ -464,7 +519,7 @@ func toStringMap(v interface{}, sub Substitution, r map[string]string, path stri
 	if r == nil {
 		r = map[string]string{}
 	}
-	switch v.(type) {
+	switch t := v.(type) {
 	case map[interface{}]interface{}:
 		u := v.(map[interface{}]interface{})
 		for k, v := range u {
@@ -475,16 +530,17 @@ func toStringMap(v interface{}, sub Substitution, r map[string]string, path stri
 		for _, u := range v.([]interface{}) {
 			e := toString(u, sub, path)
 			s := strings.SplitN(e, "=", 2)
-			if len(s) != 2 {
-				return r, fmt.Errorf("Invalid environment entry %q at %s", e, path)
+			if len(s) == 2 {
+				r[s[0]] = s[1]
+			} else {
+				r[s[0]] = ""
 			}
-			r[s[0]] = s[1]
 		}
 		return r, nil
 	case nil:
 		return r, nil
 	default:
-		return nil, fmt.Errorf("map[string]string or []string expected at %s but was: %s", path, v)
+		return nil, fmt.Errorf("map[string]string or []string expected at %s but was: %v", path, t)
 	}
 }
 
@@ -505,6 +561,9 @@ func toDuration(v, defaultVal string, sub Substitution, p string) (time.Duration
 
 func toBool(v interface{}, sub Substitution, path string) (bool, error) {
 	s := toString(v, sub, path)
+	if s == "" {
+		return false, nil
+	}
 	b, err := strconv.ParseBool(sub(s))
 	if err != nil {
 		return b, fmt.Errorf("%s: Cannot parse %q as bool", path, s)
@@ -513,15 +572,17 @@ func toBool(v interface{}, sub Substitution, path string) (bool, error) {
 }
 
 func toString(v interface{}, sub Substitution, path string) string {
-	switch v.(type) {
+	switch t := v.(type) {
 	case string:
 		return sub(v.(string))
 	case bool:
 		return strconv.FormatBool(v.(bool))
 	case int:
 		return strconv.Itoa(v.(int))
+	case nil:
+		return ""
 	default:
-		panic(fmt.Sprintf("String expected at %s", path))
+		panic(fmt.Sprintf("String expected at %s but was %v", path, t))
 	}
 }
 
@@ -582,6 +643,9 @@ func translatePath(path, base, destBase string) string {
 	if err != nil {
 		panic("Not an absolute directory path: " + base)
 	}
+	if len(path) == 0 || !filepath.IsAbs(path) && !(path == "~" || len(path) > 1 && path[0:2] == "~/") {
+		r = "./" + r
+	}
 	return r
 }
 
@@ -613,7 +677,7 @@ type dcService struct {
 	HealthCheck     *dcHealthCheck `yaml:"healthcheck"`
 	Expose          []string       `yaml:"expose"`
 	Ports           []string       `yaml:"ports"`
-	Volumes         []string       `yaml:"volumes"`
+	Volumes         []interface{}  `yaml:"volumes"`
 	StopSignal      string         `yaml:"stop_signal"`
 	StopGracePeriod string         `yaml:"stop_grace_period"`
 	// TODO: Checkout 'secret' dc property
