@@ -1,15 +1,13 @@
 package model
 
 import (
-	//specs "github.com/opencontainers/runtime-spec/specs-go"
 	"encoding/json"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"time"
 )
 
 type VolumeResolver interface {
-	Named(name string) (string, error)
-	Anonymous(dest string) string
-	Path(file string) string
+	PrepareVolumeMount(VolumeMount) (specs.Mount, error)
 }
 
 type Project struct {
@@ -65,10 +63,7 @@ type VolumeMount struct {
 	Type    string   `json:"type,omitempty"`
 	Source  string   `json:"source,omitempty"`
 	Target  string   `json:"target,omitempty"`
-	Options []string `json:"read_only,omitempty"`
-	/*Options:
-	Bind map[string]string `json:"bind,omitempty"`
-	Volume map[string]string `json:"volume,omitempty"`*/
+	Options []string `json:"options,omitempty"`
 }
 
 func (m VolumeMount) IsNamedVolume() bool {

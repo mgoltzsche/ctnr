@@ -50,7 +50,7 @@ case "$1" in
 		fi
 
 		# Build cntnr binary
-		go build -o bin/$BINARY -tags "$BUILDTAGS" $PKGNAME/cmd/cntnr &&
+		go build -o dist/bin/$BINARY -tags "$BUILDTAGS" $PKGNAME/cmd/cntnr &&
 
 		# Build and run tests
 		go test -tags "$BUILDTAGS" $PKGNAME/model
@@ -60,7 +60,7 @@ case "$1" in
 	;;
 	run)
 		set -x
-		"$REPOPATH/bin/$BINARY" -verbose=true -name=examplepod -uuid-file=/var/run/examplepod.uuid run test-resources/example-docker-compose-images.yml
+		"$REPOPATH/dist/bin/$BINARY" -verbose=true -name=examplepod -uuid-file=/var/run/examplepod.uuid run test-resources/example-docker-compose-images.yml
 	;;
 	*)
 		usage

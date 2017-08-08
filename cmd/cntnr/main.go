@@ -232,7 +232,7 @@ func readContainerState() *specs.State {
 		os.Exit(1)
 	}
 
-	// Umarshal the hook state
+	// Unmarshal the hook state
 	if err := json.Unmarshal(b, state); err != nil {
 		fmt.Fprintf(os.Stderr, "Cannot unmarshal OCI state from stdin: %v\n", err)
 		os.Exit(1)

@@ -91,7 +91,7 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 
 	// Add mounts
 	for _, m := range service.Volumes {
-		mount, err := m.toMount(vols)
+		mount, err := vols.PrepareVolumeMount(m)
 		if err != nil {
 			return nil, err
 		}
@@ -156,11 +156,17 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 		networks := []string{"default", "test"}
 		if len(networks) > 0 {
 			//hookBinary, err := exec.LookPath("cntnr-hooks")
-			hookBinary, err := os.Executable()
+			executable, err := os.Executable()
 			if err != nil {
 				return nil, fmt.Errorf("Cannot find network hook binary! %v", err)
 			}
 			cniPluginPaths := os.Getenv("CNI_PATH")
+			if cniPluginPaths == "" {
+				pluginPath := filepath.Join(filepath.Dir(executable), "..", "cni-plugins")
+				if s, err := os.Stat(pluginPath); err == nil && s.IsDir() {
+					cniPluginPaths = pluginPath
+				}
+			}
 			if cniPluginPaths == "" {
 				return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
 			}
@@ -186,12 +192,12 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 				hookArgs = append(hookArgs, "--hosts-entry="+e.Name+"="+e.Ip)
 			}
 			addHook(&spec.Hooks.Prestart, specs.Hook{
-				Path: hookBinary,
+				Path: executable,
 				Args: append(hookArgs, networks...),
 				Env:  cniEnv,
 			})
 			addHook(&spec.Hooks.Poststop, specs.Hook{
-				Path: hookBinary,
+				Path: executable,
 				Args: append([]string{"cntnr", "net", "del"}, networks...),
 				Env:  cniEnv,
 			})
@@ -199,31 +205,6 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 	}
 
 	return spec, nil
-}
-
-func (m VolumeMount) toMount(vols VolumeResolver) (r specs.Mount, err error) {
-	t := m.Type
-	if t == "" {
-		t = "bind"
-	}
-	src := m.Source
-	if m.IsNamedVolume() {
-		// Mount named volume
-		src, err = vols.Named(m.Source)
-	} else if src == "" {
-		// Mount anonymous volume
-		src = vols.Anonymous(m.Target)
-	} else {
-		// Mount filepath
-		src = vols.Path(m.Source)
-	}
-	r = specs.Mount{
-		Type:        t,
-		Destination: m.Target,
-		Source:      src,
-		Options:     m.Options,
-	}
-	return
 }
 
 func addHook(h *[]specs.Hook, a specs.Hook) {

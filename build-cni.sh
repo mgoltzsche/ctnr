@@ -19,13 +19,13 @@ mv "$GOPATH/cni-$CNI_VERSION"     "$GOPATH/src/github.com/containernetworking/cn
 mv "$GOPATH/plugins-$CNI_VERSION" "$GOPATH/src/github.com/containernetworking/plugins" &&
 
 # Build CNI
-go build -o bin/cnitool github.com/containernetworking/cni/cnitool || exit 1
+go build -o dist/bin/cnitool github.com/containernetworking/cni/cnitool || exit 1
 BUILT=cnitool
 
 # Build CNI plugins
 for TYPE in ipam main meta; do
 	for CNI_PLUGIN in $(ls "$GOPATH/src/github.com/containernetworking/plugins/plugins/$TYPE/"); do
-		go build -o bin/cni-plugins/$CNI_PLUGIN github.com/containernetworking/plugins/plugins/$TYPE/$CNI_PLUGIN || exit 1
+		go build -o dist/cni-plugins/$CNI_PLUGIN github.com/containernetworking/plugins/plugins/$TYPE/$CNI_PLUGIN || exit 1
 		BUILT="$BUILT, $CNI_PLUGIN"
 	done
 done

@@ -361,6 +361,7 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, volDir, baseFile, de
 	if r == nil {
 		r = []VolumeMount{}
 	}
+	// TODO: maybe remove overwritten volumes
 	for _, e := range dcVols {
 		var src, tgt string
 		opts := []string{}

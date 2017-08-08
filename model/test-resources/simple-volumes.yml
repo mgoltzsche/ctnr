@@ -1,0 +1,10 @@
+version: '2'
+services:
+  myservice:
+    image: alpine:latest
+    hostname: service
+    domainname: example.org
+    tty: true
+    volumes:
+      - ./volumes/test:/data/test
+      - ./simple-volumes.yml:/config/compose.yml
