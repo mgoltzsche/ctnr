@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	shellwords "github.com/mattn/go-shellwords"
 	"github.com/mgoltzsche/cntnr/log"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
@@ -505,7 +506,12 @@ func toStringArray(v interface{}, sub Substitution, r []string, path string) ([]
 	case []interface{}:
 		l := v.([]interface{})
 		for _, u := range l {
-			r = append(r, toString(u, sub, path))
+			str := toString(u, sub, path)
+			l, err := shellwords.Parse(str)
+			if err != nil {
+				return r, err
+			}
+			r = append(r, l...)
 		}
 	case string:
 		r = append(r, strings.Split(strings.Trim(sub(v.(string)), " "), " ")...)
