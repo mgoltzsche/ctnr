@@ -3,7 +3,7 @@
 CNTNR DEVELOPMENT IS STILL IN A VERY EARLY STATE!
 
 cntnr is a lightweight container engine based on runc/libcontainer and written in [go](https://golang.org/).
-It supports high level service composition also using the [docker compose](https://docs.docker.com/compose/compose-file/) file format and creates [OCI conformant](https://github.com/opencontainers/runtime-spec) containers.
+It supports high level service composition also using the [docker compose](https://docs.docker.com/compose/compose-file/) file format and creates [OCI compliant](https://github.com/opencontainers/runtime-spec) containers.
 Container networks are managed in OCI hooks using [CNI](https://github.com/containernetworking/cni) and its [plugins](https://github.com/containernetworking/plugins).
 
 In opposite to similar projects (namely [docker](https://www.docker.com/) and [rkt](https://coreos.com/rkt)) cntnr can run a container as unprivileged user.
@@ -20,7 +20,6 @@ cntnr aims to integrate with other tools as [systemd](https://www.freedesktop.or
 
 ## Roadmap
 
-- volumes
 - CLI to support management of images, single containers and container compositions
 - apply docker compose network configuration
 - port binding (using CNI)

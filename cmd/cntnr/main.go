@@ -44,8 +44,18 @@ var (
 func usageError() {
 	fmt.Fprintf(os.Stderr, "Usage: %s OPTIONS ARGUMENTS\n", os.Args[0])
 	fmt.Fprint(os.Stderr, "\nArguments:\n")
-	fmt.Fprintf(os.Stderr, "  run FILE\n\tRuns pod from docker-compose.yml or pod.json file\n")
-	fmt.Fprintf(os.Stderr, "  image info IMAGE\n\tPrints image metadata in JSON\n")
+	//fmt.Fprintf(os.Stderr, "  state CONTAINERID\n\tPrints the container's state\n")
+	//fmt.Fprintf(os.Stderr, "  bundle IMAGE OPTIONS ARGS\n\tCreates a new runtime bundle\n") // --bundle=BUNDLEDIR --no-create
+	//fmt.Fprintf(os.Stderr, "  create CONTAINERID\n\tCreates a new runtime bundle\n") // --bundle=BUNDLEDIR
+	//fmt.Fprintf(os.Stderr, "  run --container CONTAINERID\n\tCreates and runs one or multiple runtime bundles\n")
+	//fmt.Fprintf(os.Stderr, "  run [--create] IMAGE OPTIONS ARGS\n\tCreates and runs one or multiple runtime bundles\n")
+	//fmt.Fprintf(os.Stderr, "  ls\n\tLists all containers\n")
+	fmt.Fprintf(os.Stderr, "  run --compose FILE\n\tRuns all services from a docker-compose.yml FILE\n")
+	//fmt.Fprintf(os.Stderr, "  image ls\n\tLists all imported images\n")
+	//fmt.Fprintf(os.Stderr, "  image build NAME [FILE]\n\tBuilds an image\n")
+	//fmt.Fprintf(os.Stderr, "  image export\n\tLists all imported images\n")
+	fmt.Fprintf(os.Stderr, "  image import URI\n\tImports an image from a given URI as e.g. docker://alpine:latest\n")
+	fmt.Fprintf(os.Stderr, "  image info URI\n\tPrints image metadata in JSON\n")
 	fmt.Fprintf(os.Stderr, "  net init [NAME1 [NAME2]]\n\tAdds networks to process' current network namespace using CNI and writes container's /etc/hostname, /etc/hosts and /etc/resolv.conf\n")
 	fmt.Fprintf(os.Stderr, "  net del [NAME1 [NAME2]]\n\tDeletes network NET from process' current network namespace\n")
 	fmt.Fprint(os.Stderr, "\nOptions:\n")
@@ -129,6 +139,11 @@ func main() {
 		err = runCompose(flag.Arg(1))
 	case "image":
 		switch flag.Arg(1) {
+		case "import":
+			if flag.NArg() != 3 {
+				usageError()
+			}
+			_, err = loadImage(flag.Arg(2))
 		case "info":
 			if flag.NArg() != 3 {
 				usageError()
@@ -282,12 +297,16 @@ func runCompose(file string) error {
 	return err
 }
 
-func printImageConfig(imgName string) error {
+func loadImage(imgName string) (*images.Image, error) {
 	imgs, err := newImages()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	img, err := imgs.Image(imgName)
+	return imgs.Image(imgName)
+}
+
+func printImageConfig(imgName string) error {
+	img, err := loadImage(imgName)
 	if err != nil {
 		return err
 	}
