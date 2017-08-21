@@ -25,11 +25,11 @@ import (
 )
 
 var (
-	flagVerbose       bool
-	flagImgDir        string
-	flagBundleBaseDir string
-	flagRootless      bool
-	flagCfgFile       string
+	flagVerbose        bool
+	flagImgStoreDir    string
+	flagBundleStoreDir string
+	flagRootless       bool
+	flagCfgFile        string
 
 	currUser *user.User
 

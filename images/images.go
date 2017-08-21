@@ -22,12 +22,12 @@ import (
 
 var toIdRegexp = regexp.MustCompile("[^a-z0-9]+")
 
-func NewImages(imageDirectory string, pullPolicy PullPolicy, ctx *types.SystemContext, debug log.Logger) (*Images, error) {
+func NewImages(imageStoreDir string, pullPolicy PullPolicy, ctx *types.SystemContext, debug log.Logger) (*Images, error) {
 	trustPolicy, err := createTrustPolicyContext()
 	if err != nil {
 		return nil, fmt.Errorf("Error loading trust policy: %v", err)
 	}
-	return &Images{map[string]*Image{}, imageDirectory, trustPolicy, pullPolicy, ctx, debug}, nil
+	return &Images{map[string]*Image{}, imageStoreDir, trustPolicy, pullPolicy, ctx, debug}, nil
 }
 
 func (self *Images) Image(name string) (*Image, error) {

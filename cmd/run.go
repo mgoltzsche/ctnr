@@ -54,8 +54,8 @@ func init() {
 }
 
 func initBundleFlags(f *pflag.FlagSet, c *apps) {
-	defaultBundleBaseDir := filepath.Join(currUser.HomeDir, ".cntnr", "containers")
-	f.StringVar(&flagBundleBaseDir, "bundle-base-dir", defaultBundleBaseDir, "directory to store OCI runtime bundles")
+	defaultBundleStoreDir := filepath.Join(currUser.HomeDir, ".cntnr", "containers")
+	f.StringVar(&flagBundleStoreDir, "bundle-store-dir", defaultBundleStoreDir, "directory to store OCI runtime bundles")
 	f.Var((*cName)(c), "name", "container name and implicit hostname when hostname is not set explicitly")
 	f.Var((*cHostname)(c), "hostname", "container hostname")
 	f.Var((*cDomainname)(c), "domainname", "container domainname")
@@ -115,7 +115,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		if s.Name == "" {
 			s.Name = containerId
 		}
-		bundleDir := filepath.Join(flagBundleBaseDir, containerId)
+		bundleDir := filepath.Join(flagBundleStoreDir, containerId)
 		vols := model.NewVolumeResolver(project, bundleDir)
 		b, err := createRuntimeBundle(s, imgs, vols, containerId, bundleDir)
 		if err != nil {

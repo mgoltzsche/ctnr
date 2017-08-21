@@ -63,8 +63,8 @@ func exitError(exitCode int, frmt string, values ...interface{}) {
 }
 
 func initImageFlags(f *pflag.FlagSet) {
-	defaultImgDir := filepath.Join(currUser.HomeDir, ".cntnr", "images")
-	f.StringVar(&flagImgDir, "image-dir", defaultImgDir, "directory to store images")
+	defaultImgStoreDir := filepath.Join(currUser.HomeDir, ".cntnr", "images")
+	f.StringVar(&flagImgStoreDir, "image-store-dir", defaultImgStoreDir, "directory to store images")
 }
 
 func initContainerFlags(f *pflag.FlagSet) {
@@ -75,7 +75,7 @@ func initContainerFlags(f *pflag.FlagSet) {
 func newImages() (*images.Images, error) {
 	imgCtx := imageContext()
 	// TODO: expose --image-pull-policy CLI option
-	imgs, err := images.NewImages(flagImgDir, images.PULL_NEW, imgCtx, debugLog)
+	imgs, err := images.NewImages(flagImgStoreDir, images.PULL_NEW, imgCtx, debugLog)
 	if err != nil {
 		return nil, fmt.Errorf("Could not init images: %s", err)
 	}
