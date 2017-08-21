@@ -89,8 +89,16 @@ func NewService(name string) *Service {
 	return &Service{Name: name, StopGracePeriod: time.Duration(10000000000)}
 }
 
-func (p *Project) JSON() string {
-	b, err := json.MarshalIndent(p, "", "  ")
+func (c *Project) JSON() string {
+	return toJSON(c)
+}
+
+func (c *Service) JSON() string {
+	return toJSON(c)
+}
+
+func toJSON(o interface{}) string {
+	b, err := json.MarshalIndent(o, "", "  ")
 	if err != nil {
 		panic("Failed to marshal effective model: " + err.Error())
 	}

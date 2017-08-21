@@ -44,13 +44,13 @@ var (
 func usageError() {
 	fmt.Fprintf(os.Stderr, "Usage: %s OPTIONS ARGUMENTS\n", os.Args[0])
 	fmt.Fprint(os.Stderr, "\nArguments:\n")
-	//fmt.Fprintf(os.Stderr, "  state CONTAINERID\n\tPrints the container's state\n")
-	//fmt.Fprintf(os.Stderr, "  bundle IMAGE OPTIONS ARGS\n\tCreates a new runtime bundle\n") // --bundle=BUNDLEDIR --no-create
-	//fmt.Fprintf(os.Stderr, "  create CONTAINERID\n\tCreates a new runtime bundle\n") // --bundle=BUNDLEDIR
-	//fmt.Fprintf(os.Stderr, "  run --container CONTAINERID\n\tCreates and runs one or multiple runtime bundles\n")
-	//fmt.Fprintf(os.Stderr, "  run [--create] IMAGE OPTIONS ARGS\n\tCreates and runs one or multiple runtime bundles\n")
 	//fmt.Fprintf(os.Stderr, "  ls\n\tLists all containers\n")
-	fmt.Fprintf(os.Stderr, "  run --compose FILE\n\tRuns all services from a docker-compose.yml FILE\n")
+	//fmt.Fprintf(os.Stderr, "  state CONTAINERID\n\tPrints the container's state\n")
+	//fmt.Fprintf(os.Stderr, "  bundle IMAGE [OPTIONS]\n\tCreates a new runtime bundle\n") // --bundle=BUNDLEDIR --no-create
+	//fmt.Fprintf(os.Stderr, "  create CONTAINERID\n\tCreates a new runtime bundle\n") // --bundle=BUNDLEDIR
+	//fmt.Fprintf(os.Stderr, "  run IMAGE [OPTIONS] [ARGS] [--- IMAGE [OPTIONS] [ARGS]...]\n\tCreates and runs one or multiple runtime bundles\n") // ATTENTION: must make sure that options
+	//fmt.Fprintf(os.Stderr, "  run-container CONTAINERID\n\tCreates and runs one or multiple runtime bundles\n")
+	fmt.Fprintf(os.Stderr, "  run-compose FILE\n\tRuns all services from a docker-compose.yml FILE\n")
 	//fmt.Fprintf(os.Stderr, "  image ls\n\tLists all imported images\n")
 	//fmt.Fprintf(os.Stderr, "  image build NAME [FILE]\n\tBuilds an image\n")
 	//fmt.Fprintf(os.Stderr, "  image export\n\tLists all imported images\n")
@@ -110,7 +110,7 @@ func initFlags() {
 	flag.StringVar(&containerDir, "container-dir", defaultContainerDir, "Directory to store OCI runtime bundles")
 }
 
-func parseNetworkFlags(f *flag.FlagSet, args []string) error {
+func networkFlags(f *flag.FlagSet) {
 	f.StringVar(&interfaceName, "pub-if", "", "Network interface to map hostname to. Default is eth0 when network added else lo")
 	f.StringVar(&hostname, "hostname", "", "hostname as written to /etc/hostname and /etc/hosts")
 	f.Var(&hostsEntries, "hosts-entry", "Entries in form of IP=NAME that are written to /etc/hosts")
@@ -118,7 +118,6 @@ func parseNetworkFlags(f *flag.FlagSet, args []string) error {
 	f.Var(&dnsSearch, "dns-search", "List of DNS search domains to write in /etc/resolv.conf")
 	f.Var(&dnsOptions, "dns-opt", "List of DNS options to write in /etc/resolv.conf")
 	f.StringVar(&dnsDomain, "dns-domain", "", "DNS domain")
-	return f.Parse(args)
 }
 
 func main() {
@@ -133,9 +132,16 @@ func main() {
 
 	switch flag.Arg(0) {
 	case "run":
+		/*fs := flag.NewFlagSet("run", flag.ContinueOnError)
+		runFlags(fs)
+		err = fs.Parse(flag.Args()[2:])
+		if err != nil {
+			break
+		}*/
 		if flag.NArg() != 2 {
 			usageError()
 		}
+		// TODO: use urfave/cli to handle subcommands and multiple input sources
 		err = runCompose(flag.Arg(1))
 	case "image":
 		switch flag.Arg(1) {
@@ -157,7 +163,8 @@ func main() {
 		switch flag.Arg(1) {
 		case "init":
 			fs := flag.NewFlagSet("init", flag.ContinueOnError)
-			err = parseNetworkFlags(fs, flag.Args()[2:])
+			networkFlags(fs)
+			err = fs.Parse(flag.Args()[2:])
 			if err != nil {
 				break
 			}
