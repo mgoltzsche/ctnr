@@ -95,7 +95,7 @@ func unpackLayer(src, dest string) error {
 			target := filepath.Join(dest, hdr.Linkname)
 
 			if !strings.HasPrefix(target, dest) {
-				return fmt.Errorf("invalid hardlink in layer: %q -> %q", target, hdr.Linkname)
+				return fmt.Errorf("Invalid hardlink in image layer: %q -> %q", target, hdr.Linkname)
 			}
 
 			// TODO: remove if no link only
@@ -112,7 +112,7 @@ func unpackLayer(src, dest string) error {
 			target := filepath.Join(filepath.Dir(path), hdr.Linkname)
 
 			if !strings.HasPrefix(target, dest) {
-				return fmt.Errorf("invalid symlink in layer: %q -> %q", path, hdr.Linkname)
+				return fmt.Errorf("Invalid symlink in image layer: %q -> %q", path, hdr.Linkname)
 			}
 
 			// TODO: remove if no link only
@@ -128,7 +128,7 @@ func unpackLayer(src, dest string) error {
 			return nil
 		default:
 			// TODO: eventually return error
-			os.Stderr.WriteString(fmt.Sprintf("Unsupported entry type: %c - %s\n", hdr.Typeflag, hdr.Name))
+			os.Stderr.WriteString(fmt.Sprintf("Unsupported image layer entry type: %c - %s\n", hdr.Typeflag, hdr.Name))
 		}
 	}
 	return nil

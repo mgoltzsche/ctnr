@@ -6,15 +6,14 @@ cntnr is a lightweight container engine based on runc/libcontainer and written i
 It supports high level service composition also using the [docker compose](https://docs.docker.com/compose/compose-file/) file format and creates [OCI compliant](https://github.com/opencontainers/runtime-spec) containers.
 Container networks are managed in OCI hooks using [CNI](https://github.com/containernetworking/cni) and its [plugins](https://github.com/containernetworking/plugins).
 
-In opposite to similar projects (namely [docker](https://www.docker.com/) and [rkt](https://coreos.com/rkt)) cntnr can run a container as unprivileged user.
 The ability to run a container as unprivileged user has many advantages:
 
 - A container can be run in a restrictive, rootless environment.
 - A container can be run within an unprivileged container which can be useful when building images inside a container.
-- Desktop applications like [Firefox](https://www.mozilla.org/en-US/firefox/) can be run in a container.
+- Graphical applications like [Firefox](https://www.mozilla.org/en-US/firefox/) can be run in a container.
 - It provides both a higher degree and more flexible level of security since you can rely on your host OS' ACL.
 
-cntnr aims to integrate with other tools as [systemd](https://www.freedesktop.org/wiki/Software/systemd/) and [consul](https://www.consul.io/).
+cntnr also aims to integrate with other tools as [systemd](https://www.freedesktop.org/wiki/Software/systemd/) and [consul](https://www.consul.io/).
 
 
 

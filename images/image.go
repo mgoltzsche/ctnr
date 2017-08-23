@@ -28,6 +28,7 @@ func (img *Image) Unpack(dest string, debug log.Logger) error {
 	annotations := map[string]string{}
 	for _, l := range img.Manifest.Layers {
 		if l.MediaType != specs.MediaTypeImageLayerGzip {
+			os.RemoveAll(dest)
 			return fmt.Errorf("Unsupported layer media type %q", l.MediaType)
 		}
 
@@ -39,6 +40,7 @@ func (img *Image) Unpack(dest string, debug log.Logger) error {
 		debug.Printf("Extracting layer %s", l.Digest.String())
 
 		if err := unpackLayer(layerFile, dest); err != nil {
+			os.RemoveAll(dest)
 			return err
 		}
 	}

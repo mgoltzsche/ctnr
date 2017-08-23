@@ -25,19 +25,41 @@ type RuntimeBundleBuilder struct {
 }
 
 func (b *RuntimeBundleBuilder) Build(debug log.Logger) error {
+	// Unpack image file system into bundle
 	//err = image.UnpackLayout(img.Directory, containerDir, "latest")
 	//err = image.CreateRuntimeBundleLayout(img.Directory, containerDir, "latest", "rootfs")
-	err := b.Image.Unpack(filepath.Join(b.Dir, b.Spec.Root.Path), debug)
+	rootDir := filepath.Join(b.Dir, b.Spec.Root.Path)
+	err := b.Image.Unpack(rootDir, debug)
 	if err != nil {
-		return fmt.Errorf("Unpacking OCI layout of image %q (%s) failed: %v", b.Image.Name, b.Image.Directory, err)
+		os.RemoveAll(b.Dir)
+		return fmt.Errorf("Unpacking OCI layout of image %q (%s) failed: %s", b.Image.Name, b.Image.Directory, err)
 	}
+
+	// Copy host's /etc/hostname into bundle
+	if err = copyHostFile("/etc/hostname", rootDir); err != nil {
+		return err
+	}
+	// Copy host's /etc/hosts into bundle
+	if err = copyHostFile("/etc/hosts", rootDir); err != nil {
+		return err
+	}
+	// Copy host's /etc/resolv.conf into bundle if image didn't provide resolv.conf
+	if _, err := os.Stat(filepath.Join(rootDir, "/etc/resolv.conf")); os.IsNotExist(err) {
+		if err = copyHostFile("/etc/resolv.conf", rootDir); err != nil {
+			return err
+		}
+	}
+
+	// Write bundle's config.json
 	j, err := json.MarshalIndent(b.Spec, "", "  ")
 	if err != nil {
-		return fmt.Errorf("Cannot unmarshal OCI runtime spec for %s: %v", b.Dir, err)
+		os.RemoveAll(b.Dir)
+		return fmt.Errorf("Cannot unmarshal OCI runtime spec for %s: %s", b.Dir, err)
 	}
-	err = ioutil.WriteFile(filepath.Join(b.Dir, "config.json"), j, 0770)
+	err = ioutil.WriteFile(filepath.Join(b.Dir, "config.json"), j, 0440)
 	if err != nil {
-		return fmt.Errorf("Cannot write OCI runtime spec: %v", err)
+		os.RemoveAll(b.Dir)
+		return fmt.Errorf("Cannot write OCI runtime spec: %s", err)
 	}
 	return nil
 }
@@ -127,81 +149,89 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 			{"eth0", 2},
 			{"lo", 1},
 		}*/
+	}
 
-		// Use host networks by removing 'network' namespace
-		nss := spec.Linux.Namespaces
-		for i, ns := range nss {
-			if ns.Type == specs.NetworkNamespace {
-				spec.Linux.Namespaces = append(nss[0:i], nss[i+1:]...)
-				break
+	// TODO: read networks from compose file or CLI
+	networks := []string{"default", "test"}
+	if rootless {
+		networks = []string{}
+	}
+	useHostNetwork := len(networks) == 0
+
+	// Use host networks by removing 'network' namespace
+	nss := spec.Linux.Namespaces
+	for i, ns := range nss {
+		if ns.Type == specs.NetworkNamespace {
+			spec.Linux.Namespaces = append(nss[0:i], nss[i+1:]...)
+			break
+		}
+	}
+	if !useHostNetwork {
+		spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+	}
+
+	// Add hostname
+	hostname := service.Hostname
+	domainname := service.Domainname
+	if hostname == "" {
+		hostname = containerID
+	} else {
+		dotPos := strings.Index(hostname, ".")
+		if dotPos != -1 {
+			domainname = hostname[dotPos+1:]
+			hostname = hostname[:dotPos]
+		}
+	}
+	fqn := strings.Trim(hostname+"."+domainname, ".")
+	spec.Hostname = hostname
+
+	// Add network hooks
+	if !useHostNetwork && len(networks) > 0 {
+		//hookBinary, err := exec.LookPath("cntnr-hooks")
+		executable, err := os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("Cannot find network hook binary! %s", err)
+		}
+		cniPluginPaths := os.Getenv("CNI_PATH")
+		if cniPluginPaths == "" {
+			pluginPath := filepath.Join(filepath.Dir(executable), "..", "cni-plugins")
+			if s, err := os.Stat(pluginPath); err == nil && s.IsDir() {
+				cniPluginPaths = pluginPath
 			}
 		}
-
-		// Add hostname
-		hostname := service.Hostname
-		domainname := service.Domainname
-		if hostname == "" {
-			hostname = containerID
-		} else {
-			dotPos := strings.Index(hostname, ".")
-			if dotPos != -1 {
-				domainname = hostname[dotPos+1:]
-				hostname = hostname[:dotPos]
-			}
+		if cniPluginPaths == "" {
+			return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
 		}
-		fqn := strings.Trim(hostname+"."+domainname, ".")
-		spec.Hostname = hostname
-
-		// Add network hooks
-		networks := []string{"default", "test"}
-		if len(networks) > 0 {
-			//hookBinary, err := exec.LookPath("cntnr-hooks")
-			executable, err := os.Executable()
-			if err != nil {
-				return nil, fmt.Errorf("Cannot find network hook binary! %v", err)
-			}
-			cniPluginPaths := os.Getenv("CNI_PATH")
-			if cniPluginPaths == "" {
-				pluginPath := filepath.Join(filepath.Dir(executable), "..", "cni-plugins")
-				if s, err := os.Stat(pluginPath); err == nil && s.IsDir() {
-					cniPluginPaths = pluginPath
-				}
-			}
-			if cniPluginPaths == "" {
-				return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
-			}
-			// TODO: add more CNI env vars
-			cniEnv := []string{
-				"PATH=" + os.Getenv("PATH"),
-				"CNI_PATH=" + cniPluginPaths,
-			}
-			spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
-			spec.Hooks = &specs.Hooks{
-				Prestart: []specs.Hook{},
-				Poststop: []specs.Hook{},
-			}
-
-			hookArgs := []string{"cntnr", "net", "init", "-hostname=" + fqn}
-			for _, dnsip := range service.Dns {
-				hookArgs = append(hookArgs, "--dns="+dnsip)
-			}
-			for _, search := range service.DnsSearch {
-				hookArgs = append(hookArgs, "--dns-search="+search)
-			}
-			for _, e := range service.ExtraHosts {
-				hookArgs = append(hookArgs, "--hosts-entry="+e.Name+"="+e.Ip)
-			}
-			addHook(&spec.Hooks.Prestart, specs.Hook{
-				Path: executable,
-				Args: append(hookArgs, networks...),
-				Env:  cniEnv,
-			})
-			addHook(&spec.Hooks.Poststop, specs.Hook{
-				Path: executable,
-				Args: append([]string{"cntnr", "net", "del"}, networks...),
-				Env:  cniEnv,
-			})
+		// TODO: add more CNI env vars
+		cniEnv := []string{
+			"PATH=" + os.Getenv("PATH"),
+			"CNI_PATH=" + cniPluginPaths,
 		}
+		spec.Hooks = &specs.Hooks{
+			Prestart: []specs.Hook{},
+			Poststop: []specs.Hook{},
+		}
+
+		hookArgs := []string{"cntnr", "net", "init", "-hostname=" + fqn}
+		for _, dnsip := range service.Dns {
+			hookArgs = append(hookArgs, "--dns="+dnsip)
+		}
+		for _, search := range service.DnsSearch {
+			hookArgs = append(hookArgs, "--dns-search="+search)
+		}
+		for _, e := range service.ExtraHosts {
+			hookArgs = append(hookArgs, "--hosts-entry="+e.Name+"="+e.Ip)
+		}
+		addHook(&spec.Hooks.Prestart, specs.Hook{
+			Path: executable,
+			Args: append(hookArgs, networks...),
+			Env:  cniEnv,
+		})
+		addHook(&spec.Hooks.Poststop, specs.Hook{
+			Path: executable,
+			Args: append([]string{"cntnr", "net", "del"}, networks...),
+			Env:  cniEnv,
+		})
 	}
 
 	return spec, nil
@@ -221,6 +251,44 @@ func addCap(c *[]string, add []string) {
 			*c = append(*c, e)
 		}
 	}
+}
+
+func copyHostFile(file, rootDir string) error {
+	b, err := ioutil.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(filepath.Join(rootDir, file), b, 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func mountHostFile(spec *specs.Spec, file string) error {
+	src := file
+	fi, err := os.Lstat(file)
+	if err != nil {
+		return err
+	}
+
+	if fi.Mode()&os.ModeSymlink != 0 {
+		src, err = os.Readlink(file)
+		if err != nil {
+			return err
+		}
+		if !filepath.IsAbs(src) {
+			src = filepath.Join(filepath.Dir(file), src)
+		}
+	}
+
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Type:        "bind",
+		Source:      src,
+		Destination: file,
+		Options:     []string{"bind", "nodev", "mode=0444", "ro"},
+	})
+	return nil
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md

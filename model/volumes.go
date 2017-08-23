@@ -39,8 +39,8 @@ func (self *volumeResolver) PrepareVolumeMount(m VolumeMount) (specs.Mount, erro
 	}
 	r := specs.Mount{
 		Type:        t,
-		Destination: m.Target,
 		Source:      src,
+		Destination: m.Target,
 		Options:     opts,
 	}
 	if err != nil {
