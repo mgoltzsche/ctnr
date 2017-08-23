@@ -3,6 +3,8 @@ package model
 import (
 	"encoding/json"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -20,26 +22,31 @@ type Service struct {
 	Name        string            `json:"-"`
 	Image       string            `json:"image,omitempty"`
 	Build       *ImageBuild       `json:"build,omitempty"`
-	Hostname    string            `json:"hostname,omitempty"`
-	Domainname  string            `json:"domainname,omitempty"`
-	Dns         []string          `json:"dns,omitempty"`
-	DnsSearch   []string          `json:"dns_search,omitempty"`
-	ExtraHosts  []ExtraHost       `json:"extra_hosts,omitempty"`
 	Entrypoint  []string          `json:"entrypoint,omitempty"`
 	Command     []string          `json:"command,omitempty"`
-	Cwd         string            `json:"working_dir,omitempty"`
-	StdinOpen   bool              `json:"stdin_open,omitempty"`
-	Tty         bool              `json:"tty,omitempty"`
-	ReadOnly    bool              `json:"read_only,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
-	Expose      []string          `json:"expose,omitempty"`
-	// TODO: bind ports
-	Ports   []PortBinding `json:"ports,omitempty"`
-	Volumes []VolumeMount `json:"volumes,omitempty"`
+	Cwd         string            `json:"working_dir,omitempty"`
+	NetConf
+	StdinOpen bool          `json:"stdin_open,omitempty"`
+	Tty       bool          `json:"tty,omitempty"`
+	ReadOnly  bool          `json:"read_only,omitempty"`
+	Expose    []string      `json:"expose,omitempty"`
+	Volumes   []VolumeMount `json:"volumes,omitempty"`
 	// TODO: handle check
 	HealthCheck     *Check        `json:"healthcheck,omitempty"`
 	StopSignal      string        `json:"stop_signal,omitempty"`
 	StopGracePeriod time.Duration `json:"stop_grace_period"`
+}
+
+type NetConf struct {
+	Hostname   string      `json:"hostname,omitempty"`
+	Domainname string      `json:"domainname,omitempty"`
+	Dns        []string    `json:"dns,omitempty"`
+	DnsSearch  []string    `json:"dns_search,omitempty"`
+	DnsOptions []string    `json:"dns_options,omitempty"`
+	ExtraHosts []ExtraHost `json:"extra_hosts,omitempty"`
+	// TODO: bind ports
+	Ports []PortBinding `json:"ports,omitempty"`
 }
 
 type ExtraHost struct {
@@ -59,11 +66,31 @@ type PortBinding struct {
 	Protocol  string `json:"protocol"`
 }
 
+func (p PortBinding) String() string {
+	s := strconv.Itoa(int(p.Target))
+	if p.Published > 0 {
+		s = strconv.Itoa(int(p.Published)) + ":" + s
+	}
+	if p.Protocol != "" && p.Protocol != "tcp" {
+		s += "/" + p.Protocol
+	}
+	return s
+}
+
 type VolumeMount struct {
 	Type    string   `json:"type,omitempty"`
 	Source  string   `json:"source,omitempty"`
 	Target  string   `json:"target,omitempty"`
 	Options []string `json:"options,omitempty"`
+}
+
+func (m VolumeMount) String() string {
+	if m.Source == "" {
+		return m.Target
+	} else {
+		s := []string{m.Source, m.Target}
+		return strings.Join(append(s, m.Options...), ":")
+	}
 }
 
 func (m VolumeMount) IsNamedVolume() bool {

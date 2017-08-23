@@ -8,7 +8,6 @@
     },
     "extservice": {
       "image": "docker://alpine:latest",
-      "hostname": "service.example.org",
       "entrypoint": [
         "entrypoint.sh",
         "arg1",
@@ -21,6 +20,7 @@
         "MYVAR2": "MYEXTVALFROMFILE2",
         "MYVAR3": "MYBASEVALFROMFILE3"
       },
+      "hostname": "service.example.org",
       "ports": [
         {
           "target": 9000,
@@ -56,7 +56,6 @@
     },
     "myservice": {
       "image": "docker://owncloud:latest",
-      "hostname": "owncloud.example.org",
       "entrypoint": [
         "entrypoint.sh"
       ],
@@ -66,6 +65,7 @@
         "MYVAR1": "MYVALFROMFILE_OVERWRITTEN_IN_ENVIRONMENT",
         "MYVAR2": "MYEXTVALFROMFILE2"
       },
+      "hostname": "owncloud.example.org",
       "ports": [
         {
           "target": 5555,

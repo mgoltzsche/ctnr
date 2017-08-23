@@ -14,6 +14,7 @@ import (
 	"os"
 	//"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -182,7 +183,6 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 			hostname = hostname[:dotPos]
 		}
 	}
-	fqn := strings.Trim(hostname+"."+domainname, ".")
 	spec.Hostname = hostname
 
 	// Add network hooks
@@ -212,12 +212,15 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 			Poststop: []specs.Hook{},
 		}
 
-		hookArgs := []string{"cntnr", "net", "init", "-hostname=" + fqn}
+		hookArgs := []string{"cntnr", "net", "init", "--hostname=" + hostname, "--domainname=" + domainname}
 		for _, dnsip := range service.Dns {
 			hookArgs = append(hookArgs, "--dns="+dnsip)
 		}
 		for _, search := range service.DnsSearch {
 			hookArgs = append(hookArgs, "--dns-search="+search)
+		}
+		for _, opt := range service.DnsOptions {
+			hookArgs = append(hookArgs, "--dns-opts="+opt)
 		}
 		for _, e := range service.ExtraHosts {
 			hookArgs = append(hookArgs, "--hosts-entry="+e.Name+"="+e.Ip)
@@ -229,7 +232,7 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 		})
 		addHook(&spec.Hooks.Poststop, specs.Hook{
 			Path: executable,
-			Args: append([]string{"cntnr", "net", "del"}, networks...),
+			Args: append([]string{"cntnr", "net", "rm"}, networks...),
 			Env:  cniEnv,
 		})
 	}
@@ -385,6 +388,7 @@ func applyService(img *images.Image, service *Service, spec *specs.Spec) error {
 			exposecsv[i] = k
 			i++
 		}
+		sort.Strings(exposecsv)
 		spec.Annotations["org.opencontainers.image.exposedPorts"] = strings.Join(exposecsv, ",")
 	}
 

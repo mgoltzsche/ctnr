@@ -279,65 +279,72 @@ func toExpose(p []string, sub Substitution, rp *[]string, path string) {
 }
 
 func toPorts(p []string, sub Substitution, rp *[]PortBinding, path string) error {
-	r := *rp
-	if r == nil {
-		r = []PortBinding{}
-	}
-	if p == nil {
-		return nil
-	}
-	for _, e := range p {
-		e = sub(e)
-		sp := strings.Split(e, "/")
-		if len(sp) > 2 {
-			return fmt.Errorf("Invalid port entry %q at %s", e, path)
-		}
-		prot := "tcp"
-		if len(sp) == 2 {
-			prot = strings.ToLower(sp[1])
-		}
-		s := strings.Split(sp[0], ":")
-		if len(s) > 2 {
-			return fmt.Errorf("Invalid port entry %q at %s", e, path)
-		}
-		var hostPortExpr, targetPortExpr string
-		switch len(s) {
-		case 1:
-			hostPortExpr = s[0]
-			targetPortExpr = hostPortExpr
-		case 2:
-			hostPortExpr = s[0]
-			targetPortExpr = s[1]
-		}
-		hostFrom, hostTo, err := toPortRange(hostPortExpr, path)
-		if err != nil {
-			return err
-		}
-		targetFrom, targetTo, err := toPortRange(targetPortExpr, path)
-		if err != nil {
-			return err
-		}
-		rangeSize := targetTo - targetFrom
-		if (hostTo - hostFrom) != rangeSize {
-			return fmt.Errorf("Port %q's range size differs between host and destination at %s", e, path)
-		}
-		for d := 0; d <= rangeSize; d++ {
-			targetPort := targetFrom + d
-			pubPort := hostFrom + d
-			if targetPort < 0 || targetPort > 65535 {
-				return fmt.Errorf("Target port %d exceeded range", targetPort)
+	if p != nil {
+		for _, e := range p {
+			// TODO: also support long syntax
+			e = sub(e)
+			if err := ParsePortBinding(e, rp); err != nil {
+				return fmt.Errorf("%s: %s", path, err)
 			}
-			if pubPort < 0 || pubPort > 65535 {
-				return fmt.Errorf("Published port %d exceeded range", pubPort)
-			}
-			r = append(r, PortBinding{uint16(targetPort), uint16(pubPort), prot})
 		}
 	}
-	*rp = r
 	return nil
 }
 
-func toPortRange(rangeExpr string, path string) (from, to int, err error) {
+func ParsePortBinding(expr string, r *[]PortBinding) error {
+	sp := strings.Split(expr, "/")
+	if len(sp) > 2 {
+		return fmt.Errorf("Invalid port entry %q", expr)
+	}
+	prot := "tcp"
+	if len(sp) == 2 {
+		prot = strings.ToLower(sp[1])
+	}
+	s := strings.Split(sp[0], ":")
+	if len(s) > 2 {
+		return fmt.Errorf("Invalid port entry %q", expr)
+	}
+	var hostPortExpr, targetPortExpr string
+	switch len(s) {
+	case 1:
+		hostPortExpr = s[0]
+		targetPortExpr = hostPortExpr
+	case 2:
+		hostPortExpr = s[0]
+		targetPortExpr = s[1]
+	}
+	hostFrom, hostTo, err := toPortRange(hostPortExpr)
+	if err != nil {
+		return err
+	}
+	targetFrom, targetTo, err := toPortRange(targetPortExpr)
+	if err != nil {
+		return err
+	}
+	rangeSize := targetTo - targetFrom
+	if (hostTo - hostFrom) != rangeSize {
+		return fmt.Errorf("Port %q's range size differs between host and destination", expr)
+	}
+	for i := 0; i <= rangeSize; i++ {
+		targetPort := targetFrom + i
+		pubPort := hostFrom + i
+		if targetPort < 0 || targetPort > 65535 {
+			return fmt.Errorf("Target port %d exceeded range", targetPort)
+		}
+		if pubPort < 0 || pubPort > 65535 {
+			return fmt.Errorf("Published port %d exceeded range", pubPort)
+		}
+		b := PortBinding{uint16(targetPort), uint16(pubPort), prot}
+		if *r == nil {
+			*r = []PortBinding{b}
+		} else {
+			*r = append(*r, b)
+		}
+	}
+	return nil
+}
+
+func toPortRange(rangeExpr string) (from, to int, err error) {
 	s := strings.Split(rangeExpr, "-")
 	if len(s) < 3 {
 		from, err = strconv.Atoi(s[0])
@@ -353,7 +360,7 @@ func toPortRange(rangeExpr string, path string) (from, to int, err error) {
 			}
 		}
 	}
-	err = fmt.Errorf("Invalid port range %q at %s", rangeExpr, path)
+	err = fmt.Errorf("Invalid port range %q", rangeExpr)
 	return
 }
 
@@ -364,26 +371,19 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, volDir, baseFile, de
 	}
 	// TODO: maybe remove overwritten volumes
 	for _, e := range dcVols {
-		var src, tgt string
-		opts := []string{}
+		var v VolumeMount
 
 		switch t := e.(type) {
 		case string:
-			str := sub(e.(string))
-			s := strings.SplitN(str, ":", 3)
-			switch len(s) {
-			case 1:
-				tgt = s[0]
-			default:
-				src = s[0]
-				tgt = s[1]
-				opts = s[2:]
+			if err = ParseVolumeMount(sub(e.(string)), &v); err != nil {
+				return fmt.Errorf("%s: %s", path, err)
 			}
 		case map[interface{}]interface{}:
 			m := e.(map[interface{}]interface{})
 			vtype := toString(m["type"], sub, path+".type")
-			src = toString(m["source"], sub, path+".source")
-			tgt = toString(m["target"], sub, path+".target")
+			v.Source = toString(m["source"], sub, path+".source")
+			v.Target = toString(m["target"], sub, path+".target")
+			v.Options = []string{}
 			if vtype == "" {
 				vtype = "volume"
 			}
@@ -391,35 +391,46 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, volDir, baseFile, de
 			if err != nil {
 				return err
 			}
-			for k, v := range optMap {
-				if v == "" {
-					opts = append(opts, k)
+			for k, p := range optMap {
+				if p == "" {
+					v.Options = append(v.Options, k)
 				} else {
-					opts = append(opts, k+"="+v)
+					v.Options = append(v.Options, k+"="+p)
 				}
+			}
+			if v.Target == "" {
+				return fmt.Errorf("No volume mount target specified at %s: %v", path, e)
 			}
 		default:
 			return fmt.Errorf("Unsupported element type %v at %s", t, path)
 		}
 
-		if tgt == "" {
-			return fmt.Errorf("No volume mount target specified at %s: %v", path, e)
-		}
-
-		v := VolumeMount{
-			Source:  src,
-			Target:  tgt,
-			Options: opts,
-		}
-
-		if len(src) > 0 && !v.IsNamedVolume() {
-			v.Source = translatePath(src, baseFile, destBaseFile)
+		if v.Source != "" && !v.IsNamedVolume() {
+			v.Source = translatePath(v.Source, baseFile, destBaseFile)
 		}
 
 		r = append(r, v)
 	}
 	*rp = r
 	return nil
+}
+
+func ParseVolumeMount(expr string, r *VolumeMount) (err error) {
+	r.Options = []string{}
+	s := strings.SplitN(expr, ":", 3)
+	switch len(s) {
+	case 1:
+		r.Source = ""
+		r.Target = s[0]
+	default:
+		r.Source = s[0]
+		r.Target = s[1]
+		r.Options = s[2:]
+	}
+	if r.Target == "" {
+		err = fmt.Errorf("No volume mount target specified: %s", expr)
+	}
+	return
 }
 
 func toImageBuild(s interface{}, sub Substitution, rp **ImageBuild, baseFile, destBaseFile, path string) (err error) {
@@ -666,21 +677,21 @@ type dockerCompose struct {
 
 type dcService struct {
 	Extends         *dcServiceExtension
-	Image           string
-	Build           interface{} // string or map[interface{}]interface{}
-	Hostname        string
-	Domainname      string
+	Image           string         `yaml:"image"`
+	Build           interface{}    `yaml:"build"` // string or map[interface{}]interface{}
+	Hostname        string         `yaml:"hostname"`
+	Domainname      string         `yaml:"domainname"`
 	Dns             interface{}    `yaml:"dns"`
 	DnsSearch       interface{}    `yaml:"dns_search"`
 	ExtraHosts      []string       `yaml:"extra_hosts"`
-	Entrypoint      interface{}    // string or array
-	Command         interface{}    // string or array
+	Entrypoint      interface{}    `yaml:"entrypoint"` // string or array
+	Command         interface{}    `yaml:"command"`    // string or array
 	WorkingDir      string         `yaml:"working_dir"`
 	StdinOpen       string         `yaml:"stdin_open"`
 	Tty             string         `yaml:"tty"`
 	ReadOnly        string         `yaml:"read_only"`
 	EnvFile         []string       `yaml:"env_file"`
-	Environment     interface{}    // array of VAR=VAL or map
+	Environment     interface{}    `yaml:"environment"` // array of VAR=VAL or map
 	HealthCheck     *dcHealthCheck `yaml:"healthcheck"`
 	Expose          []string       `yaml:"expose"`
 	Ports           []string       `yaml:"ports"`
