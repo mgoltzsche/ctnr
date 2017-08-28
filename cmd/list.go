@@ -15,14 +15,30 @@
 package cmd
 
 import (
+	"fmt"
 	"github.com/spf13/cobra"
 )
 
 var listCmd = &cobra.Command{
-	Use:   "ls",
-	Short: "Lists all containers in the local store",
+	Use:   "list",
+	Short: "Lists all active containers in the local store (--state-dir)",
 	Long:  `Lists all containers in the local store.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		panic("TODO: list containers")
-	},
+	Run:   handleError(runList),
+}
+
+func runList(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return usageError("No args expected")
+	}
+	l, err := containerMngr.List()
+	if err != nil {
+		return err
+	}
+	// TODO: print pid, created, image (annotation) and ip
+	f := "%-36s  %-10s\n"
+	fmt.Printf(f, "ID", "STATUS")
+	for _, c := range l {
+		fmt.Printf(f, c.ID, c.Status)
+	}
+	return nil
 }

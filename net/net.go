@@ -29,6 +29,7 @@ type ContainerNetManager struct {
 	state          *specs.State
 	rootfs         string
 	hostname       string
+	domainname     string
 	cni            *libcni.CNIConfig
 	netNS          string
 	confDir        string
@@ -100,10 +101,9 @@ func NewContainerNetManager(s *specs.State) (*ContainerNetManager, error) {
 		hostname = s.ID
 	}
 
-	return &ContainerNetManager{
+	m := &ContainerNetManager{
 		state:          s,
 		rootfs:         rootfs,
-		hostname:       hostname,
 		cni:            cni,
 		netNS:          netns,
 		confDir:        netConfDir,
@@ -115,7 +115,10 @@ func NewContainerNetManager(s *specs.State) (*ContainerNetManager, error) {
 		hosts:          map[string]string{},
 		hostsOrder:     []string{},
 		//ips:            []*ipConfig{},
-	}, nil
+	}
+	m.SetHostname(hostname)
+	return m, nil
+
 }
 
 // Resolves the configured CNI network by name
@@ -156,7 +159,17 @@ func (m *ContainerNetManager) DelNet(ifName, netName string) (err error) {
 }
 
 func (m *ContainerNetManager) SetHostname(hostname string) {
-	m.hostname = hostname
+	dotPos := strings.Index(hostname, ".")
+	if dotPos > 0 && dotPos+1 < len(hostname) {
+		m.hostname = hostname[:dotPos]
+		m.domainname = hostname[dotPos+1:]
+	} else {
+		m.hostname = hostname
+	}
+}
+
+func (m *ContainerNetManager) SetDomainname(domainname string) {
+	m.domainname = domainname
 }
 
 func (m *ContainerNetManager) AddHostnameHostsEntry(ifName string) error {
@@ -164,14 +177,11 @@ func (m *ContainerNetManager) AddHostnameHostsEntry(ifName string) error {
 	if err != nil {
 		return err
 	}
-	hostname := m.hostname
-	dotPos := strings.Index(hostname, ".")
-	if dotPos == -1 {
-		m.AddHostsEntry(hostname, ip)
+	if m.domainname == "" {
+		m.AddHostsEntry(m.hostname, ip)
 	} else {
-		// Handle FQN
-		m.AddHostsEntry(hostname, ip)
-		m.AddHostsEntry(hostname[:dotPos], ip)
+		m.AddHostsEntry(m.hostname+"."+m.domainname, ip)
+		m.AddHostsEntry(m.hostname, ip)
 	}
 	return nil
 }

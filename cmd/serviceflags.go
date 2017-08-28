@@ -24,6 +24,27 @@ import (
 	"strings"
 )
 
+var flagsBundle = newApps()
+
+func initBundleRunFlags(f *pflag.FlagSet) {
+	initBundleFlags(f)
+	f.VarP((*cStdin)(flagsBundle), "stdin", "i", "binds stdin to the container")
+	f.VarP((*cTty)(flagsBundle), "tty", "t", "binds a terminal to the container")
+}
+
+func initBundleFlags(f *pflag.FlagSet) {
+	c := flagsBundle
+	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
+	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
+	f.Var((*cEnvironment)(c), "env", "container environment variables")
+	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
+	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
+	f.Var((*cReadOnly)(c), "readonly", "mounts the root file system in read only mode")
+	initNetConfFlags(f, &c.netCfg)
+	// Stop parsing after first non flag argument (image)
+	f.SetInterspersed(false)
+}
+
 func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
 	f.Var((*cHostname)(c), "hostname", "hostname that is written to /etc/hostname and /etc/hosts")
 	f.Var((*cDomainname)(c), "domainname", "container domainname")
@@ -33,125 +54,10 @@ func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
 	f.Var((*cExtraHosts)(c), "hosts-entry", "additional entries to write in /etc/hosts")
 }
 
-type netCfg struct {
-	curr *model.NetConf
-}
-
-type cHostname netCfg
-
-func (c *cHostname) Set(s string) error {
-	(*netCfg)(c).curr.Hostname = s
-	return nil
-}
-
-func (c *cHostname) Type() string {
-	return "string"
-}
-
-func (c *cHostname) String() string {
-	return (*netCfg)(c).curr.Hostname
-}
-
-type cDomainname netCfg
-
-func (c *cDomainname) Set(s string) error {
-	(*netCfg)(c).curr.Domainname = s
-	return nil
-}
-
-func (c *cDomainname) Type() string {
-	return "string"
-}
-
-func (c *cDomainname) String() string {
-	return (*netCfg)(c).curr.Domainname
-}
-
-type cDns netCfg
-
-func (c *cDns) Set(s string) error {
-	return addStringEntries(s, &(*netCfg)(c).curr.Dns)
-}
-
-func (c *cDns) Type() string {
-	return "string..."
-}
-
-func (c *cDns) String() string {
-	return entriesToString((*netCfg)(c).curr.Dns)
-}
-
-type cDnsSearch netCfg
-
-func (c *cDnsSearch) Set(s string) error {
-	return addStringEntries(s, &(*netCfg)(c).curr.DnsSearch)
-}
-
-func (c *cDnsSearch) Type() string {
-	return "string..."
-}
-
-func (c *cDnsSearch) String() string {
-	return entriesToString((*netCfg)(c).curr.DnsSearch)
-}
-
-type cDnsOptions netCfg
-
-func (c *cDnsOptions) Set(s string) error {
-	return addStringEntries(s, &(*netCfg)(c).curr.DnsOptions)
-}
-
-func (c *cDnsOptions) Type() string {
-	return "string..."
-}
-
-func (c *cDnsOptions) String() string {
-	return entriesToString((*netCfg)(c).curr.DnsOptions)
-}
-
-type cExtraHosts netCfg
-
-func (c *cExtraHosts) Set(v string) error {
-	s := strings.SplitN(v, "=", 2)
-	k := strings.Trim(s[0], " ")
-	if len(s) != 2 || k == "" || strings.Trim(s[1], " ") == "" {
-		return fmt.Errorf("Expected option value format: NAME=IP")
-	}
-	(*c).curr.ExtraHosts = append((*c).curr.ExtraHosts, model.ExtraHost{k, strings.Trim(s[1], " ")})
-	return nil
-}
-
-func (c *cExtraHosts) Type() string {
-	return "NAME=IP..."
-}
-
-func (c *cExtraHosts) String() string {
-	s := ""
-	for _, e := range (*c).curr.ExtraHosts {
-		s += strings.Trim(" "+e.Name+"="+e.Ip, " ")
-	}
-	return s
-}
-
-type cPortBinding netCfg
-
-func (c *cPortBinding) Set(s string) error {
-	return model.ParsePortBinding(s, &(*netCfg)(c).curr.Ports)
-}
-
-func (c *cPortBinding) Type() string {
-	return "HOST:CONTAINER[/udp]..."
-}
-
-func (c *cPortBinding) String() string {
-	s := ""
-	p := (*netCfg)(c).curr.Ports
-	if p != nil {
-		for _, p := range p {
-			s += strings.Trim(" "+p.String(), " ")
-		}
-	}
-	return s
+func newApps() *apps {
+	f := &apps{netCfg{nil}, []*model.Service{}}
+	f.add()
+	return f
 }
 
 type apps struct {
@@ -167,6 +73,18 @@ func (c *apps) add() {
 
 func (c *apps) last() *model.Service {
 	return c.apps[len(c.apps)-1]
+}
+
+func (c *apps) setBundleArgs(ca []string) error {
+	if len(ca) == 0 {
+		return usageError("No image arg specified")
+	}
+	last := c.last()
+	last.Image = ca[0]
+	if len(ca) > 1 {
+		last.Command = ca[1:]
+	}
+	return nil
 }
 
 type cName apps
@@ -299,6 +217,127 @@ func (c *cVolumeMount) String() string {
 	s := ""
 	for _, v := range (*apps)(c).last().Volumes {
 		s += strings.Trim(" "+v.String(), " ")
+	}
+	return s
+}
+
+type netCfg struct {
+	curr *model.NetConf
+}
+
+type cHostname netCfg
+
+func (c *cHostname) Set(s string) error {
+	(*netCfg)(c).curr.Hostname = s
+	return nil
+}
+
+func (c *cHostname) Type() string {
+	return "string"
+}
+
+func (c *cHostname) String() string {
+	return (*netCfg)(c).curr.Hostname
+}
+
+type cDomainname netCfg
+
+func (c *cDomainname) Set(s string) error {
+	(*netCfg)(c).curr.Domainname = s
+	return nil
+}
+
+func (c *cDomainname) Type() string {
+	return "string"
+}
+
+func (c *cDomainname) String() string {
+	return (*netCfg)(c).curr.Domainname
+}
+
+type cDns netCfg
+
+func (c *cDns) Set(s string) error {
+	return addStringEntries(s, &(*netCfg)(c).curr.Dns)
+}
+
+func (c *cDns) Type() string {
+	return "string..."
+}
+
+func (c *cDns) String() string {
+	return entriesToString((*netCfg)(c).curr.Dns)
+}
+
+type cDnsSearch netCfg
+
+func (c *cDnsSearch) Set(s string) error {
+	return addStringEntries(s, &(*netCfg)(c).curr.DnsSearch)
+}
+
+func (c *cDnsSearch) Type() string {
+	return "string..."
+}
+
+func (c *cDnsSearch) String() string {
+	return entriesToString((*netCfg)(c).curr.DnsSearch)
+}
+
+type cDnsOptions netCfg
+
+func (c *cDnsOptions) Set(s string) error {
+	return addStringEntries(s, &(*netCfg)(c).curr.DnsOptions)
+}
+
+func (c *cDnsOptions) Type() string {
+	return "string..."
+}
+
+func (c *cDnsOptions) String() string {
+	return entriesToString((*netCfg)(c).curr.DnsOptions)
+}
+
+type cExtraHosts netCfg
+
+func (c *cExtraHosts) Set(v string) error {
+	s := strings.SplitN(v, "=", 2)
+	k := strings.Trim(s[0], " ")
+	if len(s) != 2 || k == "" || strings.Trim(s[1], " ") == "" {
+		return fmt.Errorf("Expected option value format: NAME=IP")
+	}
+	(*c).curr.ExtraHosts = append((*c).curr.ExtraHosts, model.ExtraHost{k, strings.Trim(s[1], " ")})
+	return nil
+}
+
+func (c *cExtraHosts) Type() string {
+	return "NAME=IP..."
+}
+
+func (c *cExtraHosts) String() string {
+	s := ""
+	for _, e := range (*c).curr.ExtraHosts {
+		s += strings.Trim(" "+e.Name+"="+e.Ip, " ")
+	}
+	return s
+}
+
+type cPortBinding netCfg
+
+func (c *cPortBinding) Set(s string) error {
+	return model.ParsePortBinding(s, &(*netCfg)(c).curr.Ports)
+}
+
+func (c *cPortBinding) Type() string {
+	return "HOST:CONTAINER[/udp]..."
+}
+
+func (c *cPortBinding) String() string {
+	s := ""
+	p := (*netCfg)(c).curr.Ports
+	if p != nil {
+		for _, p := range p {
+			s += strings.Trim(" "+p.String(), " ")
+		}
 	}
 	return s
 }

@@ -47,6 +47,7 @@ type NetConf struct {
 	ExtraHosts []ExtraHost `json:"extra_hosts,omitempty"`
 	// TODO: bind ports
 	Ports []PortBinding `json:"ports,omitempty"`
+	// TODO: add networks
 }
 
 type ExtraHost struct {

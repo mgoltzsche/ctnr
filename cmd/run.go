@@ -17,22 +17,17 @@ package cmd
 import (
 	"fmt"
 	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/run"
 	"github.com/satori/go.uuid"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-	"path/filepath"
 )
 
 var (
 	runCmd = &cobra.Command{
-		Use:   "run [flags] IMAGE1 [I1CMD1[, I1CMD2...]] [--- [flags] IMAGE2 [I2CMD1[, I2CMD2...]]]...",
+		Use:   "run [flags] IMAGE1 [COMMAND1] [--- [flags] IMAGE2 [COMMAND2]]...",
 		Short: "Runs a container",
 		Long:  `Runs a container.`,
 		Run:   handleError(runRun),
 	}
-
-	cntnrs = &apps{netCfg{nil}, []*model.Service{}}
 
 /*
 	TODO:
@@ -41,93 +36,43 @@ var (
 )
 
 func init() {
-	cntnrs.add()
-	initContainerFlags(runCmd.Flags())
-	initBundleFlags(runCmd.Flags(), cntnrs)
-}
-
-func initBundleFlags(f *pflag.FlagSet, c *apps) {
-	defaultBundleStoreDir := filepath.Join(currUser.HomeDir, ".cntnr", "containers")
-	f.StringVar(&flagBundleStoreDir, "bundle-store-dir", defaultBundleStoreDir, "directory to store OCI runtime bundles")
-	f.Var((*cName)(c), "name", "container name and implicit hostname when hostname is not set explicitly")
-	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
-	f.Var((*cEnvironment)(c), "env", "container environment variables")
-	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
-	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
-	f.Var((*cStdin)(c), "stdin", "binds stdin to the container")
-	f.Var((*cTty)(c), "tty", "binds the terminal to the container")
-	f.Var((*cReadOnly)(c), "readonly", "mounts the root file system in read only mode")
-	initNetConfFlags(f, &c.netCfg)
-	// Stop parsing after first non flag argument (image)
-	f.SetInterspersed(false)
+	initBundleRunFlags(runCmd.Flags())
 }
 
 func runRun(cmd *cobra.Command, args []string) error {
 	argSet := split(args, "---")
-	err := applyContainerArgs(cmd, argSet[0])
-	if err != nil {
+	if err := flagsBundle.setBundleArgs(argSet[0]); err != nil {
 		return err
 	}
 	for _, a := range argSet[1:] {
-		cntnrs.add()
-		err = cmd.Flags().Parse(a)
-		if err != nil {
+		flagsBundle.add()
+		if err := cmd.Flags().Parse(a); err != nil {
 			return usageError(err.Error())
 		}
-		err = applyContainerArgs(cmd, cmd.Flags().Args())
-		if err != nil {
+		if err := flagsBundle.setBundleArgs(cmd.Flags().Args()); err != nil {
 			return err
 		}
 	}
-	imgs, err := newImages()
-	if err != nil {
-		return err
-	}
-	// TODO: provide cli option
-	rootDir := "/run/runc"
-	if flagRootless {
-		rootDir = "/tmp/runc"
-	}
-	manager := run.NewContainerManager(debugLog)
 	project := &model.Project{}
-	for _, s := range cntnrs.apps {
+	for _, s := range flagsBundle.apps {
 		fmt.Println(s.JSON())
+		bundle, err := createRuntimeBundle(project, s, "")
+		if err != nil {
+			return err
+		}
 		containerId := uuid.NewV4().String()
-		if s.Name == "" {
-			s.Name = containerId
-		}
-		bundleDir := filepath.Join(flagBundleStoreDir, containerId)
-		vols := model.NewVolumeResolver(project, bundleDir)
-		b, err := createRuntimeBundle(s, imgs, vols, containerId, bundleDir)
+		c, err := containerMngr.NewContainer(containerId, bundle.Dir, bundle.Spec, s.StdinOpen)
 		if err != nil {
 			return err
 		}
 
-		c, err := run.NewContainer(containerId, b.Dir, rootDir, b.Spec, s.StdinOpen, errorLog, debugLog)
-		if err != nil {
-			return err
-		}
-
-		err = manager.Deploy(c)
-		if err != nil {
-			manager.Stop()
+		if err = containerMngr.Deploy(c); err != nil {
+			containerMngr.Stop()
 			return err
 		}
 	}
-	manager.HandleSignals()
-	return manager.Wait()
-}
-
-func applyContainerArgs(cmd *cobra.Command, ca []string) error {
-	if len(ca) == 0 {
-		return usageError("No image arg specified")
-	}
-	last := cntnrs.last()
-	last.Image = ca[0]
-	if len(ca) > 1 {
-		last.Command = ca[1:]
-	}
-	return nil
+	containerMngr.HandleSignals()
+	return containerMngr.Wait()
 }
 
 func split(args []string, sep string) [][]string {

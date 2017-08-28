@@ -16,30 +16,34 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/containers/image/types"
-	"github.com/mgoltzsche/cntnr/images"
 	"github.com/mgoltzsche/cntnr/model"
+	"github.com/satori/go.uuid"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"os"
 	"path/filepath"
 )
 
 func handleError(cf func(cmd *cobra.Command, args []string) error) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
-		err := cf(cmd, args)
-		if err != nil {
-			msg := err.Error()
-			exitCode := 2
-			switch err.(type) {
-			case UsageError:
-				msg = fmt.Sprintf("Error: %s\n%s\n%s\n", msg, cmd.UsageString(), msg)
-				exitCode = 1
-			}
-			os.Stderr.WriteString(msg)
-			os.Exit(exitCode)
-		}
+		exitOnError(cmd, cf(cmd, args))
 	}
+}
+
+func exitOnError(cmd *cobra.Command, err error) {
+	if err == nil {
+		return
+	}
+	msg := err.Error()
+	exitCode := 2
+	switch err.(type) {
+	case UsageError:
+		msg = fmt.Sprintf("Error: %s\n%s\n%s\n", msg, cmd.UsageString(), msg)
+		exitCode = 1
+	default:
+		msg = msg + "\n"
+	}
+	os.Stderr.WriteString(msg)
+	os.Exit(exitCode)
 }
 
 func usageError(msg string) UsageError {
@@ -62,46 +66,19 @@ func exitError(exitCode int, frmt string, values ...interface{}) {
 	os.Exit(exitCode)
 }
 
-func initImageFlags(f *pflag.FlagSet) {
-	defaultImgStoreDir := filepath.Join(currUser.HomeDir, ".cntnr", "images")
-	f.StringVar(&flagImgStoreDir, "image-store-dir", defaultImgStoreDir, "directory to store images")
-}
-
-func initContainerFlags(f *pflag.FlagSet) {
-	initImageFlags(f)
-	f.BoolVar(&flagRootless, "rootless", currUser.Uid != "0", "enables container execution as unprivileged user")
-}
-
-func newImages() (*images.Images, error) {
-	imgCtx := imageContext()
-	// TODO: expose --image-pull-policy CLI option
-	imgs, err := images.NewImages(flagImgStoreDir, images.PULL_NEW, imgCtx, debugLog)
-	if err != nil {
-		return nil, fmt.Errorf("Could not init images: %s", err)
+func createRuntimeBundle(p *model.Project, s *model.Service, bundleDir string) (*model.RuntimeBundleBuilder, error) {
+	if bundleDir == "" {
+		bundleId := uuid.NewV4().String()
+		bundleDir = filepath.Join(bundleMngr.Dir(), bundleId)
+	} else {
+		absDir, err := filepath.Abs(bundleDir)
+		if err != nil {
+			return nil, err
+		}
+		bundleDir = absDir
 	}
-	return imgs, nil
-}
-
-func imageContext() *types.SystemContext {
-	// TODO: provide CLI options
-	c := &types.SystemContext{
-		RegistriesDirPath:           "",
-		DockerCertPath:              "",
-		DockerInsecureSkipTLSVerify: true,
-		OSTreeTmpDirPath:            "ostree-tmp-dir",
-		// TODO: add docker auth
-		//DockerAuthConfig: dockerAuth,
-	}
-
-	if flagRootless {
-		c.DockerCertPath = "./docker-cert"
-	}
-
-	return c
-}
-
-func createRuntimeBundle(s *model.Service, imgs *images.Images, vols model.VolumeResolver, id, dir string) (*model.RuntimeBundleBuilder, error) {
-	b, err := s.NewRuntimeBundleBuilder(id, dir, imgs, vols, flagRootless)
+	vols := model.NewVolumeResolver(p, bundleDir)
+	b, err := s.NewRuntimeBundleBuilder(bundleDir, imageMngr, vols, flagRootless)
 	if err != nil {
 		return nil, err
 	}

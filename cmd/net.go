@@ -29,9 +29,10 @@ import (
 var (
 	netCmd = &cobra.Command{
 		Use:   "net",
-		Short: "OCI-hook compatible network manager",
+		Short: "OCI runtime hooks to setup networking (not to be used outside an OCI hook)",
 		Long: `Subcommands below this command support initialization and destruction 
-of container networks and are meant to be declared as hooks of an OCI runtime bundle.`,
+of container networks and are meant to be declared as hooks of an OCI runtime bundle
+and not executed manually.`,
 	}
 	netInitCmd = &cobra.Command{
 		Use:   "init",
@@ -75,7 +76,12 @@ func runNetInit(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 	c := initFlags.curr
-	netMan.SetHostname(c.Hostname)
+	if c.Domainname != "" {
+		netMan.SetDomainname(c.Domainname)
+	}
+	if c.Hostname != "" {
+		netMan.SetHostname(c.Hostname)
+	}
 	err = netMan.AddHostnameHostsEntry(pubIf)
 	if err != nil {
 		return

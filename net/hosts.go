@@ -31,7 +31,7 @@ func writeHostsFile(dest string, hostIpMap map[string]string, order []string) er
 
 func defaultHosts() map[string]string {
 	return map[string]string{
-		"127.0.0.1": "localhost localhost.domain localhost4 localhost4.localdomain4",
+		"127.0.0.1": "localhost localhost.localdomain localhost.domain localhost4 localhost4.localdomain4",
 		"::1":       "ip6-localhost ip6-loopback localhost6 localhost6.localdomain6",
 		"fe00::0":   "ip6-localnet",
 		"ff00::0":   "ip6-mcastprefix",

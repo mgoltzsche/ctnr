@@ -19,6 +19,11 @@ import (
 	"time"
 )
 
+const (
+	ANNOTATION_BUNDLE_IMAGE_NAME = "com.github.mgoltzsche.cntnr.bundle.image.name"
+	ANNOTATION_BUNDLE_CREATED    = "com.github.mgoltzsche.cntnr.bundle.created"
+)
+
 type RuntimeBundleBuilder struct {
 	Dir   string
 	Image *images.Image
@@ -65,10 +70,7 @@ func (b *RuntimeBundleBuilder) Build(debug log.Logger) error {
 	return nil
 }
 
-func (service *Service) NewRuntimeBundleBuilder(containerID, bundleDir string, imgs *images.Images, vols VolumeResolver, rootless bool) (*RuntimeBundleBuilder, error) {
-	if service.Name == "" {
-		return nil, fmt.Errorf("Service has no name")
-	}
+func (service *Service) NewRuntimeBundleBuilder(bundleDir string, imgs *images.Images, vols VolumeResolver, rootless bool) (*RuntimeBundleBuilder, error) {
 	if service.Image == "" {
 		return nil, fmt.Errorf("Service %q has no image", service.Name)
 	}
@@ -76,14 +78,14 @@ func (service *Service) NewRuntimeBundleBuilder(containerID, bundleDir string, i
 	if err != nil {
 		return nil, err
 	}
-	spec, err := service.toSpec(containerID, img, vols, rootless)
+	spec, err := service.toSpec(img, vols, rootless)
 	if err != nil {
 		return nil, err
 	}
 	return &RuntimeBundleBuilder{bundleDir, img, spec}, nil
 }
 
-func (service *Service) toSpec(containerID string, img *images.Image, vols VolumeResolver, rootless bool) (*specs.Spec, error) {
+func (service *Service) toSpec(img *images.Image, vols VolumeResolver, rootless bool) (*specs.Spec, error) {
 	spec := specconv.Example()
 
 	err := applyService(img, service, spec)
@@ -174,9 +176,7 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 	// Add hostname
 	hostname := service.Hostname
 	domainname := service.Domainname
-	if hostname == "" {
-		hostname = containerID
-	} else {
+	if hostname != "" {
 		dotPos := strings.Index(hostname, ".")
 		if dotPos != -1 {
 			domainname = hostname[dotPos+1:]
@@ -212,7 +212,13 @@ func (service *Service) toSpec(containerID string, img *images.Image, vols Volum
 			Poststop: []specs.Hook{},
 		}
 
-		hookArgs := []string{"cntnr", "net", "init", "--hostname=" + hostname, "--domainname=" + domainname}
+		hookArgs := []string{"cntnr", "net", "init"}
+		if hostname != "" {
+			hookArgs = append(hookArgs, "--hostname="+hostname)
+		}
+		if domainname != "" {
+			hookArgs = append(hookArgs, "--domainname="+domainname)
+		}
 		for _, dnsip := range service.Dns {
 			hookArgs = append(hookArgs, "--dns="+dnsip)
 		}
@@ -349,13 +355,15 @@ func applyService(img *images.Image, service *Service, spec *specs.Spec) error {
 
 	// Apply annotations
 	spec.Annotations = map[string]string{}
-	// TODO: extract annotations from image index and manifest
+	// TODO: extract annotations also from image index and manifest
 	if img.Config.Author != "" {
 		spec.Annotations["org.opencontainers.image.author"] = img.Config.Author
 	}
 	if !time.Unix(0, 0).Equal(*img.Config.Created) {
 		spec.Annotations["org.opencontainers.image.created"] = img.Config.Created.String()
 	}
+	spec.Annotations[ANNOTATION_BUNDLE_IMAGE_NAME] = img.Name
+	spec.Annotations[ANNOTATION_BUNDLE_CREATED] = time.Now().String()
 	/* TODO: enable if supported:
 	if img.StopSignal != "" {
 		spec.Annotations["org.opencontainers.image.stopSignal"] = img.Config.StopSignal

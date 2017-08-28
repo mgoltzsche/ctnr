@@ -18,15 +18,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
-
-}
-
-var runComposeCmd = &cobra.Command{
-	Use:   "run-compose",
-	Short: "Runs a docker compose file",
-	Long:  `Runs all services from a docker compose file.`,
+var composeCmd = &cobra.Command{
+	Use:   "compose",
+	Short: "Run docker compose files",
+	Long:  `Converts and runs docker compose files.`,
 	Run: func(cmd *cobra.Command, args []string) {
-
+		panic("TODO: compose run|bundle|...")
 	},
 }

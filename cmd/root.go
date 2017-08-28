@@ -20,22 +20,29 @@ import (
 	"github.com/spf13/cobra"
 	//homedir "github.com/mitchellh/go-homedir"
 	//"github.com/spf13/viper"
+	"github.com/containers/image/types"
+	"github.com/mgoltzsche/cntnr/bundles"
+	"github.com/mgoltzsche/cntnr/images"
+	"github.com/mgoltzsche/cntnr/run"
 	"os"
 	"os/user"
+	"path/filepath"
 )
 
 var (
 	flagVerbose        bool
-	flagImgStoreDir    string
-	flagBundleStoreDir string
 	flagRootless       bool
 	flagCfgFile        string
+	flagBundleStoreDir string
+	flagImgStoreDir    string
+	flagStateDir       string
 
-	currUser *user.User
-
-	errorLog = log.NewStdLogger(os.Stderr)
-	warnLog  = log.NewStdLogger(os.Stderr)
-	debugLog = log.NewNopLogger()
+	bundleMngr    *bundles.Bundles
+	imageMngr     *images.Images
+	containerMngr *run.ContainerManager
+	errorLog      = log.NewStdLogger(os.Stderr)
+	warnLog       = log.NewStdLogger(os.Stderr)
+	debugLog      = log.NewNopLogger()
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -44,19 +51,17 @@ var RootCmd = &cobra.Command{
 	Short: "a lightweight container engine",
 	Long: `cntnr is a lightweight OCI-compliant container engine.
 It supports single image and container operations as well as high-level service composition.`,
-	PersistentPreRun: func(cmd *cobra.Command, a []string) {
-		if flagVerbose {
-			debugLog = log.NewStdLogger(os.Stderr)
-		}
-	},
+	PersistentPreRun: preRun,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	RootCmd.AddCommand(listCmd)
 	RootCmd.AddCommand(runCmd)
+	RootCmd.AddCommand(listCmd)
 	RootCmd.AddCommand(imageCmd)
+	RootCmd.AddCommand(bundleCmd)
+	RootCmd.AddCommand(composeCmd)
 	RootCmd.AddCommand(netCmd)
 	if err := RootCmd.Execute(); err != nil {
 		fmt.Println(err)
@@ -72,16 +77,55 @@ func init() {
 	// will be global for your application.
 	//RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cntnr.yaml)")
 
-	RootCmd.Flags().BoolVar(&flagVerbose, "verbose", false, "enables verbose log output")
-
-	usr, err := user.Current()
+	currUser, err := user.Current()
 	if err != nil {
 		exitError(2, "Cannot get current user: %s", err)
 	}
-	currUser = usr
+	flagImgStoreDir = filepath.Join(currUser.HomeDir, ".cntnr", "images")
+	flagBundleStoreDir = filepath.Join(currUser.HomeDir, ".cntnr", "bundles")
+	flagStateDir = "/run/cntnr"
+	if currUser.Uid != "0" {
+		flagStateDir = "/run/user/" + currUser.Uid + "/cntnr"
+	}
+	f := RootCmd.PersistentFlags()
+	f.BoolVar(&flagVerbose, "verbose", false, "enables verbose log output")
+	f.BoolVar(&flagRootless, "rootless", currUser.Uid != "0", "enables image and container management as unprivileged user")
+	f.StringVar(&flagImgStoreDir, "image-store-dir", flagImgStoreDir, "directory to store images")
+	f.StringVar(&flagBundleStoreDir, "bundle-store-dir", flagBundleStoreDir, "directory to store OCI runtime bundles")
+	f.StringVar(&flagStateDir, "state-dir", flagStateDir, "directory to store OCI container states (should be tmpfs)")
+}
+
+func preRun(cmd *cobra.Command, args []string) {
+	var err error
+
 	if flagVerbose {
 		debugLog = log.NewStdLogger(os.Stderr)
 	}
+
+	// Init image store
+	// TODO: provide CLI options
+	ctx := &types.SystemContext{
+		RegistriesDirPath:           "",
+		DockerCertPath:              "",
+		DockerInsecureSkipTLSVerify: true,
+		OSTreeTmpDirPath:            "ostree-tmp-dir",
+		// TODO: add docker auth
+		//DockerAuthConfig: dockerAuth,
+	}
+	if flagRootless {
+		ctx.DockerCertPath = "./docker-cert"
+	}
+	// TODO: expose --image-pull-policy CLI option
+	imageMngr, err = images.NewImages(flagImgStoreDir, images.PULL_NEW, ctx, debugLog)
+	exitOnError(cmd, err)
+
+	// init bundle store
+	bundleMngr, err = bundles.NewBundles(flagBundleStoreDir)
+	exitOnError(cmd, err)
+
+	// init container manager
+	containerMngr, err = run.NewContainerManager(flagStateDir, debugLog)
+	exitOnError(cmd, err)
 }
 
 // initConfig reads in config file and ENV variables if set.
