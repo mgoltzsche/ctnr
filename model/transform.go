@@ -22,6 +22,7 @@ import (
 const (
 	ANNOTATION_BUNDLE_IMAGE_NAME = "com.github.mgoltzsche.cntnr.bundle.image.name"
 	ANNOTATION_BUNDLE_CREATED    = "com.github.mgoltzsche.cntnr.bundle.created"
+	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.cntnr.bundle.id"
 )
 
 type RuntimeBundleBuilder struct {
@@ -70,7 +71,7 @@ func (b *RuntimeBundleBuilder) Build(debug log.Logger) error {
 	return nil
 }
 
-func (service *Service) NewRuntimeBundleBuilder(bundleDir string, imgs *images.Images, vols VolumeResolver, rootless bool) (*RuntimeBundleBuilder, error) {
+func (service *Service) NewRuntimeBundleBuilder(id, bundleDir string, imgs *images.Images, vols VolumeResolver, rootless bool) (*RuntimeBundleBuilder, error) {
 	if service.Image == "" {
 		return nil, fmt.Errorf("Service %q has no image", service.Name)
 	}
@@ -78,17 +79,17 @@ func (service *Service) NewRuntimeBundleBuilder(bundleDir string, imgs *images.I
 	if err != nil {
 		return nil, err
 	}
-	spec, err := service.toSpec(img, vols, rootless)
+	spec, err := service.toSpec(id, img, vols, rootless)
 	if err != nil {
 		return nil, err
 	}
 	return &RuntimeBundleBuilder{bundleDir, img, spec}, nil
 }
 
-func (service *Service) toSpec(img *images.Image, vols VolumeResolver, rootless bool) (*specs.Spec, error) {
+func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver, rootless bool) (*specs.Spec, error) {
 	spec := specconv.Example()
 
-	err := applyService(img, service, spec)
+	err := applyService(id, img, service, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +302,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(img *images.Image, service *Service, spec *specs.Spec) error {
+func applyService(id string, img *images.Image, service *Service, spec *specs.Spec) error {
 	// Apply args
 	imgCfg := img.Config.Config
 	entrypoint := imgCfg.Entrypoint
@@ -364,6 +365,7 @@ func applyService(img *images.Image, service *Service, spec *specs.Spec) error {
 	}
 	spec.Annotations[ANNOTATION_BUNDLE_IMAGE_NAME] = img.Name
 	spec.Annotations[ANNOTATION_BUNDLE_CREATED] = time.Now().String()
+	spec.Annotations[ANNOTATION_BUNDLE_ID] = id
 	/* TODO: enable if supported:
 	if img.StopSignal != "" {
 		spec.Annotations["org.opencontainers.image.stopSignal"] = img.Config.StopSignal

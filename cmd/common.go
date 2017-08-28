@@ -17,7 +17,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/mgoltzsche/cntnr/model"
-	"github.com/satori/go.uuid"
+	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
@@ -67,8 +67,8 @@ func exitError(exitCode int, frmt string, values ...interface{}) {
 }
 
 func createRuntimeBundle(p *model.Project, s *model.Service, bundleDir string) (*model.RuntimeBundleBuilder, error) {
+	bundleId := run.GenerateId()
 	if bundleDir == "" {
-		bundleId := uuid.NewV4().String()
 		bundleDir = filepath.Join(bundleMngr.Dir(), bundleId)
 	} else {
 		absDir, err := filepath.Abs(bundleDir)
@@ -78,7 +78,7 @@ func createRuntimeBundle(p *model.Project, s *model.Service, bundleDir string) (
 		bundleDir = absDir
 	}
 	vols := model.NewVolumeResolver(p, bundleDir)
-	b, err := s.NewRuntimeBundleBuilder(bundleDir, imageMngr, vols, flagRootless)
+	b, err := s.NewRuntimeBundleBuilder(bundleId, bundleDir, imageMngr, vols, flagRootless)
 	if err != nil {
 		return nil, err
 	}

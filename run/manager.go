@@ -3,6 +3,7 @@ package run
 import (
 	"fmt"
 	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/model"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"io/ioutil"
 	"os"
@@ -41,6 +42,12 @@ func (m *ContainerManager) NewContainer(id, bundleDir string, spec *specs.Spec, 
 		return nil, fmt.Errorf("Error: runc container creation: %s", err)
 	}*/
 
+	if id == "" {
+		id = spec.Annotations[model.ANNOTATION_BUNDLE_ID]
+		if id == "" {
+			id = GenerateId()
+		}
+	}
 	c := exec.Command("runc", "--root", m.rootDir, "run", id)
 	c.Dir = bundleDir
 	c.Stdout = os.Stdout

@@ -21,7 +21,7 @@ import (
 var (
 	imageCmd = &cobra.Command{
 		Use:   "image",
-		Short: "Image operations",
+		Short: "Manages images",
 		Long:  `This subcommand operates on image(s) in the local store.`,
 		/*Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println("Hugo Static Site Generator v0.9 -- HEAD")

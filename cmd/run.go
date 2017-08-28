@@ -17,7 +17,6 @@ package cmd
 import (
 	"fmt"
 	"github.com/mgoltzsche/cntnr/model"
-	"github.com/satori/go.uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -60,8 +59,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		containerId := uuid.NewV4().String()
-		c, err := containerMngr.NewContainer(containerId, bundle.Dir, bundle.Spec, s.StdinOpen)
+		c, err := containerMngr.NewContainer("", bundle.Dir, bundle.Spec, s.StdinOpen)
 		if err != nil {
 			return err
 		}

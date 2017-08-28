@@ -23,7 +23,10 @@ import (
 var toIdRegexp = regexp.MustCompile("[^a-z0-9]+")
 
 func NewImages(imageStoreDir string, pullPolicy PullPolicy, ctx *types.SystemContext, debug log.Logger) (*Images, error) {
-	imageStoreDir = filepath.Abs(imageStoreDir)
+	imageStoreDir, err := filepath.Abs(imageStoreDir)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid image store dir provided: %s", err)
+	}
 	trustPolicy, err := createTrustPolicyContext()
 	if err != nil {
 		return nil, fmt.Errorf("Error loading trust policy: %v", err)

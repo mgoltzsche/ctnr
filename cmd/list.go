@@ -35,7 +35,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// TODO: print pid, created, image (annotation) and ip
-	f := "%-36s  %-10s\n"
+	f := "%-26s  %-10s\n"
 	fmt.Printf(f, "ID", "STATUS")
 	for _, c := range l {
 		fmt.Printf(f, c.ID, c.Status)

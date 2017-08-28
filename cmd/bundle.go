@@ -59,7 +59,7 @@ func runBundleList(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	f := "%-36s  %-30s  %s\n"
+	f := "%-26s  %-30s  %s\n"
 	fmt.Printf(f, "ID", "IMAGE", "CREATED")
 	for _, b := range l {
 		fmt.Printf(f, b.ID, b.ImageName(), b.Created())
