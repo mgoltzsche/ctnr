@@ -2,53 +2,49 @@ package images
 
 import (
 	"fmt"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	//"github.com/opencontainers/image-tools/image"
-	//"github.com/openSUSE/umoci/oci/layer"
 	"github.com/mgoltzsche/cntnr/log"
+	//"github.com/opencontainers/image-tools/image"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"os"
 	"path/filepath"
+	//"github.com/openSUSE/umoci/oci/layer"
 )
 
-func (img *Image) Unpack(dest string, debug log.Logger) error {
+func (img *Image) Unpack(dest string, debug log.Logger) (err error) {
 	if dest == "" {
-		return fmt.Errorf("No archive extraction destination provided")
+		return fmt.Errorf("No image extraction destination provided")
 	}
 
-	// TODO: unpack image fs
-	// Create directory
-	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+	if _, err = os.Stat(dest); !os.IsNotExist(err) {
 		return fmt.Errorf("Cannot unpack image since destination already exists: %s", dest)
 	}
-	err := os.MkdirAll(dest, 0770)
+	err = os.MkdirAll(dest, 0770)
 	if err != nil {
-		return fmt.Errorf("Cannot create container: %v", err)
+		return fmt.Errorf("Cannot unpack image: %s", err)
 	}
 
-	annotations := map[string]string{}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(dest)
+		}
+	}()
+
 	for _, l := range img.Manifest.Layers {
 		if l.MediaType != specs.MediaTypeImageLayerGzip {
-			os.RemoveAll(dest)
 			return fmt.Errorf("Unsupported layer media type %q", l.MediaType)
-		}
-
-		for k, v := range l.Annotations {
-			annotations[k] = v
 		}
 
 		layerFile := filepath.Join(img.Directory, "blobs", l.Digest.Algorithm().String(), l.Digest.Hex())
 		debug.Printf("Extracting layer %s", l.Digest.String())
 
 		if err := unpackLayer(layerFile, dest); err != nil {
-			os.RemoveAll(dest)
 			return err
 		}
 	}
 
-	/*err = image.UnpackLayout(img.Directory, containerDir, "latest")
+	/*err = image.UnpackLayout(img.Directory, dest, os.Platform)
 	if err != nil {
-		return nil, fmt.Errorf("Unpacking OCI layout of image %q (%s) failed: %v", service.Image, img.Directory, err)
+		err = fmt.Errorf("Unpacking OCI layout of image %q (%s) failed: %s", service.Image, img.Directory, err)
 	}*/
-
-	return nil
+	return
 }
