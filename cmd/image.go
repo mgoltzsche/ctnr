@@ -15,6 +15,8 @@
 package cmd
 
 import (
+	"fmt"
+	humanize "github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
 
@@ -22,38 +24,31 @@ var (
 	imageCmd = &cobra.Command{
 		Use:   "image",
 		Short: "Manages images",
-		Long:  `This subcommand operates on image(s) in the local store.`,
-		/*Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("Hugo Static Site Generator v0.9 -- HEAD")
-		},*/
+		Long:  `Provides subcommands to manage images in the local store.`,
 	}
 	imageListCmd = &cobra.Command{
-		Use:   "ls",
+		Use:   "list",
 		Short: "Lists all images available in the local store",
 		Long:  `Lists all images available in the local store.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			panic("TODO: List images")
-		},
+		Run:   handleError(runImageList),
 	}
-	imageRemoveCmd = &cobra.Command{
-		Use:   "rm",
-		Short: "Removes an image from the local store",
-		Long:  `Removes an image from the local store.`,
+	imageDeleteCmd = &cobra.Command{
+		Use:   "delete IMAGE",
+		Short: "Deletes an image reference from the local store",
+		Long:  `Deletes an image reference from the local store.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			panic("TODO: Remove image")
 		},
 	}
 	imageImportCmd = &cobra.Command{
-		Use:   "import",
+		Use:   "import IMAGE",
 		Short: "Imports an image into the local store",
 		Long: `Fetches an image either from a local or remote source and 
 imports it into the local store.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			panic("TODO: Import image")
-		},
+		Run: handleError(runImageImport),
 	}
 	imageExportCmd = &cobra.Command{
-		Use:   "export",
+		Use:   "export IMAGEREF DEST",
 		Short: "Exports an image",
 		Long: `Exports an image from the local store 
 to a local or remote destination.`,
@@ -65,8 +60,33 @@ to a local or remote destination.`,
 
 func init() {
 	imageCmd.AddCommand(imageListCmd)
-	imageCmd.AddCommand(imageRemoveCmd)
+	imageCmd.AddCommand(imageDeleteCmd)
 	imageCmd.AddCommand(imageImportCmd)
 	imageCmd.AddCommand(imageExportCmd)
-	// TODO: image build
+	// TODO: image build, gc
+}
+
+func runImageList(cmd *cobra.Command, args []string) error {
+	imgs, err := imageMngr.List()
+	if err != nil {
+		return err
+	}
+	f := "%-35s  %-71s  %-12s  %8s\n"
+	fmt.Printf(f, "REF", "DIGEST", "CREATED", "SIZE")
+	for _, img := range imgs {
+		size, err := img.Size()
+		if err != nil {
+			return err
+		}
+		fmt.Printf(f, img.Name(), img.Digest(), humanize.Time(img.Created()), humanize.Bytes(size))
+	}
+	return nil
+}
+
+func runImageImport(cmd *cobra.Command, args []string) error {
+	if len(args) != 1 {
+		return usageError("Image argument missing")
+	}
+	_, err := imageMngr.Image(args[0])
+	return err
 }

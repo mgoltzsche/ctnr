@@ -1,7 +1,6 @@
 package images
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/log"
+	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"io/ioutil"
 	"os"
@@ -20,7 +20,24 @@ import (
 	"strings"
 )
 
+type PullPolicy string
+
+const (
+	PULL_NEVER  PullPolicy = "never"
+	PULL_NEW    PullPolicy = "new"
+	PULL_UPDATE PullPolicy = "update"
+)
+
 var toIdRegexp = regexp.MustCompile("[^a-z0-9]+")
+
+type Images struct {
+	images      map[string]*Image
+	dir         string
+	trustPolicy *signature.PolicyContext
+	pullPolicy  PullPolicy
+	context     *types.SystemContext
+	debug       log.Logger
+}
 
 func NewImages(imageStoreDir string, pullPolicy PullPolicy, ctx *types.SystemContext, debug log.Logger) (*Images, error) {
 	imageStoreDir, err := filepath.Abs(imageStoreDir)
@@ -29,83 +46,153 @@ func NewImages(imageStoreDir string, pullPolicy PullPolicy, ctx *types.SystemCon
 	}
 	trustPolicy, err := createTrustPolicyContext()
 	if err != nil {
-		return nil, fmt.Errorf("Error loading trust policy: %v", err)
+		return nil, fmt.Errorf("Error loading trust policy: %s", err)
 	}
 	return &Images{map[string]*Image{}, imageStoreDir, trustPolicy, pullPolicy, ctx, debug}, nil
 }
 
-func (self *Images) Image(name string) (*Image, error) {
-	return self.fetchImage(name, self.pullPolicy)
+func (self *Images) Image(src string) (*Image, error) {
+	return self.fetchImage(src, self.pullPolicy)
 }
 
-func (self *Images) fetchImage(name string, pullPolicy PullPolicy) (r *Image, err error) {
-	// TODO: use pull policy
-	r = self.images[name]
-	if r != nil {
+func (self *Images) List() (r []*Image, err error) {
+	refDir := filepath.Join(self.dir, "refs")
+	fs, err := ioutil.ReadDir(refDir)
+	if err != nil {
 		return
 	}
-	imgDir := self.toImageDirectory(name)
-	// Try to load image from local store
-	r, err = readImageConfig(name, imgDir)
-	if err == nil {
-		self.images[name] = r
-		return
-	} else if pullPolicy == PULL_NEVER {
-		return nil, fmt.Errorf("Cannot find image %q locally: %v", name, err)
+	r = make([]*Image, len(fs))
+	for i, f := range fs {
+		// TODO: add creation date and size
+		/*		s, e := os.Stat(filepath.Join(refDir, f.Name()))
+				if e != nil {
+					return nil, e
+				}*/
+		img, err := self.LoadImage(self.refName(f.Name()))
+		if err != nil {
+			return nil, err
+		}
+		r[i] = img
 	}
-	// Import image
-	self.debug.Printf("Fetching image %q...", name)
-	err = os.MkdirAll(imgDir, 0770)
-	if err != nil {
-		return nil, fmt.Errorf("Cannot create image directory: %v", err)
-	}
-	err = self.copyImage(name, "oci:"+imgDir)
-	if err != nil {
-		return nil, fmt.Errorf("Cannot fetch image: %v", err)
-	}
-	r, err = readImageConfig(name, imgDir)
-	if err != nil {
-		return nil, fmt.Errorf("Cannot read %q image config: %v", name, err)
-	}
-	r.Directory = imgDir
-	self.images[name] = r
 	return
 }
 
-func (self *Images) toImageDirectory(imgName string) string {
-	// TODO: split into transport and path
-	var buf bytes.Buffer
-	encoder := base64.NewEncoder(base64.RawStdEncoding, &buf)
-	encoder.Write([]byte(imgName))
-	encoder.Close()
-	return filepath.Join(self.imageDirectory, buf.String())
+func (self *Images) fetchImage(name string, pullPolicy PullPolicy) (img *Image, err error) {
+	// Try to load image from local store
+	if img, err = self.LoadImage(name); err == nil {
+		return
+	} else if pullPolicy == PULL_NEVER {
+		return nil, fmt.Errorf("Cannot find image %q in the local store: %s", name, err)
+	}
+
+	// Import image
+	// TODO: handle update pull policy
+	blobDir := filepath.Join(self.dir, "blobs")
+	if err = os.MkdirAll(blobDir, 0770); err != nil {
+		return
+	}
+	tmpDir := filepath.Join(self.dir, "tmp")
+	if err = os.MkdirAll(tmpDir, 0770); err != nil {
+		return
+	}
+	tmpImgDir, err := ioutil.TempDir(tmpDir, "image-")
+	if err != nil {
+		return
+	}
+	defer os.RemoveAll(tmpImgDir)
+	if err = os.Symlink(blobDir, filepath.Join(tmpImgDir, "blobs")); err != nil {
+		return
+	}
+	self.debug.Printf("Fetching image %q...", name)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot create image directory: %s", err)
+	}
+	err = self.copyImage(name, "oci:"+tmpImgDir)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot fetch image: %s", err)
+	}
+	manifestDigest, err := findManifestDigest(tmpImgDir)
+	if err != nil {
+		return
+	}
+	if err = self.setImageRef(name, manifestDigest); err != nil {
+		return
+	}
+	return self.LoadImage(name)
 }
 
-func readImageConfig(name, imgDir string) (*Image, error) {
-	idx := &specs.Index{}
-	err := unmarshalJSON(filepath.Join(imgDir, "index.json"), idx)
+func (self *Images) LoadImage(name string) (img *Image, err error) {
+	if img = self.images[name]; img != nil {
+		return
+	}
+
+	refFile := self.refFile(name)
+	f, err := os.Lstat(refFile)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot read OCI image index: %v", err)
+		if os.IsNotExist(err) {
+			err = fmt.Errorf("Cannot find image ref %q in local store (%s)", name, self.dir)
+		} else {
+			err = fmt.Errorf("Cannot access image ref %q: %s", name, err)
+		}
+		return
 	}
+	if f.Mode()&os.ModeSymlink == 0 {
+		return nil, fmt.Errorf("image ref file %s is not a symlink", refFile)
+	}
+	manifestFile, err := os.Readlink(refFile)
+	if err != nil {
+		return
+	}
+	alg := filepath.Base(filepath.Dir(manifestFile))
+	hash := filepath.Base(manifestFile)
+	img = &Image{name, digest.NewDigestFromHex(alg, hash), f.ModTime(), self.dir, nil, nil}
+	self.images[name] = img
+	return
+}
+
+func (self *Images) setImageRef(name string, manifest digest.Digest) (err error) {
+	refFile := self.refFile(name)
+	if err = os.MkdirAll(filepath.Dir(refFile), 0770); err != nil {
+		return
+	}
+	manifestFile := blobFile(self.dir, manifest)
+	if _, err = os.Stat(manifestFile); err != nil {
+		return fmt.Errorf("Cannot set image ref %q since manifest file cannot be resolved: %s", err)
+	}
+	manifestFile, err = filepath.Rel(filepath.Dir(refFile), manifestFile)
+	if err != nil {
+		panic("Cannot create relative manifest blob file path: " + err.Error())
+	}
+	return os.Symlink(manifestFile, refFile)
+}
+
+func (self *Images) refFile(name string) string {
+	name = base64.RawStdEncoding.EncodeToString([]byte(name))
+	return filepath.Join(self.dir, "refs", name)
+}
+
+func (self *Images) refName(refFile string) string {
+	name, err := base64.RawStdEncoding.DecodeString(refFile)
+	if err != nil {
+		panic(fmt.Sprintf("Unsupported image ref file name %q: %s\n", refFile, err))
+	}
+	return string(name)
+}
+
+func findManifestDigest(imgDir string) (d digest.Digest, err error) {
+	idx := &specs.Index{}
+	if err = unmarshalJSON(filepath.Join(imgDir, "index.json"), idx); err != nil {
+		err = fmt.Errorf("Cannot read image index: %s", err)
+		return
+	}
+
 	for _, ref := range idx.Manifests {
-		if ref.Platform.Architecture != runtime.GOARCH || ref.Platform.OS != runtime.GOOS {
-			continue
+		if ref.Platform.Architecture == runtime.GOARCH && ref.Platform.OS == runtime.GOOS {
+			return ref.Digest, nil
 		}
-		d := ref.Digest
-		manifestFile := filepath.Join(imgDir, "blobs", string(d.Algorithm()), d.Hex())
-		manifest := &specs.Manifest{}
-		if err = unmarshalJSON(manifestFile, &manifest); err != nil {
-			return nil, fmt.Errorf("Cannot read OCI image manifest: %v", err)
-		}
-		d = manifest.Config.Digest
-		configFile := filepath.Join(imgDir, "blobs", string(d.Algorithm()), d.Hex())
-		config := &specs.Image{}
-		if err = unmarshalJSON(configFile, config); err != nil {
-			return nil, fmt.Errorf("Cannot read OCI image config: %v", err)
-		}
-		return &Image{name, imgDir, idx, manifest, config}, nil
 	}
-	return nil, fmt.Errorf("No image manifest for platform architecture %s and OS %s found in %q!", runtime.GOARCH, runtime.GOOS, imgDir)
+	err = fmt.Errorf("No image manifest for platform architecture %s and OS %s found in %q!", runtime.GOARCH, runtime.GOOS, imgDir)
+	return
 }
 
 func unmarshalJSON(file string, dest interface{}) error {
@@ -119,11 +206,11 @@ func unmarshalJSON(file string, dest interface{}) error {
 func (self *Images) copyImage(src, dest string) error {
 	srcRef, err := alltransports.ParseImageName(src)
 	if err != nil {
-		return fmt.Errorf("Invalid image source %s: %v", src, err)
+		return fmt.Errorf("Invalid image source %s: %s", src, err)
 	}
 	destRef, err := alltransports.ParseImageName(dest)
 	if err != nil {
-		return fmt.Errorf("Invalid image destination %s: %v", dest, err)
+		return fmt.Errorf("Invalid image destination %s: %s", dest, err)
 	}
 	return copy.Image(self.trustPolicy, destRef, srcRef, &copy.Options{
 		RemoveSignatures: false,

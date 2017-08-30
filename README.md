@@ -25,7 +25,6 @@ cntnr also aims to integrate with other tools as [systemd](https://www.freedeskt
 - direct integration of libcontainer instead of runc CLI (optional, build tag based) to ease installation and enforce compatibility
 - network manager daemon with ACL to be used by unprivileged users to configure their container networks
 - systemd integration (notify when startup complete)
-- efficient image tree store to save disk space
 - container and image garbage collection
 - rootless image build without docker
 - health check

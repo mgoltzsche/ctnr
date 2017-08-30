@@ -31,47 +31,55 @@ type RuntimeBundleBuilder struct {
 	Spec  *specs.Spec
 }
 
-func (b *RuntimeBundleBuilder) Build(debug log.Logger) error {
+func (b *RuntimeBundleBuilder) Build(debug log.Logger) (err error) {
 	// Unpack image file system into bundle
 	//err = image.UnpackLayout(img.Directory, containerDir, "latest")
 	//err = image.CreateRuntimeBundleLayout(img.Directory, containerDir, "latest", "rootfs")
 	rootDir := filepath.Join(b.Dir, b.Spec.Root.Path)
-	err := b.Image.Unpack(rootDir, debug)
+	err = b.Image.Unpack(rootDir, debug)
 	if err != nil {
-		os.RemoveAll(b.Dir)
-		return fmt.Errorf("Unpacking OCI layout of image %q (%s) failed: %s", b.Image.Name, b.Image.Directory, err)
+		err = fmt.Errorf("Unpacking OCI layout of image %q failed: %s", b.Image.Name(), err)
+		return
 	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(b.Dir)
+		}
+	}()
 
 	// Copy host's /etc/hostname into bundle
 	if err = copyHostFile("/etc/hostname", rootDir); err != nil {
-		return err
+		return
 	}
 	// Copy host's /etc/hosts into bundle
 	if err = copyHostFile("/etc/hosts", rootDir); err != nil {
-		return err
+		return
 	}
 	// Copy host's /etc/resolv.conf into bundle if image didn't provide resolv.conf
-	if _, err := os.Stat(filepath.Join(rootDir, "/etc/resolv.conf")); os.IsNotExist(err) {
+	if _, e := os.Stat(filepath.Join(rootDir, "/etc/resolv.conf")); os.IsNotExist(e) {
 		if err = copyHostFile("/etc/resolv.conf", rootDir); err != nil {
-			return err
+			return
 		}
 	}
 
 	// Write bundle's config.json
 	j, err := json.MarshalIndent(b.Spec, "", "  ")
 	if err != nil {
-		os.RemoveAll(b.Dir)
-		return fmt.Errorf("Cannot unmarshal OCI runtime spec for %s: %s", b.Dir, err)
+		err = fmt.Errorf("Cannot unmarshal OCI runtime spec for %s: %s", b.Dir, err)
+		return
 	}
 	err = ioutil.WriteFile(filepath.Join(b.Dir, "config.json"), j, 0440)
 	if err != nil {
-		os.RemoveAll(b.Dir)
-		return fmt.Errorf("Cannot write OCI runtime spec: %s", err)
+		err = fmt.Errorf("Cannot write OCI runtime spec: %s", err)
 	}
-	return nil
+	return
 }
 
 func (service *Service) NewRuntimeBundleBuilder(id, bundleDir string, imgs *images.Images, vols VolumeResolver, rootless bool) (*RuntimeBundleBuilder, error) {
+	if _, err := os.Stat(bundleDir); !os.IsNotExist(err) {
+		return nil, fmt.Errorf("Bundle directory %s already exists", bundleDir)
+	}
+
 	if service.Image == "" {
 		return nil, fmt.Errorf("Service %q has no image", service.Name)
 	}
@@ -304,7 +312,11 @@ func mountHostFile(spec *specs.Spec, file string) error {
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
 func applyService(id string, img *images.Image, service *Service, spec *specs.Spec) error {
 	// Apply args
-	imgCfg := img.Config.Config
+	imgSpec, err := img.Config()
+	if err != nil {
+		return err
+	}
+	imgCfg := imgSpec.Config
 	entrypoint := imgCfg.Entrypoint
 	cmd := imgCfg.Cmd
 	if entrypoint == nil {
@@ -357,13 +369,13 @@ func applyService(id string, img *images.Image, service *Service, spec *specs.Sp
 	// Apply annotations
 	spec.Annotations = map[string]string{}
 	// TODO: extract annotations also from image index and manifest
-	if img.Config.Author != "" {
-		spec.Annotations["org.opencontainers.image.author"] = img.Config.Author
+	if imgSpec.Author != "" {
+		spec.Annotations["org.opencontainers.image.author"] = imgSpec.Author
 	}
-	if !time.Unix(0, 0).Equal(*img.Config.Created) {
-		spec.Annotations["org.opencontainers.image.created"] = img.Config.Created.String()
+	if !time.Unix(0, 0).Equal(*imgSpec.Created) {
+		spec.Annotations["org.opencontainers.image.created"] = imgSpec.Created.String()
 	}
-	spec.Annotations[ANNOTATION_BUNDLE_IMAGE_NAME] = img.Name
+	spec.Annotations[ANNOTATION_BUNDLE_IMAGE_NAME] = img.Name()
 	spec.Annotations[ANNOTATION_BUNDLE_CREATED] = time.Now().String()
 	spec.Annotations[ANNOTATION_BUNDLE_ID] = id
 	/* TODO: enable if supported:
