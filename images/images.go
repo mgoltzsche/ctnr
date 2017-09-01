@@ -61,20 +61,76 @@ func (self *Images) List() (r []*Image, err error) {
 	if err != nil {
 		return
 	}
-	r = make([]*Image, len(fs))
-	for i, f := range fs {
+	r = make([]*Image, 0, len(fs))
+	i := 0
+	for _, f := range fs {
 		// TODO: add creation date and size
 		/*		s, e := os.Stat(filepath.Join(refDir, f.Name()))
 				if e != nil {
 					return nil, e
 				}*/
-		img, err := self.LoadImage(self.refName(f.Name()))
-		if err != nil {
-			return nil, err
+		if f.Mode()&os.ModeSymlink != 0 {
+			var img *Image
+			refName := self.refName(f.Name())
+			img, e := self.LoadImage(refName)
+			if e == nil {
+				r = append(r, img)
+				i++
+			} else if err == nil {
+				self.debug.Printf("Invalid image ref %s: %s", refName, e)
+				err = e
+			}
 		}
-		r[i] = img
 	}
 	return
+}
+
+func (self *Images) Gc() error {
+	// Collect named transitive blobs to leave them untouched
+	imgs, err := self.List()
+	m := map[digest.Digest]bool{}
+	if err != nil {
+		return err
+	}
+	for _, img := range imgs {
+		manifest, err := img.Manifest()
+		if err != nil {
+			return err
+		}
+		for _, l := range manifest.Layers {
+			m[l.Digest] = true
+		}
+		m[manifest.Config.Digest] = true
+		m[img.Digest()] = true
+	}
+
+	// Delete all blobs but the named ones
+	blobDir := filepath.Join(self.dir, "blobs")
+	ds, err := ioutil.ReadDir(blobDir)
+	if err != nil {
+		return err
+	}
+	for _, d := range ds {
+		if d.IsDir() {
+			algDir := filepath.Join(blobDir, d.Name())
+			fs, err := ioutil.ReadDir(algDir)
+			if err != nil {
+				return err
+			}
+			for _, f := range fs {
+				layerFile := filepath.Join(algDir, f.Name())
+				blobDigest := digest.NewDigestFromHex(d.Name(), f.Name())
+
+				if !m[blobDigest] {
+					fmt.Println("Deleting blob " + blobDigest)
+					if err = os.Remove(layerFile); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return err
 }
 
 func (self *Images) fetchImage(name string, pullPolicy PullPolicy) (img *Image, err error) {
@@ -115,7 +171,7 @@ func (self *Images) fetchImage(name string, pullPolicy PullPolicy) (img *Image, 
 	if err != nil {
 		return
 	}
-	if err = self.setImageRef(name, manifestDigest); err != nil {
+	if err = self.addImageRef(name, manifestDigest); err != nil {
 		return
 	}
 	return self.LoadImage(name)
@@ -150,7 +206,7 @@ func (self *Images) LoadImage(name string) (img *Image, err error) {
 	return
 }
 
-func (self *Images) setImageRef(name string, manifest digest.Digest) (err error) {
+func (self *Images) addImageRef(name string, manifest digest.Digest) (err error) {
 	refFile := self.refFile(name)
 	if err = os.MkdirAll(filepath.Dir(refFile), 0770); err != nil {
 		return
@@ -164,6 +220,10 @@ func (self *Images) setImageRef(name string, manifest digest.Digest) (err error)
 		panic("Cannot create relative manifest blob file path: " + err.Error())
 	}
 	return os.Symlink(manifestFile, refFile)
+}
+
+func (self *Images) DeleteImage(name string) (err error) {
+	return os.Remove(self.refFile(name))
 }
 
 func (self *Images) refFile(name string) string {

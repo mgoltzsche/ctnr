@@ -33,12 +33,16 @@ var (
 		Run:   handleError(runImageList),
 	}
 	imageDeleteCmd = &cobra.Command{
-		Use:   "delete IMAGE",
-		Short: "Deletes an image reference from the local store",
+		Use:   "delete IMAGE...",
+		Short: "Deletes one or many image references from the local store",
 		Long:  `Deletes an image reference from the local store.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			panic("TODO: Remove image")
-		},
+		Run:   handleError(runImageDelete),
+	}
+	imageGcCmd = &cobra.Command{
+		Use:   "gc IMAGE...",
+		Short: "Garbage collects image blobs",
+		Long:  `Garbage collects all image blobs in the local store that are not referenced.`,
+		Run:   handleError(runImageGc),
 	}
 	imageImportCmd = &cobra.Command{
 		Use:   "import IMAGE",
@@ -61,9 +65,10 @@ to a local or remote destination.`,
 func init() {
 	imageCmd.AddCommand(imageListCmd)
 	imageCmd.AddCommand(imageDeleteCmd)
+	imageCmd.AddCommand(imageGcCmd)
 	imageCmd.AddCommand(imageImportCmd)
 	imageCmd.AddCommand(imageExportCmd)
-	// TODO: image build, gc
+	// TODO: image build
 }
 
 func runImageList(cmd *cobra.Command, args []string) error {
@@ -83,10 +88,29 @@ func runImageList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func runImageGc(cmd *cobra.Command, args []string) error {
+	if len(args) != 0 {
+		return usageError("No argument expected: " + args[0])
+	}
+	return imageMngr.Gc()
+}
+
 func runImageImport(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return usageError("Image argument missing")
+		return usageError("No image provided to import")
 	}
 	_, err := imageMngr.Image(args[0])
 	return err
+}
+
+func runImageDelete(cmd *cobra.Command, args []string) (err error) {
+	if len(args) == 0 {
+		return usageError("No image provided to delete")
+	}
+	for _, name := range args {
+		if e := imageMngr.DeleteImage(name); e != nil && err == nil {
+			err = e
+		}
+	}
+	return
 }

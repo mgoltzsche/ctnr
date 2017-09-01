@@ -101,15 +101,17 @@ func (m *ContainerManager) Wait() (err error) {
 
 func (m *ContainerManager) List() (r []ContainerInfo, err error) {
 	r = []ContainerInfo{}
-	files, err := ioutil.ReadDir(m.rootDir)
-	if err == nil {
-		for _, f := range files {
-			if _, e := os.Stat(filepath.Join(m.rootDir, f.Name(), "state.json")); !os.IsNotExist(e) {
-				r = append(r, ContainerInfo{f.Name(), "running"})
+	if _, e := os.Stat(m.rootDir); !os.IsNotExist(e) {
+		files, err := ioutil.ReadDir(m.rootDir)
+		if err == nil {
+			for _, f := range files {
+				if _, e := os.Stat(filepath.Join(m.rootDir, f.Name(), "state.json")); !os.IsNotExist(e) {
+					r = append(r, ContainerInfo{f.Name(), "running"})
+				}
 			}
 		}
 	}
-	return r, err
+	return
 }
 
 func (m *ContainerManager) HandleSignals() {
