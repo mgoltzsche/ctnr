@@ -17,12 +17,14 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/containernetworking/cni/libcni"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/net"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/spf13/cobra"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -57,81 +59,157 @@ func init() {
 	netCmd.AddCommand(netInitCmd)
 	netCmd.AddCommand(netRemoveCmd)
 
-	f := netInitCmd.Flags()
-	initNetConfFlags(f, initFlags)
+	initNetConfFlags(netInitCmd.Flags(), initFlags)
 }
 
 func runNetInit(cmd *cobra.Command, args []string) (err error) {
-	netMan := containerNetworkManager()
-	// TODO: Expose pub interface as CLI option
-	pubIf := ""
-	if len(args) > 0 {
-		pubIf = "eth0"
-	} else {
-		pubIf = "lo"
-	}
-	for i, n := range args {
-		if _, err = netMan.AddNet("eth"+strconv.Itoa(i), n); err != nil {
-			return
-		}
-	}
-	c := initFlags.curr
-	if c.Domainname != "" {
-		netMan.SetDomainname(c.Domainname)
-	}
-	if c.Hostname != "" {
-		netMan.SetHostname(c.Hostname)
-	}
-	err = netMan.AddHostnameHostsEntry(pubIf)
+	state, err := readContainerState()
 	if err != nil {
 		return
 	}
-	for _, e := range c.ExtraHosts {
-		netMan.AddHostsEntry(e.Name, e.Ip)
+	spec, err := loadBundleSpec(state)
+	if err != nil {
+		return
 	}
-	netMan.AddDNS(net.DNS{
-		c.Dns,
-		c.DnsSearch,
-		c.DnsOptions,
-		c.Domainname,
-	})
-	return netMan.Apply()
+
+	// Setup networks
+	mngr, err := net.NewNetManager(state)
+	if err != nil {
+		return
+	}
+	netConfigs, err := loadNetConfigs(args)
+	if err != nil {
+		return
+	}
+	defer func() {
+		if err != nil {
+			// Free all network resources on error
+			for i, netConf := range netConfigs {
+				mngr.DelNet("eth"+strconv.Itoa(i), netConf)
+			}
+		}
+	}()
+	hasOwnNet := false
+	mainIP := "127.0.0.1"
+	for i, netConf := range netConfigs {
+		r, err := mngr.AddNet("eth"+strconv.Itoa(i), netConf)
+		if err != nil {
+			return err
+		}
+		for _, ip := range r.IPs {
+			mainIP = ip.Address.IP.String()
+			break
+		}
+		hasOwnNet = true
+	}
+
+	// Generate hostname, hosts, resolv.conf files
+	// TODO: when hasOwnNet host configuration should not be applied here
+	hostname := spec.Hostname
+	if hasOwnNet && hostname == "" {
+		hostname = state.ID
+	}
+	rootfs := filepath.Join(state.Bundle, spec.Root.Path)
+	err = generateConfigFiles(rootfs, hostname, mainIP)
+	return
 }
 
 func runNetRemove(cmd *cobra.Command, args []string) (err error) {
-	// TODO: Make sure all network resources are removed properly since currently IP/interface stay reserved
-	netMan := containerNetworkManager()
-	for i, n := range args {
-		if e := netMan.DelNet("eth"+strconv.Itoa(i), n); e != nil && err == nil {
+	/*defer func() {
+		out := "fine"
+		if err != nil {
+			out = err.Error()
+		} else if e := recover(); e != nil {
+			out = fmt.Sprintf("%v", e)
+		}
+		ioutil.WriteFile("/tmp/postrun-error", []byte(out), 0644)
+	}()*/
+
+	state, err := readContainerState()
+	if err != nil {
+		return
+	}
+	mngr, err := net.NewNetManager(state)
+	if err != nil {
+		return
+	}
+	netConfigs, err := loadNetConfigs(args)
+	if err != nil {
+		return
+	}
+	for i, netConf := range netConfigs {
+		// TODO: Check that/when/how /etc/lib/cni/networks/<net>/last_reserved_ip is reset
+		if e := mngr.DelNet("eth"+strconv.Itoa(i), netConf); e != nil && err == nil {
 			err = e
 		}
 	}
 	return
 }
 
-func containerNetworkManager() *net.ContainerNetManager {
-	m, err := net.NewContainerNetManager(readContainerState())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot create container network manager: %s", err)
-		os.Exit(1)
+func generateConfigFiles(rootfs, hostname, mainIP string) error {
+	cfg := net.NewConfigFileGenerator()
+	c := initFlags.curr
+	cfg.SetHostname(hostname)
+	cfg.SetMainIP(mainIP)
+	if c.Domainname != "" {
+		cfg.SetDomainname(c.Domainname)
 	}
-	return m
+	if c.Hostname != "" {
+		cfg.SetHostname(c.Hostname)
+	}
+	for _, e := range c.ExtraHosts {
+		cfg.AddHostsEntry(e.Name, e.Ip)
+	}
+	cfg.AddDnsNameserver(c.Dns)
+	cfg.AddDnsSearch(c.DnsSearch)
+	cfg.AddDnsOptions(c.DnsOptions)
+	return cfg.Apply(rootfs)
 }
 
-func readContainerState() *specs.State {
-	state := &specs.State{}
+func loadNetConfigs(args []string) (r []*libcni.NetworkConfig, err error) {
+	networks, err := net.NewNetConfigs("")
+	if err != nil {
+		return
+	}
+	r = make([]*libcni.NetworkConfig, 0, len(args))
+	for _, name := range args {
+		n, err := networks.GetNet(name)
+		if err != nil {
+			return nil, err
+		}
+		r = append(r, n)
+	}
+	return
+}
+
+func readContainerState() (s *specs.State, err error) {
+	s = &specs.State{}
 	// Read hook data from stdin
 	b, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot read OCI state from stdin: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("Cannot read OCI state from stdin: %s", err)
 	}
 
 	// Unmarshal the hook state
-	if err := json.Unmarshal(b, state); err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot unmarshal OCI state from stdin: %v\n", err)
-		os.Exit(1)
+	if err = json.Unmarshal(b, s); err != nil {
+		err = fmt.Errorf("Cannot unmarshal OCI state from stdin: %s", err)
+	}
+	return
+}
+
+func loadBundleSpec(s *specs.State) (*specs.Spec, error) {
+	spec := &specs.Spec{}
+	f, err := os.Open(filepath.Join(s.Bundle, "config.json"))
+	if err != nil {
+		return nil, fmt.Errorf("Cannot open runtime bundle spec: %v", err)
+	}
+	b, err := ioutil.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot read runtime bundle spec: %v", err)
+	}
+	if err := json.Unmarshal(b, spec); err != nil {
+		return nil, fmt.Errorf("Cannot unmarshal runtime bundle spec: %v", err)
 	}
 
-	return state
+	return spec, nil
 }
