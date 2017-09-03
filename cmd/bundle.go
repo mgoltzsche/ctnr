@@ -16,9 +16,10 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 var (

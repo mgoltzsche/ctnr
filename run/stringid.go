@@ -2,8 +2,9 @@ package run
 
 import (
 	"encoding/base32"
-	"github.com/satori/go.uuid"
 	"strings"
+
+	"github.com/satori/go.uuid"
 )
 
 func GenerateId() string {

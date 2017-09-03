@@ -1,9 +1,10 @@
 package model
 
 import (
-	"github.com/mgoltzsche/cntnr/log"
 	"regexp"
 	"strings"
+
+	"github.com/mgoltzsche/cntnr/log"
 )
 
 var substitutionRegex = regexp.MustCompile("\\$[a-zA-Z0-9_]+|\\$\\{[a-zA-Z0-9_]+(:?-.*?)?\\}")

@@ -16,11 +16,12 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
-	"os"
-	"path/filepath"
 )
 
 func handleError(cf func(cmd *cobra.Command, args []string) error) func(cmd *cobra.Command, args []string) {

@@ -1,8 +1,9 @@
 package model
 
 import (
-	"github.com/mgoltzsche/cntnr/log"
 	"testing"
+
+	"github.com/mgoltzsche/cntnr/log"
 )
 
 func TestVariableSubstitution(t *testing.T) {

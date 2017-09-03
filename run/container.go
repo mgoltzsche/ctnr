@@ -2,12 +2,12 @@ package run
 
 import (
 	"fmt"
-	"github.com/mgoltzsche/cntnr/log"
-	//"github.com/mgoltzsche/cntnr/net"
 	"os"
 	"os/exec"
 	"syscall"
 	"time"
+
+	"github.com/mgoltzsche/cntnr/log"
 )
 
 type Container interface {

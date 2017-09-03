@@ -3,9 +3,10 @@ package model
 import (
 	"encoding/base64"
 	"fmt"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"os"
 	"path/filepath"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type volumeResolver struct {

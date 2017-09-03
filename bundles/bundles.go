@@ -17,11 +17,12 @@ package bundles
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/mgoltzsche/cntnr/model"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"github.com/mgoltzsche/cntnr/model"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type Bundle struct {

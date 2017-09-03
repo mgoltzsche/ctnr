@@ -17,15 +17,16 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strconv"
+
 	"github.com/containernetworking/cni/libcni"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/net"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/spf13/cobra"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"strconv"
 )
 
 var (

@@ -4,13 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/containers/image/copy"
-	"github.com/containers/image/signature"
-	"github.com/containers/image/transports/alltransports"
-	"github.com/containers/image/types"
-	"github.com/mgoltzsche/cntnr/log"
-	digest "github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -18,6 +11,14 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/containers/image/copy"
+	"github.com/containers/image/signature"
+	"github.com/containers/image/transports/alltransports"
+	"github.com/containers/image/types"
+	"github.com/mgoltzsche/cntnr/log"
+	digest "github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type PullPolicy string
@@ -213,7 +214,7 @@ func (self *Images) addImageRef(name string, manifest digest.Digest) (err error)
 	}
 	manifestFile := blobFile(self.dir, manifest)
 	if _, err = os.Stat(manifestFile); err != nil {
-		return fmt.Errorf("Cannot set image ref %q since manifest file cannot be resolved: %s", err)
+		return fmt.Errorf("Cannot set image ref %q since manifest file cannot be resolved: %s", name, err)
 	}
 	manifestFile, err = filepath.Rel(filepath.Dir(refFile), manifestFile)
 	if err != nil {

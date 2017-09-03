@@ -8,10 +8,11 @@ import (
 	"github.com/opencontainers/runc/libcontainer/specconv"
 	//"github.com/mgoltzsche/cntnr/libcontainer/specconv"
 	//"github.com/opencontainers/image-tools/image"
-	"github.com/mgoltzsche/cntnr/log"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"io/ioutil"
 	"os"
+
+	"github.com/mgoltzsche/cntnr/log"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	//"os/exec"
 	"path/filepath"
 	"sort"

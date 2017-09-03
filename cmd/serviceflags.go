@@ -16,12 +16,13 @@ package cmd
 
 import (
 	"fmt"
-	shellwords "github.com/mattn/go-shellwords"
-	"github.com/mgoltzsche/cntnr/model"
-	"github.com/spf13/pflag"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	shellwords "github.com/mattn/go-shellwords"
+	"github.com/mgoltzsche/cntnr/model"
+	"github.com/spf13/pflag"
 )
 
 var flagsBundle = newApps()

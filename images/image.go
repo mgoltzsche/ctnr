@@ -2,12 +2,14 @@ package images
 
 import (
 	"fmt"
+
 	"github.com/mgoltzsche/cntnr/log"
 	//"github.com/opencontainers/image-tools/image"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"os"
 	"path/filepath"
 	"time"
+
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	//"github.com/openSUSE/umoci/oci/layer"
 	digest "github.com/opencontainers/go-digest"
 )
@@ -17,8 +19,8 @@ type Image struct {
 	digest   digest.Digest
 	created  time.Time
 	dir      string
-	manifest *specs.Manifest `json:"manifest"`
-	config   *specs.Image    `json:"config"`
+	manifest *specs.Manifest
+	config   *specs.Image
 }
 
 func (img *Image) Unpack(dest string, debug log.Logger) (err error) {
@@ -100,7 +102,7 @@ func (img *Image) Manifest() (*specs.Manifest, error) {
 		manifestFile := blobFile(img.dir, img.Digest())
 		manifest := &specs.Manifest{}
 		if err := unmarshalJSON(manifestFile, &manifest); err != nil {
-			return nil, fmt.Errorf("Cannot read image manifest %s: %s", img.Digest, err)
+			return nil, fmt.Errorf("Cannot read image manifest %s: %s", img.Digest(), err)
 		}
 		img.manifest = manifest
 	}

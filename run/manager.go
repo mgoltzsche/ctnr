@@ -2,15 +2,16 @@ package run
 
 import (
 	"fmt"
-	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/model"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/model"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type ContainerInfo struct {

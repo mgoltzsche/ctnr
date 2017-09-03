@@ -2,10 +2,11 @@ package model
 
 import (
 	"encoding/json"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"strconv"
 	"strings"
 	"time"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type VolumeResolver interface {

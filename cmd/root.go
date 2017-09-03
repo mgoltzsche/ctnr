@@ -16,17 +16,19 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/spf13/cobra"
 	//homedir "github.com/mitchellh/go-homedir"
 	//"github.com/spf13/viper"
+	"os"
+	"os/user"
+	"path/filepath"
+
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/bundles"
 	"github.com/mgoltzsche/cntnr/images"
 	"github.com/mgoltzsche/cntnr/run"
-	"os"
-	"os/user"
-	"path/filepath"
 )
 
 var (

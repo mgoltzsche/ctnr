@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
 	"github.com/containernetworking/cni/libcni"
 	"github.com/containernetworking/cni/pkg/types/current"
 	//"github.com/vishvananda/netns"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type NetConfigs struct {
@@ -89,7 +91,7 @@ func NewNetManager(state *specs.State) (r *NetManager, err error) {
 	capabilityArgsValue := os.Getenv("CAP_ARGS")
 	if len(capabilityArgsValue) > 0 {
 		if err = json.Unmarshal([]byte(capabilityArgsValue), &capabilityArgs); err != nil {
-			return nil, fmt.Errorf("Cannot read CAP_ARGS: ", err)
+			return nil, fmt.Errorf("Cannot read CAP_ARGS: %s", err)
 		}
 	}
 

@@ -4,15 +4,16 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	shellwords "github.com/mattn/go-shellwords"
-	"github.com/mgoltzsche/cntnr/log"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	shellwords "github.com/mattn/go-shellwords"
+	"github.com/mgoltzsche/cntnr/log"
+	"gopkg.in/yaml.v2"
 )
 
 func LoadProject(file, volDir string, warn log.Logger) (r *Project, err error) {
@@ -503,7 +504,7 @@ func toHealthCheckDescriptor(c *dcHealthCheck, sub Substitution, path string) (*
 		retriesStr := toString(c.Retries, sub, path+".retries")
 		retries, err := strconv.ParseUint(retriesStr, 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %v", err)
+			return nil, fmt.Errorf("%s: %s", path, err)
 		}
 		return &Check{cmd, interval, timeout, uint(retries), disable}, nil
 	}
