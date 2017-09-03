@@ -6,7 +6,7 @@
 #  sudo apt-get install golang-go
 
 usage() {
-	echo "Usage: %0 install|run" >&2
+	echo "Usage: %0 [install|run|cobra...|workspace [CMD]]" >&2
 	exit 1
 }
 
@@ -17,12 +17,9 @@ MAIN=$PKGNAME/cmd/cntnr
 BINARY=cntnr
 
 # Exclude ostree since not available on ubuntu 16.04
-BUILDTAGS=containers_image_ostree_stub
+export BUILDTAGS=containers_image_ostree_stub
 
 initWorkspace() {
-	# Format code
-	(find . -mindepth 1 -maxdepth 1 -type d; ls *.go) | grep -Ev '^(./build.*|./.git|./bin)$' | xargs -n1 -I'{}' gofmt -w "$REPOPATH/{}" &&
-
 	# Create workspace
 	export GOPATH="$REPOPATH/build" &&
 	#export GO15VENDOREXPERIMENT=1 &&
@@ -47,6 +44,10 @@ initWorkspace() {
 case "$1" in
 	install|'')
 		[ $# -eq 0 ] || usage
+
+		# Format code
+		(find . -mindepth 1 -maxdepth 1 -type d; ls *.go) | grep -Ev '^(./build.*|./.git|./dist)$' | xargs -n1 -I'{}' gofmt -w "$REPOPATH/{}" &&
+
 		(
 		set -x
 
@@ -76,6 +77,37 @@ case "$1" in
 		[ $# -eq 0 ] || usage
 		set -x
 		"$REPOPATH/dist/bin/$BINARY" -verbose=true -name=examplepod -uuid-file=/var/run/examplepod.uuid run test-resources/example-docker-compose-images.yml
+	;;
+	liteide)
+		initWorkspace &&
+
+		# Create flat project structure since otherwise vendor dir is not included in autocompletion and linking
+		set -x &&
+		WORKSPACE="$GOPATH/liteide-workspace" &&
+		rm -rf "$WORKSPACE" &&
+		mkdir "$WORKSPACE" &&
+		ln -s "$GOPATH/src/$PKGNAME/vendor" "$WORKSPACE/src" &&
+		rm -rf "$WORKSPACE/src/$PKGNAME" &&
+		mkdir -p "$WORKSPACE/src/$PKGNAME" &&
+		ln -s "$REPOPATH"/* "$WORKSPACE/src/$PKGNAME" &&
+		rm "$WORKSPACE/src/$PKGNAME/build" &&
+		cat <<-EOF
+			################################################################
+			# Setup LiteIDE project using the main package's context menu: #
+			#  - 'Build Path Configuration':                               #
+			#    - Make sure 'Inherit System GOPATH' is checked!           #
+			#    - To exclude ostree (required on ubuntu 16.04) set:       #
+			#        BUILDFLAGS=-tags containers_image_ostree_stub         #
+			#  - 'Lock Build Path' to the top-level directory              #
+			#                                                              #
+			# CREATE NEW TOP LEVEL PACKAGES IN THE REPOSITORY DIRECTORY    #
+			# EXTERNALLY AND RESTART LiteIDE WITH THIS COMMAND!            #
+			################################################################
+		EOF
+		[ $? -eq 0 ] &&
+
+		export GOPATH="$WORKSPACE" &&
+		liteide "$WORKSPACE/src/$PKGNAME"
 	;;
 	*)
 		usage
