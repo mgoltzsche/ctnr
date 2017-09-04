@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func LoadProject(file, volDir string, warn log.Logger) (r *Project, err error) {
+func LoadProject(file string, warn log.Logger) (r *Project, err error) {
 	file, err = filepath.Abs(file)
 	if err != nil {
 		return
@@ -27,7 +27,7 @@ func LoadProject(file, volDir string, warn log.Logger) (r *Project, err error) {
 		return
 	}
 	sub := NewSubstitution(env, warn)
-	err = loadFromComposeYAML(file, sub, volDir, r)
+	err = loadFromComposeYAML(file, sub, r)
 	return
 }
 
@@ -39,12 +39,12 @@ func loadFromJSON(file string, r *Project) error {
 	return json.Unmarshal(b, r)
 }
 
-func loadFromComposeYAML(file string, sub Substitution, volDir string, r *Project) error {
+func loadFromComposeYAML(file string, sub Substitution, r *Project) error {
 	c, err := readComposeYAML(file)
 	if err != nil {
 		return err
 	}
-	return convertCompose(c, sub, volDir, r)
+	return convertCompose(c, sub, r)
 }
 
 func readComposeYAML(file string) (*dockerCompose, error) {
@@ -58,7 +58,7 @@ func readComposeYAML(file string) (*dockerCompose, error) {
 	return dc, err
 }
 
-func convertCompose(c *dockerCompose, sub Substitution, volDir string, r *Project) error {
+func convertCompose(c *dockerCompose, sub Substitution, r *Project) error {
 	if c.Services == nil || len(c.Services) == 0 {
 		return fmt.Errorf("No services defined in %s", c.Dir)
 	}
@@ -67,7 +67,7 @@ func convertCompose(c *dockerCompose, sub Substitution, volDir string, r *Projec
 	for k, v := range c.Services {
 		s := NewService(k)
 		envFileEnv := map[string]string{}
-		err := convertComposeService(c, v, sub, volDir, r, s, envFileEnv)
+		err := convertComposeService(c, v, sub, r, s, envFileEnv)
 		if err != nil {
 			return err
 		}
@@ -114,7 +114,7 @@ func toVolumes(c *dockerCompose, sub Substitution, rp *map[string]Volume, path s
 	return nil
 }
 
-func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, volDir string, p *Project, d *Service, envFileEnv map[string]string) (err error) {
+func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, p *Project, d *Service, envFileEnv map[string]string) (err error) {
 	l := "service." + d.Name
 
 	// Extend service (convert recursively)
@@ -132,7 +132,7 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 		if base == nil {
 			return fmt.Errorf("services.%s.extends.service: Invalid reference", d.Name)
 		}
-		err = convertComposeService(yml, base, sub, volDir, p, d, envFileEnv)
+		err = convertComposeService(yml, base, sub, p, d, envFileEnv)
 		if err != nil {
 			return fmt.Errorf("Failed to read base service %q in %s: %v", d.Name, yml.Dir, err)
 		}
@@ -230,7 +230,7 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, vol
 			return
 		}
 	}
-	if err = toVolumeMounts(s.Volumes, sub, volDir, c.Dir, p.Dir, &d.Volumes, l+".volumes"); err != nil {
+	if err = toVolumeMounts(s.Volumes, sub, c.Dir, p.Dir, &d.Volumes, l+".volumes"); err != nil {
 		return
 	}
 	if d.HealthCheck != nil {
@@ -365,7 +365,7 @@ func toPortRange(rangeExpr string) (from, to int, err error) {
 	return
 }
 
-func toVolumeMounts(dcVols []interface{}, sub Substitution, volDir, baseFile, destBaseFile string, rp *[]VolumeMount, path string) (err error) {
+func toVolumeMounts(dcVols []interface{}, sub Substitution, baseFile, destBaseFile string, rp *[]VolumeMount, path string) (err error) {
 	r := *rp
 	if r == nil {
 		r = []VolumeMount{}

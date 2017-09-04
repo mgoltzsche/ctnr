@@ -15,14 +15,55 @@
 package cmd
 
 import (
+	"fmt"
+
+	"github.com/mgoltzsche/cntnr/model"
 	"github.com/spf13/cobra"
 )
 
-var composeCmd = &cobra.Command{
-	Use:   "compose",
-	Short: "Run docker compose files",
-	Long:  `Converts and runs docker compose files.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		panic("TODO: compose run|bundle|...")
-	},
+var (
+	composeCmd = &cobra.Command{
+		Use:   "compose",
+		Short: "Manage docker compose files",
+		Long:  `Converts and runs docker compose files.`,
+	}
+	composeRunCmd = &cobra.Command{
+		Use:   "run",
+		Short: "Run a docker compose file",
+		Long:  `Converts and runs a docker compose file.`,
+		Run:   handleError(runComposeRun),
+	}
+)
+
+func init() {
+	composeCmd.AddCommand(composeRunCmd)
+}
+
+func runComposeRun(cmd *cobra.Command, args []string) error {
+	if len(args) != 1 {
+		return usageError("No compose file argument provided")
+	}
+
+	project, err := model.LoadProject(args[0], warnLog)
+	if err != nil {
+		return err
+	}
+	for _, s := range project.Services {
+		fmt.Println(s.JSON())
+		bundle, err := createRuntimeBundle(project, &s, "")
+		if err != nil {
+			return err
+		}
+		c, err := containerMngr.NewContainer("", bundle.Dir, bundle.Spec, s.StdinOpen)
+		if err != nil {
+			return err
+		}
+
+		if err = containerMngr.Deploy(c); err != nil {
+			containerMngr.Stop()
+			return err
+		}
+	}
+	containerMngr.HandleSignals()
+	return containerMngr.Wait()
 }

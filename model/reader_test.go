@@ -20,7 +20,7 @@ func TestRead(t *testing.T) {
 		return
 	}
 	expected := strings.Trim(string(expectedBytes), "\n")
-	descr, err := LoadProject(dcFile, "./volumes", log.NewNopLogger())
+	descr, err := LoadProject(dcFile, log.NewNopLogger())
 	if err != nil {
 		t.Errorf("LoadProject(%s): %v", dcFile, err)
 		return
