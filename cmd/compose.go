@@ -15,8 +15,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/spf13/cobra"
 )
@@ -48,22 +46,6 @@ func runComposeRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, s := range project.Services {
-		fmt.Println(s.JSON())
-		bundle, err := createRuntimeBundle(project, &s, "")
-		if err != nil {
-			return err
-		}
-		c, err := containerMngr.NewContainer("", bundle.Dir, bundle.Spec, s.StdinOpen)
-		if err != nil {
-			return err
-		}
 
-		if err = containerMngr.Deploy(c); err != nil {
-			containerMngr.Stop()
-			return err
-		}
-	}
-	containerMngr.HandleSignals()
-	return containerMngr.Wait()
+	return runProject(project)
 }

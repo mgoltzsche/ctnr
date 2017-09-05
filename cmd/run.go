@@ -15,8 +15,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/spf13/cobra"
 )
@@ -53,25 +51,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
-	project := &model.Project{}
+	project := model.NewProject()
 	for _, s := range flagsBundle.apps {
-		fmt.Println(s.JSON())
-		bundle, err := createRuntimeBundle(project, s, "")
-		if err != nil {
-			return err
-		}
-		c, err := containerMngr.NewContainer("", bundle.Dir, bundle.Spec, s.StdinOpen)
-		if err != nil {
-			return err
-		}
-
-		if err = containerMngr.Deploy(c); err != nil {
-			containerMngr.Stop()
-			return err
-		}
+		project.Services[s.Name] = *s
 	}
-	containerMngr.HandleSignals()
-	return containerMngr.Wait()
+
+	return runProject(project)
 }
 
 func split(args []string, sep string) [][]string {

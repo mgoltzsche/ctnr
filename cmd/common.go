@@ -67,6 +67,27 @@ func exitError(exitCode int, frmt string, values ...interface{}) {
 	os.Exit(exitCode)
 }
 
+func runProject(project *model.Project) error {
+	for _, s := range project.Services {
+		fmt.Println(s.JSON())
+		bundle, err := createRuntimeBundle(project, &s, "")
+		if err != nil {
+			return err
+		}
+		c, err := containerMngr.NewContainer("", bundle.Dir, bundle.Spec, s.StdinOpen)
+		if err != nil {
+			return err
+		}
+
+		if err = containerMngr.Deploy(c); err != nil {
+			containerMngr.Stop()
+			return err
+		}
+	}
+	containerMngr.HandleSignals()
+	return containerMngr.Wait()
+}
+
 func createRuntimeBundle(p *model.Project, s *model.Service, bundleDir string) (*model.RuntimeBundleBuilder, error) {
 	bundleId := run.GenerateId()
 	if bundleDir == "" {

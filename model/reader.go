@@ -301,18 +301,22 @@ func ParsePortBinding(expr string, r *[]PortBinding) error {
 	if len(sp) == 2 {
 		prot = strings.ToLower(sp[1])
 	}
-	s := strings.Split(sp[0], ":")
-	if len(s) > 2 {
-		return fmt.Errorf("Invalid port entry %q", expr)
+
+	var hostIp, hostPortExpr, targetPortExpr string
+	psi := strings.LastIndex(sp[0], ":")
+	hostPart := sp[0]
+	if psi > 0 && psi+1 < len(sp[0]) {
+		hostPart = sp[0][:psi]
+		targetPortExpr = sp[0][psi+1:]
 	}
-	var hostPortExpr, targetPortExpr string
-	switch len(s) {
-	case 1:
-		hostPortExpr = s[0]
+	isi := strings.LastIndex(hostPart, ":")
+	hostPortExpr = hostPart
+	if isi > 0 && isi+1 > len(hostPart) {
+		hostIp = hostPart[:isi]
+		hostPortExpr = hostPart[isi+1:]
+	}
+	if targetPortExpr == "" {
 		targetPortExpr = hostPortExpr
-	case 2:
-		hostPortExpr = s[0]
-		targetPortExpr = s[1]
 	}
 	hostFrom, hostTo, err := toPortRange(hostPortExpr)
 	if err != nil {
@@ -335,7 +339,7 @@ func ParsePortBinding(expr string, r *[]PortBinding) error {
 		if pubPort < 0 || pubPort > 65535 {
 			return fmt.Errorf("Published port %d exceeded range", pubPort)
 		}
-		b := PortBinding{uint16(targetPort), uint16(pubPort), prot}
+		b := PortBinding{uint16(targetPort), uint16(pubPort), prot, hostIp}
 		if *r == nil {
 			*r = []PortBinding{b}
 		} else {
@@ -517,16 +521,19 @@ func toStringArray(v interface{}, sub Substitution, r []string, path string) ([]
 	switch v.(type) {
 	case []interface{}:
 		l := v.([]interface{})
+		if r == nil {
+			r = make([]string, 0, len(l))
+		}
 		for _, u := range l {
 			str := toString(u, sub, path)
-			l, err := shellwords.Parse(str)
-			if err != nil {
-				return r, err
-			}
-			r = append(r, l...)
+			r = append(r, str)
 		}
 	case string:
-		r = append(r, strings.Split(strings.Trim(sub(v.(string)), " "), " ")...)
+		l, err := shellwords.Parse(sub(v.(string)))
+		if err != nil {
+			return r, err
+		}
+		r = append(r, l...)
 	case nil:
 	default:
 		return r, fmt.Errorf("string or []string expected at %s but was: %s", path, v)

@@ -1,0 +1,10 @@
+version: '2'
+services:
+  simpleserver:
+    image: alpine:3.6
+    command:
+      - /bin/sh
+      - "-c"
+      - "ip addr; while true; do { echo -e 'HTTP/1.1 200 OK\r\n\nHello World!'; } | nc -l -s 0.0.0.0 -p 8080; done"
+    ports:
+      - "8080"

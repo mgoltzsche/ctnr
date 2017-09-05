@@ -53,6 +53,7 @@ func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
 	f.Var((*cDnsSearch)(c), "dns-search", "DNS search domains to write in /etc/resolv.conf")
 	f.Var((*cDnsOptions)(c), "dns-opts", "DNS search options to write in /etc/resolv.conf")
 	f.Var((*cExtraHosts)(c), "hosts-entry", "additional entries to write in /etc/hosts")
+	f.VarP((*cPortBinding)(c), "publish", "p", "container ports to be published on the host: [[HOSTIP:]HOSTPORT:]PORT[/PROT]")
 }
 
 func newApps() *apps {
@@ -329,7 +330,7 @@ func (c *cPortBinding) Set(s string) error {
 }
 
 func (c *cPortBinding) Type() string {
-	return "HOST:CONTAINER[/udp]..."
+	return "port..."
 }
 
 func (c *cPortBinding) String() string {

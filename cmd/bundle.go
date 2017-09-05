@@ -46,6 +46,7 @@ var (
 		Long:  `Deletes a bundle from the local store.`,
 		Run:   handleError(runBundleDelete),
 	}
+	// TODO: bundle run
 )
 
 func init() {

@@ -19,6 +19,10 @@ type Project struct {
 	Volumes  map[string]Volume  `json:"volumes,omitempty"`
 }
 
+func NewProject() *Project {
+	return &Project{"", map[string]Service{}, map[string]Volume{}}
+}
+
 type Service struct {
 	Name        string            `json:"-"`
 	Image       string            `json:"image,omitempty"`
@@ -64,15 +68,23 @@ type ImageBuild struct {
 
 type PortBinding struct {
 	Target    uint16 `json:"target"`
-	Published uint16 `json:"published"`
-	Protocol  string `json:"protocol"`
+	Published uint16 `json:"published,omitempty"`
+	Protocol  string `json:"protocol,omitempty"`
+	IP        string `json:"ip,omitempty"`
 }
 
 func (p PortBinding) String() string {
-	s := strconv.Itoa(int(p.Target))
-	if p.Published > 0 {
-		s = strconv.Itoa(int(p.Published)) + ":" + s
+	var s string
+	pub := p.Published
+	if pub == 0 {
+		pub = p.Target
 	}
+	if p.IP == "" {
+		s = strconv.Itoa(int(pub)) + ":"
+	} else {
+		s = p.IP + ":" + strconv.Itoa(int(pub)) + ":"
+	}
+	s += strconv.Itoa(int(p.Target))
 	if p.Protocol != "" && p.Protocol != "tcp" {
 		s += "/" + p.Protocol
 	}

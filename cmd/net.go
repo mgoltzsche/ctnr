@@ -53,14 +53,14 @@ The OCI container state JSON is expected on stdin.
 See OCI state spec at https://github.com/opencontainers/runtime-spec/blob/master/runtime.md`,
 		Run: handleError(runNetRemove),
 	}
-	initFlags = &netCfg{&model.NetConf{}}
+	flagsNetInit = &netCfg{&model.NetConf{}}
 )
 
 func init() {
 	netCmd.AddCommand(netInitCmd)
 	netCmd.AddCommand(netRemoveCmd)
 
-	initNetConfFlags(netInitCmd.Flags(), initFlags)
+	initNetConfFlags(netInitCmd.Flags(), flagsNetInit)
 }
 
 func runNetInit(cmd *cobra.Command, args []string) (err error) {
@@ -149,7 +149,7 @@ func runNetRemove(cmd *cobra.Command, args []string) (err error) {
 
 func generateConfigFiles(rootfs, hostname, mainIP string) error {
 	cfg := net.NewConfigFileGenerator()
-	c := initFlags.curr
+	c := flagsNetInit.curr
 	cfg.SetHostname(hostname)
 	cfg.SetMainIP(mainIP)
 	if c.Domainname != "" {
@@ -167,20 +167,51 @@ func generateConfigFiles(rootfs, hostname, mainIP string) error {
 	return cfg.Apply(rootfs)
 }
 
-func loadNetConfigs(args []string) (r []*libcni.NetworkConfig, err error) {
+func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {
 	networks, err := net.NewNetConfigs("")
 	if err != nil {
 		return
 	}
-	r = make([]*libcni.NetworkConfig, 0, len(args))
-	for _, name := range args {
-		n, err := networks.GetNet(name)
+	r = make([]*libcni.NetworkConfigList, len(args))
+	for i, name := range args {
+		cfg, err := networks.GetConfig(name)
 		if err != nil {
 			return nil, err
 		}
-		r = append(r, n)
+		if i == 0 {
+			// Apply port mapping to 1st network
+			cfg, err = mapPorts(cfg, flagsNetInit.curr.Ports)
+			if err != nil {
+				return nil, err
+			}
+		}
+		r[i] = cfg
 	}
 	return
+}
+
+func mapPorts(cfg *libcni.NetworkConfigList, ports []model.PortBinding) (*libcni.NetworkConfigList, error) {
+	if len(ports) == 0 {
+		return cfg, nil
+	}
+	portMap := make([]net.PortMapEntry, len(ports))
+	for i, p := range ports {
+		pub := p.Published
+		if pub == 0 {
+			pub = p.Target
+		}
+		prot := p.Protocol
+		if prot == "" {
+			prot = "tcp"
+		}
+		portMap[i] = net.PortMapEntry{
+			HostPort:      p.Published,
+			ContainerPort: p.Target,
+			Protocol:      prot,
+			HostIP:        p.IP,
+		}
+	}
+	return net.MapPorts(cfg, portMap)
 }
 
 func readContainerState() (s *specs.State, err error) {

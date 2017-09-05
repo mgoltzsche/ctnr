@@ -60,6 +60,7 @@ It supports single image and container operations as well as high-level service 
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	RootCmd.AddCommand(runCmd)
+	RootCmd.AddCommand(killCmd)
 	RootCmd.AddCommand(listCmd)
 	RootCmd.AddCommand(imageCmd)
 	RootCmd.AddCommand(bundleCmd)

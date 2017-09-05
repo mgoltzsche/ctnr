@@ -165,7 +165,7 @@ func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver
 	}
 
 	// TODO: read networks from compose file or CLI
-	networks := []string{"default", "test"}
+	networks := []string{"default"}
 	if rootless {
 		networks = []string{}
 	}
@@ -212,7 +212,7 @@ func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver
 		if cniPluginPaths == "" {
 			return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
 		}
-		// TODO: add more CNI env vars
+		// TODO: add all CNI env vars
 		cniEnv := []string{
 			"PATH=" + os.Getenv("PATH"),
 			"CNI_PATH=" + cniPluginPaths,
@@ -222,7 +222,8 @@ func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver
 			Poststop: []specs.Hook{},
 		}
 
-		hookArgs := []string{"cntnr", "net", "init"}
+		hookArgs := make([]string, 0, 10)
+		hookArgs = append(hookArgs, "cntnr", "net", "init")
 		if hostname != "" {
 			hookArgs = append(hookArgs, "--hostname="+hostname)
 		}
@@ -240,6 +241,9 @@ func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver
 		}
 		for _, e := range service.ExtraHosts {
 			hookArgs = append(hookArgs, "--hosts-entry="+e.Name+"="+e.Ip)
+		}
+		for _, p := range service.Ports {
+			hookArgs = append(hookArgs, "--publish="+p.String())
 		}
 		addHook(&spec.Hooks.Prestart, specs.Hook{
 			Path: executable,

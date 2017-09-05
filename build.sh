@@ -106,6 +106,7 @@ case "$1" in
 		EOF
 		[ $? -eq 0 ] &&
 
+		export CNI_PATH="$REPOPATH/dist/cni-plugins"
 		export GOPATH="$WORKSPACE" &&
 		liteide "$WORKSPACE/src/$PKGNAME"
 	;;

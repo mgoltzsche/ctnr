@@ -7,6 +7,7 @@ import (
 
 	"github.com/containernetworking/cni/libcni"
 	"github.com/containernetworking/cni/pkg/types/current"
+	"github.com/containernetworking/cni/pkg/version"
 	//"github.com/vishvananda/netns"
 	"os"
 	"os/exec"
@@ -18,8 +19,7 @@ import (
 )
 
 type NetConfigs struct {
-	confFiles []string
-	configs   map[string]*libcni.NetworkConfig
+	confDir string
 }
 
 func NewNetConfigs(confDir string) (*NetConfigs, error) {
@@ -34,32 +34,51 @@ func NewNetConfigs(confDir string) (*NetConfigs, error) {
 		return nil, fmt.Errorf("Could not find CNI network configuration files: %s", err)
 	}
 	sort.Strings(confFiles)
-	return &NetConfigs{confFiles, map[string]*libcni.NetworkConfig{}}, nil
+	return &NetConfigs{confDir}, nil
 }
 
-func (n *NetConfigs) GetNet(name string) (*libcni.NetworkConfig, error) {
-	c := n.configs[name]
-	if c == nil {
-		for i, confFile := range n.confFiles {
-			conf, err := libcni.ConfFromFile(confFile)
-			if err != nil {
-				return nil, err
-			}
-			if conf.Network.Name != "" {
-				if n.configs[conf.Network.Name] == nil {
-					// Duplicate network ignored as in original cnitool implementation
-					n.configs[conf.Network.Name] = conf
-				}
-				if conf.Network.Name == name {
-					n.confFiles = n.confFiles[i+1:]
-					return conf, nil
-				}
-			}
-		}
-		n.confFiles = []string{}
-		return nil, fmt.Errorf("Network configuration %q not found", name)
+func (n *NetConfigs) GetConfig(name string) (*libcni.NetworkConfigList, error) {
+	return libcni.LoadConfList(n.confDir, name)
+}
+
+// See https://github.com/containernetworking/plugins/blob/master/plugins/meta/portmap/main.go
+type PortMapEntry struct {
+	HostPort      uint16 `json:"hostPort"`
+	ContainerPort uint16 `json:"containerPort"`
+	Protocol      string `json:"protocol"`
+	HostIP        string `json:"hostIP,omitempty"`
+}
+
+func MapPorts(original *libcni.NetworkConfigList, portMap []PortMapEntry) (*libcni.NetworkConfigList, error) {
+	if len(portMap) == 0 {
+		return original, nil
 	}
-	return c, nil
+	rawPlugins := make([]interface{}, len(original.Plugins)+1)
+	for i, plugin := range original.Plugins {
+		rawPlugin := make(map[string]interface{})
+		if err := json.Unmarshal(plugin.Bytes, &rawPlugin); err != nil {
+			return nil, err
+		}
+		rawPlugins[i] = rawPlugin
+	}
+	rawPlugins[len(original.Plugins)] = map[string]interface{}{
+		"cniVersion": version.Current(),
+		"type":       "portmap",
+		"runtimeConfig": map[string]interface{}{
+			"portMappings": portMap,
+		},
+		"snat": true, // snat=true allows localhost port mapping access but adds another rule
+	}
+	rawConfigList := map[string]interface{}{
+		"name":       original.Name,
+		"cniVersion": original.CNIVersion,
+		"plugins":    rawPlugins,
+	}
+	b, err := json.Marshal(rawConfigList)
+	if err != nil {
+		return nil, err
+	}
+	return libcni.ConfListFromBytes(b)
 }
 
 type NetManager struct {
@@ -107,25 +126,27 @@ func NewNetManager(state *specs.State) (r *NetManager, err error) {
 		capabilityArgs: capabilityArgs,
 		cni:            &libcni.CNIConfig{Path: netPaths},
 	}
+
 	return
 }
 
 // Resolves the configured CNI network by name
 // and adds it to the container process' network namespace.
-func (m *NetManager) AddNet(ifName string, netConf *libcni.NetworkConfig) (r *current.Result, err error) {
-	rs, err := m.cni.AddNetwork(netConf, m.rtConf(ifName))
+func (m *NetManager) AddNet(ifName string, netConf *libcni.NetworkConfigList) (r *current.Result, err error) {
+	rs, err := m.cni.AddNetworkList(netConf, m.rtConf(ifName))
 	if err != nil {
 		return
 	}
 	r, err = current.NewResultFromResult(rs)
 	if err != nil {
-		return nil, fmt.Errorf("Could not convert CNI result for network %s: %s", netConf.Network.Name, err)
+		m.DelNet(ifName, netConf)
+		return nil, fmt.Errorf("Could not convert CNI result for network %s: %s", netConf.Name, err)
 	}
 	return
 }
 
-func (m *NetManager) DelNet(ifName string, netConf *libcni.NetworkConfig) (err error) {
-	return m.cni.DelNetwork(netConf, m.rtConf(ifName))
+func (m *NetManager) DelNet(ifName string, netConf *libcni.NetworkConfigList) (err error) {
+	return m.cni.DelNetworkList(netConf, m.rtConf(ifName))
 }
 
 func (m *NetManager) rtConf(ifName string) *libcni.RuntimeConf {

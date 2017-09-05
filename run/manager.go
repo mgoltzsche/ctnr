@@ -1,12 +1,14 @@
 package run
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/mgoltzsche/cntnr/log"
@@ -64,6 +66,23 @@ func (m *ContainerManager) NewContainer(id, bundleDir string, spec *specs.Spec, 
 	}
 
 	return &RuncContainer{id, c, m.debug}, nil
+}
+
+func (m *ContainerManager) Kill(id, signal string, all bool) error {
+	var args []string
+	if all {
+		args = []string{"--root", m.rootDir, "kill", "--all=true", id, signal}
+	} else {
+		args = []string{"--root", m.rootDir, "kill", id, signal}
+	}
+	c := exec.Command("runc", args...)
+	var buf bytes.Buffer
+	c.Stdout = &buf
+	c.Stderr = &buf
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("%s: %s", err, strings.TrimRight(buf.String(), "\n"))
+	}
+	return nil
 }
 
 func (m *ContainerManager) Deploy(c Container) error {
