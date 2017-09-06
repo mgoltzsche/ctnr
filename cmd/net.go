@@ -172,6 +172,9 @@ func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {
 	if err != nil {
 		return
 	}
+	if len(args) == 0 && len(flagsNetInit.curr.Ports) > 0 {
+		return nil, fmt.Errorf("Cannot publish a port without a container network! Please remove the --publish option or add a network")
+	}
 	r = make([]*libcni.NetworkConfigList, len(args))
 	for i, name := range args {
 		cfg, err := networks.GetConfig(name)

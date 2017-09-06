@@ -1,12 +1,11 @@
 package model
 
 import (
-	"encoding/json"
 	"fmt"
 	//"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/images"
 	"github.com/opencontainers/runc/libcontainer/specconv"
-	//"github.com/mgoltzsche/cntnr/libcontainer/specconv"
+	"github.com/opencontainers/runtime-tools/generate"
 	//"github.com/opencontainers/image-tools/image"
 	"io/ioutil"
 	"os"
@@ -29,14 +28,14 @@ const (
 type RuntimeBundleBuilder struct {
 	Dir   string
 	Image *images.Image
-	Spec  *specs.Spec
+	Spec  *generate.Generator
 }
 
 func (b *RuntimeBundleBuilder) Build(debug log.Logger) (err error) {
 	// Unpack image file system into bundle
 	//err = image.UnpackLayout(img.Directory, containerDir, "latest")
 	//err = image.CreateRuntimeBundleLayout(img.Directory, containerDir, "latest", "rootfs")
-	rootDir := filepath.Join(b.Dir, b.Spec.Root.Path)
+	rootDir := filepath.Join(b.Dir, b.Spec.Spec().Root.Path)
 	err = b.Image.Unpack(rootDir, debug)
 	if err != nil {
 		err = fmt.Errorf("Unpacking OCI layout of image %q failed: %s", b.Image.Name(), err)
@@ -57,23 +56,16 @@ func (b *RuntimeBundleBuilder) Build(debug log.Logger) (err error) {
 		return
 	}
 	// Copy host's /etc/resolv.conf into bundle if image didn't provide resolv.conf
-	if _, e := os.Stat(filepath.Join(rootDir, "/etc/resolv.conf")); os.IsNotExist(e) {
+	resolvConf := filepath.Join(rootDir, "/etc/resolv.conf")
+	if _, e := os.Stat(resolvConf); os.IsNotExist(e) {
 		if err = copyHostFile("/etc/resolv.conf", rootDir); err != nil {
 			return
 		}
 	}
 
 	// Write bundle's config.json
-	j, err := json.MarshalIndent(b.Spec, "", "  ")
-	if err != nil {
-		err = fmt.Errorf("Cannot unmarshal OCI runtime spec for %s: %s", b.Dir, err)
-		return
-	}
-	err = ioutil.WriteFile(filepath.Join(b.Dir, "config.json"), j, 0440)
-	if err != nil {
-		err = fmt.Errorf("Cannot write OCI runtime spec: %s", err)
-	}
-	return
+	bundleCfgFile := filepath.Join(b.Dir, "config.json")
+	return b.Spec.SaveToFile(bundleCfgFile, generate.ExportOptions{Seccomp: false})
 }
 
 func (service *Service) NewRuntimeBundleBuilder(id, bundleDir string, imgs *images.Images, vols VolumeResolver, rootless bool) (*RuntimeBundleBuilder, error) {
@@ -88,22 +80,67 @@ func (service *Service) NewRuntimeBundleBuilder(id, bundleDir string, imgs *imag
 	if err != nil {
 		return nil, err
 	}
-	spec, err := service.toSpec(id, img, vols, rootless)
-	if err != nil {
+
+	spec := generate.New()
+	if rootless {
+		specconv.ToRootless(spec.Spec())
+	}
+
+	if err = service.toSpec(id, img, vols, rootless, &spec); err != nil {
 		return nil, err
 	}
-	return &RuntimeBundleBuilder{bundleDir, img, spec}, nil
+	return &RuntimeBundleBuilder{bundleDir, img, &spec}, nil
 }
 
-func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver, rootless bool) (*specs.Spec, error) {
-	spec := specconv.Example()
+/*func makeRootless(spec *generate.Generator) {
+	// Remove network namespace
+	spec.RemoveLinuxNamespace(specs.NetworkNamespace)
+	// Add user namespace
+	spec.AddOrReplaceLinuxNamespace(specs.UserNamespace, "")
+	// Add user/group ID mapping
+	spec.AddLinuxUIDMapping(uint32(os.Geteuid()), 0, 1)
+	spec.AddLinuxGIDMapping(uint32(os.Getegid()), 0, 1)
+	// Remove cgroup settings
+	spec.Spec().Linux.Resources = nil
+
+	// Fix mounts (taken from github.com/opencontainers/runc/libcontainer/specconv
+	var mounts []specs.Mount
+	for _, mount := range spec.Mounts {
+		// Ignore all mounts that are under /sys.
+		if strings.HasPrefix(mount.Destination, "/sys") {
+			continue
+		}
+
+		// Remove all gid= and uid= mappings.
+		var options []string
+		for _, option := range mount.Options {
+			if !strings.HasPrefix(option, "gid=") && !strings.HasPrefix(option, "uid=") {
+				options = append(options, option)
+			}
+		}
+
+		mount.Options = options
+		mounts = append(mounts, mount)
+	}
+	// Add the sysfs mount as an rbind.
+	mounts = append(mounts, specs.Mount{
+		Source:      "/sys",
+		Destination: "/sys",
+		Type:        "none",
+		Options:     []string{"rbind", "nosuid", "noexec", "nodev", "ro"},
+	})
+	spec.Mounts = mounts
+}*/
+
+func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver, rootless bool, spec *generate.Generator) error {
+	//spec := specconv.Example()
 
 	err := applyService(id, img, service, spec)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	if rootless {
+	/*if rootless {
 		specconv.ToRootless(spec)
 	} else {
 		// Add Linux capabilities
@@ -122,41 +159,27 @@ func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver
 		addCap(&c.Inheritable, cap)
 		addCap(&c.Permitted, cap)
 		addCap(&c.Ambient, cap)
-	}
+	}*/
 
 	// Add mounts
 	for _, m := range service.Volumes {
+		if spec.Spec().Mounts == nil {
+			spec.Spec().Mounts = []specs.Mount{}
+		}
 		mount, err := vols.PrepareVolumeMount(m)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		spec.Mounts = append(spec.Mounts, mount)
+		spec.Spec().Mounts = append(spec.Spec().Mounts, mount)
 	}
 
 	if !rootless {
 		// Limit resources
-		if spec.Linux == nil {
-			spec.Linux = &specs.Linux{}
-		}
-		if spec.Linux.Resources == nil {
-			spec.Linux.Resources = &specs.LinuxResources{}
-		}
-		spec.Linux.Resources.Pids = &specs.LinuxPids{32771}
-		spec.Linux.Resources.HugepageLimits = []specs.LinuxHugepageLimit{
-			{
-				Pagesize: "2MB",
-				Limit:    9223372036854772000,
-			},
-		}
+		spec.SetLinuxResourcesPidsLimit(32771)
+		spec.AddLinuxResourcesHugepageLimit("2MB", 9223372036854772000)
 		// TODO: limit memory, cpu and blockIO access
 
-		// Add network priority
-		/*if spec.Linux.Resources == nil {
-			spec.Linux.Resources = &specs.LinuxResources{}
-		}
-		if spec.Linux.Resources.Network == nil {
-			spec.Linux.Resources.Network = &specs.LinuxNetwork{}
-		}
+		/*// Add network priority
 		spec.Linux.Resources.Network.ClassID = ""
 		spec.Linux.Resources.Network.Priorities = []specs.LinuxInterfacePriority{
 			{"eth0", 2},
@@ -172,15 +195,8 @@ func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver
 	useHostNetwork := len(networks) == 0
 
 	// Use host networks by removing 'network' namespace
-	nss := spec.Linux.Namespaces
-	for i, ns := range nss {
-		if ns.Type == specs.NetworkNamespace {
-			spec.Linux.Namespaces = append(nss[0:i], nss[i+1:]...)
-			break
-		}
-	}
-	if !useHostNetwork {
-		spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.NetworkNamespace})
+	if useHostNetwork {
+		spec.RemoveLinuxNamespace(specs.NetworkNamespace)
 	}
 
 	// Add hostname
@@ -193,14 +209,14 @@ func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver
 			hostname = hostname[:dotPos]
 		}
 	}
-	spec.Hostname = hostname
+	spec.SetHostname(hostname)
 
 	// Add network hooks
 	if !useHostNetwork && len(networks) > 0 {
 		//hookBinary, err := exec.LookPath("cntnr-hooks")
 		executable, err := os.Executable()
 		if err != nil {
-			return nil, fmt.Errorf("Cannot find network hook binary! %s", err)
+			return fmt.Errorf("Cannot find network hook binary! %s", err)
 		}
 		cniPluginPaths := os.Getenv("CNI_PATH")
 		if cniPluginPaths == "" {
@@ -210,16 +226,12 @@ func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver
 			}
 		}
 		if cniPluginPaths == "" {
-			return nil, fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
+			return fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
 		}
 		// TODO: add all CNI env vars
 		cniEnv := []string{
 			"PATH=" + os.Getenv("PATH"),
 			"CNI_PATH=" + cniPluginPaths,
-		}
-		spec.Hooks = &specs.Hooks{
-			Prestart: []specs.Hook{},
-			Poststop: []specs.Hook{},
 		}
 
 		hookArgs := make([]string, 0, 10)
@@ -245,35 +257,13 @@ func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver
 		for _, p := range service.Ports {
 			hookArgs = append(hookArgs, "--publish="+p.String())
 		}
-		addHook(&spec.Hooks.Prestart, specs.Hook{
-			Path: executable,
-			Args: append(hookArgs, networks...),
-			Env:  cniEnv,
-		})
-		addHook(&spec.Hooks.Poststop, specs.Hook{
-			Path: executable,
-			Args: append([]string{"cntnr", "net", "rm"}, networks...),
-			Env:  cniEnv,
-		})
+		spec.AddPreStartHook(executable, append(hookArgs, networks...))
+		spec.AddPreStartHookEnv(executable, cniEnv)
+		spec.AddPostStopHook(executable, append([]string{"cntnr", "net", "rm"}, networks...))
+		spec.AddPostStopHookEnv(executable, cniEnv)
 	}
 
-	return spec, nil
-}
-
-func addHook(h *[]specs.Hook, a specs.Hook) {
-	*h = append(*h, a)
-}
-
-func addCap(c *[]string, add []string) {
-	m := map[string]bool{}
-	for _, e := range *c {
-		m[e] = true
-	}
-	for _, e := range add {
-		if _, ok := m[e]; !ok {
-			*c = append(*c, e)
-		}
-	}
+	return nil
 }
 
 func copyHostFile(file, rootDir string) error {
@@ -315,7 +305,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(id string, img *images.Image, service *Service, spec *specs.Spec) error {
+func applyService(id string, img *images.Image, service *Service, spec *generate.Generator) error {
 	// Apply args
 	imgSpec, err := img.Config()
 	if err != nil {
@@ -337,10 +327,9 @@ func applyService(id string, img *images.Image, service *Service, spec *specs.Sp
 	if service.Command != nil {
 		cmd = service.Command
 	}
-	spec.Process.Args = append(entrypoint, cmd...)
+	spec.SetProcessArgs(append(entrypoint, cmd...))
 
 	// Apply env
-	env := map[string]string{}
 	for _, e := range imgCfg.Env {
 		kv := strings.SplitN(e, "=", 2)
 		k := kv[0]
@@ -348,52 +337,43 @@ func applyService(id string, img *images.Image, service *Service, spec *specs.Sp
 		if len(kv) == 2 {
 			v = kv[1]
 		}
-		env[k] = v
+		spec.AddProcessEnv(k, v)
 	}
 	for k, v := range service.Environment {
-		env[k] = fmt.Sprintf("%q", v)
-	}
-	spec.Process.Env = make([]string, len(env))
-	i := 0
-	for k, v := range env {
-		spec.Process.Env[i] = k + "=" + v
-		i++
+		spec.AddProcessEnv(k, fmt.Sprintf("%q", v))
 	}
 
 	// Apply cwd
-	spec.Process.Cwd = imgCfg.WorkingDir
 	if service.Cwd != "" {
-		spec.Process.Cwd = service.Cwd
-	}
-	if spec.Process.Cwd == "" {
-		spec.Process.Cwd = "/"
+		spec.SetProcessCwd(service.Cwd)
+	} else if imgCfg.WorkingDir != "" {
+		spec.SetProcessCwd(imgCfg.WorkingDir)
 	}
 
-	spec.Process.Terminal = service.Tty
+	spec.SetProcessTerminal(service.Tty)
 
 	// Apply annotations
-	spec.Annotations = map[string]string{}
-	// TODO: extract annotations also from image index and manifest
-	if imgSpec.Author != "" {
-		spec.Annotations["org.opencontainers.image.author"] = imgSpec.Author
-	}
-	if !time.Unix(0, 0).Equal(*imgSpec.Created) {
-		spec.Annotations["org.opencontainers.image.created"] = imgSpec.Created.String()
-	}
-	spec.Annotations[ANNOTATION_BUNDLE_IMAGE_NAME] = img.Name()
-	spec.Annotations[ANNOTATION_BUNDLE_CREATED] = time.Now().String()
-	spec.Annotations[ANNOTATION_BUNDLE_ID] = id
-	/* TODO: enable if supported:
-	if img.StopSignal != "" {
-		spec.Annotations["org.opencontainers.image.stopSignal"] = img.Config.StopSignal
-	}*/
 	if imgCfg.Labels != nil {
 		for k, v := range imgCfg.Labels {
-			spec.Annotations[k] = v
+			spec.AddAnnotation(k, v)
 		}
 	}
+	// TODO: extract annotations also from image index and manifest
+	if imgSpec.Author != "" {
+		spec.AddAnnotation("org.opencontainers.image.author", imgSpec.Author)
+	}
+	if !time.Unix(0, 0).Equal(*imgSpec.Created) {
+		spec.AddAnnotation("org.opencontainers.image.created", imgSpec.Created.String())
+	}
+	spec.AddAnnotation(ANNOTATION_BUNDLE_IMAGE_NAME, img.Name())
+	spec.AddAnnotation(ANNOTATION_BUNDLE_CREATED, time.Now().String())
+	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
+	/* TODO: enable if supported:
+	if img.StopSignal != "" {
+		spec.AddAnnotation("org.opencontainers.image.stopSignal", img.Config.StopSignal)
+	}*/
 	if service.StopSignal != "" {
-		spec.Annotations["org.opencontainers.image.stopSignal"] = service.StopSignal
+		spec.AddAnnotation("org.opencontainers.image.stopSignal", service.StopSignal)
 	}
 
 	// Add exposed ports
@@ -416,13 +396,13 @@ func applyService(id string, img *images.Image, service *Service, spec *specs.Sp
 			i++
 		}
 		sort.Strings(exposecsv)
-		spec.Annotations["org.opencontainers.image.exposedPorts"] = strings.Join(exposecsv, ",")
+		spec.AddAnnotation("org.opencontainers.image.exposedPorts", strings.Join(exposecsv, ","))
 	}
 
 	// TODO: apply user (username must be parsed from rootfs/etc/passwd and mapped to uid/gid)
 
 	// TODO: mount separate paths in /proc/self/fd to apply service.StdinOpen
-	spec.Root.Readonly = service.ReadOnly
+	spec.SetRootReadonly(service.ReadOnly)
 
 	// TODO: mount volumes
 

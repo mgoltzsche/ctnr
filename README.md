@@ -2,10 +2,10 @@
 
 CNTNR DEVELOPMENT IS IN A VERY EARLY STATE!
 
-cntnr is a lightweight container engine that provides a CLI on top of [runc](https://github.com/opencontainers/runc) to also manage images and build OCI runtime bundles. It is a platform to try out new runc features.
+cntnr is a lightweight container engine that provides a CLI on top of [runc](https://github.com/opencontainers/runc) to also manage images and build OCI runtime bundles. It is a platform to try out runc technologies.
 cntnr aims to ease container creation and execution as unprivileged user as well as the integration with other tools such as [systemd](https://www.freedesktop.org/wiki/Software/systemd/) and [consul](https://www.consul.io/).
 
-Multiple containers can be composed and run in one CLI command.
+Multiple containers can be composed and run with a single CLI command.
 The [docker compose](https://docs.docker.com/compose/compose-file/) file format is also supported.
 Images can be fetched and converted from various sources using [image](https://github.com/containers/image).
 Container networks are managed in OCI hooks using [CNI](https://github.com/containernetworking/cni) and its [plugins](https://github.com/containernetworking/plugins).
@@ -41,6 +41,7 @@ The problem remains that not everything can be simulated since applications ask 
 
 
 
+
 ## Roadmap
 
 - separate OCI hook binary
@@ -53,3 +54,4 @@ The problem remains that not everything can be simulated since applications ask 
 - service discovery integration (consul, etcd)
 - network manager daemon with ACL to be used by unprivileged users to configure their container networks
 - container annotation driven env var sync with distributed KV store (consul, etcd) to e.g. auto-configure webserver/loadbalancer or for basic master election
+- Integration tests

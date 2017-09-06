@@ -74,7 +74,7 @@ func runProject(project *model.Project) error {
 		if err != nil {
 			return err
 		}
-		c, err := containerMngr.NewContainer("", bundle.Dir, bundle.Spec, s.StdinOpen)
+		c, err := containerMngr.NewContainer("", bundle.Dir, bundle.Spec.Spec(), s.StdinOpen)
 		if err != nil {
 			return err
 		}
