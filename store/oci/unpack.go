@@ -1,4 +1,4 @@
-package images
+package oci
 
 import (
 	"archive/tar"

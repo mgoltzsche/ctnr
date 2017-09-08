@@ -14,8 +14,16 @@
 
 package main
 
-import "github.com/mgoltzsche/cntnr/cmd"
+import (
+	"github.com/containers/storage/pkg/reexec"
+	"github.com/mgoltzsche/cntnr/cmd"
+)
 
 func main() {
+	// Required to execute containers/image calls in image store
+	if reexec.Init() {
+		return
+	}
+
 	cmd.Execute()
 }

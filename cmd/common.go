@@ -17,10 +17,10 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/run"
+	storeitfc "github.com/mgoltzsche/cntnr/store"
+	"github.com/opencontainers/runtime-tools/generate"
 	"github.com/spf13/cobra"
 )
 
@@ -70,11 +70,11 @@ func exitError(exitCode int, frmt string, values ...interface{}) {
 func runProject(project *model.Project) error {
 	for _, s := range project.Services {
 		fmt.Println(s.JSON())
-		bundle, err := createRuntimeBundle(project, &s, "")
+		sc, err := createRuntimeBundle(project, &s, "")
 		if err != nil {
 			return err
 		}
-		c, err := containerMngr.NewContainer("", bundle.Dir, bundle.Spec.Spec(), s.StdinOpen)
+		c, err := containerMngr.NewContainer("", sc.Dir(), s.Tty, s.StdinOpen)
 		if err != nil {
 			return err
 		}
@@ -88,24 +88,32 @@ func runProject(project *model.Project) error {
 	return containerMngr.Wait()
 }
 
-func createRuntimeBundle(p *model.Project, s *model.Service, bundleDir string) (*model.RuntimeBundleBuilder, error) {
-	bundleId := run.GenerateId()
-	if bundleDir == "" {
-		bundleDir = filepath.Join(bundleMngr.Dir(), bundleId)
-	} else {
-		absDir, err := filepath.Abs(bundleDir)
-		if err != nil {
-			return nil, err
-		}
-		bundleDir = absDir
+func createRuntimeBundle(p *model.Project, service *model.Service, bundleDir string) (c *storeitfc.Container, err error) {
+	if service.Image == "" {
+		err = fmt.Errorf("Service %q has no image", service.Name)
+		return
 	}
-	vols := model.NewVolumeResolver(p, bundleDir)
-	b, err := s.NewRuntimeBundleBuilder(bundleId, bundleDir, imageMngr, vols, flagRootless)
+
+	// Load image and volume resolver
+	img, err := store.ImageByName(service.Image)
 	if err != nil {
-		return nil, err
+		img, err = store.ImportImage(service.Image)
+		if err != nil {
+			return
+		}
 	}
-	if err := b.Build(debugLog); err != nil {
-		return nil, err
+	imgCfg, err := store.ImageConfig(img.ID())
+	if err != nil {
+		return
 	}
-	return b, nil
+	// TODO: use anonymous volume dir inside container (container must be created first for that to work)
+	vols := model.NewVolumeResolver(p, "/tmp")
+
+	// Generate config.json
+	specGen := generate.New()
+	if err = service.ToSpec(imgCfg, vols, flagRootless, &specGen); err != nil {
+		return
+	}
+
+	return store.CreateContainer("", &specGen, img.ID())
 }

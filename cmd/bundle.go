@@ -73,8 +73,10 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 	if err = flagsBundle.setBundleArgs(args); err != nil {
 		return
 	}
-	b, err := createRuntimeBundle(&model.Project{}, flagsBundle.last(), "")
-	fmt.Println(b.Dir)
+	panic("TODO: bundle dir option")
+	bundleDir := ""
+	c, err := createRuntimeBundle(&model.Project{}, flagsBundle.last(), bundleDir)
+	fmt.Println(c.Dir())
 	return
 }
 

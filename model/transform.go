@@ -2,15 +2,14 @@ package model
 
 import (
 	"fmt"
-	//"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/images"
+
 	"github.com/opencontainers/runc/libcontainer/specconv"
 	"github.com/opencontainers/runtime-tools/generate"
 	//"github.com/opencontainers/image-tools/image"
 	"io/ioutil"
 	"os"
 
-	"github.com/mgoltzsche/cntnr/log"
+	imgspecs "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	//"os/exec"
 	"path/filepath"
@@ -25,72 +24,22 @@ const (
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.cntnr.bundle.id"
 )
 
-type RuntimeBundleBuilder struct {
-	Dir   string
-	Image *images.Image
-	Spec  *generate.Generator
+// TODO: put somewhere
+/*// Copy host's /etc/hostname into bundle
+if err = copyHostFile("/etc/hostname", rootDir); err != nil {
+	return
 }
-
-func (b *RuntimeBundleBuilder) Build(debug log.Logger) (err error) {
-	// Unpack image file system into bundle
-	//err = image.UnpackLayout(img.Directory, containerDir, "latest")
-	//err = image.CreateRuntimeBundleLayout(img.Directory, containerDir, "latest", "rootfs")
-	rootDir := filepath.Join(b.Dir, b.Spec.Spec().Root.Path)
-	err = b.Image.Unpack(rootDir, debug)
-	if err != nil {
-		err = fmt.Errorf("Unpacking OCI layout of image %q failed: %s", b.Image.Name(), err)
+// Copy host's /etc/hosts into bundle
+if err = copyHostFile("/etc/hosts", rootDir); err != nil {
+	return
+}
+// Copy host's /etc/resolv.conf into bundle if image didn't provide resolv.conf
+resolvConf := filepath.Join(rootDir, "/etc/resolv.conf")
+if _, e := os.Stat(resolvConf); os.IsNotExist(e) {
+	if err = copyHostFile("/etc/resolv.conf", rootDir); err != nil {
 		return
 	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(b.Dir)
-		}
-	}()
-
-	// Copy host's /etc/hostname into bundle
-	if err = copyHostFile("/etc/hostname", rootDir); err != nil {
-		return
-	}
-	// Copy host's /etc/hosts into bundle
-	if err = copyHostFile("/etc/hosts", rootDir); err != nil {
-		return
-	}
-	// Copy host's /etc/resolv.conf into bundle if image didn't provide resolv.conf
-	resolvConf := filepath.Join(rootDir, "/etc/resolv.conf")
-	if _, e := os.Stat(resolvConf); os.IsNotExist(e) {
-		if err = copyHostFile("/etc/resolv.conf", rootDir); err != nil {
-			return
-		}
-	}
-
-	// Write bundle's config.json
-	bundleCfgFile := filepath.Join(b.Dir, "config.json")
-	return b.Spec.SaveToFile(bundleCfgFile, generate.ExportOptions{Seccomp: false})
-}
-
-func (service *Service) NewRuntimeBundleBuilder(id, bundleDir string, imgs *images.Images, vols VolumeResolver, rootless bool) (*RuntimeBundleBuilder, error) {
-	if _, err := os.Stat(bundleDir); !os.IsNotExist(err) {
-		return nil, fmt.Errorf("Bundle directory %s already exists", bundleDir)
-	}
-
-	if service.Image == "" {
-		return nil, fmt.Errorf("Service %q has no image", service.Name)
-	}
-	img, err := imgs.Image(service.Image)
-	if err != nil {
-		return nil, err
-	}
-
-	spec := generate.New()
-	if rootless {
-		specconv.ToRootless(spec.Spec())
-	}
-
-	if err = service.toSpec(id, img, vols, rootless, &spec); err != nil {
-		return nil, err
-	}
-	return &RuntimeBundleBuilder{bundleDir, img, &spec}, nil
-}
+}*/
 
 /*func makeRootless(spec *generate.Generator) {
 	// Remove network namespace
@@ -132,10 +81,12 @@ func (service *Service) NewRuntimeBundleBuilder(id, bundleDir string, imgs *imag
 	spec.Mounts = mounts
 }*/
 
-func (service *Service) toSpec(id string, img *images.Image, vols VolumeResolver, rootless bool, spec *generate.Generator) error {
-	//spec := specconv.Example()
+func (service *Service) ToSpec(img *imgspecs.Image, vols VolumeResolver, rootless bool, spec *generate.Generator) error {
+	if rootless {
+		specconv.ToRootless(spec.Spec())
+	}
 
-	err := applyService(id, img, service, spec)
+	err := applyService(img, service, spec)
 	if err != nil {
 		return err
 	}
@@ -305,13 +256,9 @@ func mountHostFile(spec *specs.Spec, file string) error {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(id string, img *images.Image, service *Service, spec *generate.Generator) error {
+func applyService(img *imgspecs.Image, service *Service, spec *generate.Generator) error {
 	// Apply args
-	imgSpec, err := img.Config()
-	if err != nil {
-		return err
-	}
-	imgCfg := imgSpec.Config
+	imgCfg := img.Config
 	entrypoint := imgCfg.Entrypoint
 	cmd := imgCfg.Cmd
 	if entrypoint == nil {
@@ -359,15 +306,14 @@ func applyService(id string, img *images.Image, service *Service, spec *generate
 		}
 	}
 	// TODO: extract annotations also from image index and manifest
-	if imgSpec.Author != "" {
-		spec.AddAnnotation("org.opencontainers.image.author", imgSpec.Author)
+	if img.Author != "" {
+		spec.AddAnnotation("org.opencontainers.image.author", img.Author)
 	}
-	if !time.Unix(0, 0).Equal(*imgSpec.Created) {
-		spec.AddAnnotation("org.opencontainers.image.created", imgSpec.Created.String())
+	if !time.Unix(0, 0).Equal(*img.Created) {
+		spec.AddAnnotation("org.opencontainers.image.created", img.Created.String())
 	}
-	spec.AddAnnotation(ANNOTATION_BUNDLE_IMAGE_NAME, img.Name())
 	spec.AddAnnotation(ANNOTATION_BUNDLE_CREATED, time.Now().String())
-	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
+	//spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
 	/* TODO: enable if supported:
 	if img.StopSignal != "" {
 		spec.AddAnnotation("org.opencontainers.image.stopSignal", img.Config.StopSignal)

@@ -12,8 +12,6 @@ import (
 	"syscall"
 
 	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/model"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type ContainerInfo struct {
@@ -35,7 +33,7 @@ func NewContainerManager(rootDir string, debug log.Logger) (*ContainerManager, e
 	return &ContainerManager{map[string]Container{}, absRoot, debug}, nil
 }
 
-func (m *ContainerManager) NewContainer(id, bundleDir string, spec *specs.Spec, bindStdin bool) (Container, error) {
+func (m *ContainerManager) NewContainer(id, bundleDir string, terminal, bindStdin bool) (Container, error) {
 	/*c := exec.Command("runc", "--root", rootDir, "create", id)
 	c.Dir = runtimeBundleDir
 	c.Stderr = os.Stderr
@@ -46,21 +44,18 @@ func (m *ContainerManager) NewContainer(id, bundleDir string, spec *specs.Spec, 
 	}*/
 
 	if id == "" {
-		id = spec.Annotations[model.ANNOTATION_BUNDLE_ID]
-		if id == "" {
-			id = GenerateId()
-		}
+		id = GenerateId()
 	}
 	c := exec.Command("runc", "--root", m.rootDir, "run", id)
 	c.Dir = bundleDir
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 
-	if bindStdin || spec.Process.Terminal {
+	if bindStdin || terminal {
 		c.Stdin = os.Stdin
 	}
 
-	if !spec.Process.Terminal {
+	if !terminal {
 		// Run in separate process group to be able to control orderly shutdown
 		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	}
