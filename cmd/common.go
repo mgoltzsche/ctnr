@@ -17,10 +17,11 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/mgoltzsche/cntnr/model"
 	storeitfc "github.com/mgoltzsche/cntnr/store"
-	"github.com/opencontainers/runtime-tools/generate"
+
 	"github.com/spf13/cobra"
 )
 
@@ -70,11 +71,11 @@ func exitError(exitCode int, frmt string, values ...interface{}) {
 func runProject(project *model.Project) error {
 	for _, s := range project.Services {
 		fmt.Println(s.JSON())
-		sc, err := createRuntimeBundle(project, &s, "")
+		m, err := createRuntimeBundle(project, &s, "")
 		if err != nil {
 			return err
 		}
-		c, err := containerMngr.NewContainer("", sc.Dir(), s.Tty, s.StdinOpen)
+		c, err := containerMngr.NewContainer("", m.Dir, s.Tty, s.StdinOpen)
 		if err != nil {
 			return err
 		}
@@ -88,13 +89,13 @@ func runProject(project *model.Project) error {
 	return containerMngr.Wait()
 }
 
-func createRuntimeBundle(p *model.Project, service *model.Service, bundleDir string) (c *storeitfc.Container, err error) {
+func createRuntimeBundle(p *model.Project, service *model.Service, bundleDir string) (c storeitfc.Container, err error) {
 	if service.Image == "" {
-		err = fmt.Errorf("Service %q has no image", service.Name)
+		err = fmt.Errorf("service %q has no image", service.Name)
 		return
 	}
 
-	// Load image and volume resolver
+	// Load image
 	img, err := store.ImageByName(service.Image)
 	if err != nil {
 		img, err = store.ImportImage(service.Image)
@@ -102,18 +103,24 @@ func createRuntimeBundle(p *model.Project, service *model.Service, bundleDir str
 			return
 		}
 	}
-	imgCfg, err := store.ImageConfig(img.ID())
+
+	// Create container
+	builder, err := store.CreateContainer("", &img.ID)
 	if err != nil {
 		return
 	}
-	// TODO: use anonymous volume dir inside container (container must be created first for that to work)
-	vols := model.NewVolumeResolver(p, "/tmp")
 
 	// Generate config.json
-	specGen := generate.New()
-	if err = service.ToSpec(imgCfg, vols, flagRootless, &specGen); err != nil {
+	// TODO: clean this up: don't create anonymous volume dirs in container dir before container is created
+	vols := model.NewVolumeResolver(p, filepath.Join(builder.Dir, "volumes"))
+	defer func() {
+		if err != nil {
+			os.RemoveAll(builder.Dir)
+		}
+	}()
+	if err = service.ToSpec(vols, flagRootless, builder.SpecBuilder); err != nil {
 		return
 	}
 
-	return store.CreateContainer("", &specGen, img.ID())
+	return builder.Build()
 }

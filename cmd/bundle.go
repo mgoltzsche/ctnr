@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/spf13/cobra"
 )
@@ -57,14 +58,18 @@ func init() {
 }
 
 func runBundleList(cmd *cobra.Command, args []string) (err error) {
-	l, err := bundleMngr.List()
+	l, err := store.Containers()
 	if err != nil {
 		return
 	}
-	f := "%-26s  %-30s  %s\n"
+	f := "%-26s  %-71s  %s\n"
 	fmt.Printf(f, "ID", "IMAGE", "CREATED")
-	for _, b := range l {
-		fmt.Printf(f, b.ID, b.ImageName(), b.Created())
+	for _, c := range l {
+		img := "<none>"
+		if c.Image != nil {
+			img = (*c.Image).String()
+		}
+		fmt.Printf(f, c.ID, img, humanize.Time(c.Created))
 	}
 	return
 }
@@ -76,7 +81,7 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 	panic("TODO: bundle dir option")
 	bundleDir := ""
 	c, err := createRuntimeBundle(&model.Project{}, flagsBundle.last(), bundleDir)
-	fmt.Println(c.Dir())
+	fmt.Println(c.Dir)
 	return
 }
 
@@ -86,7 +91,7 @@ func runBundleDelete(cmd *cobra.Command, args []string) (err error) {
 	}
 	failed := false
 	for _, id := range args {
-		if err = bundleMngr.Delete(id); err != nil {
+		if err = store.DeleteContainer(id); err != nil {
 			os.Stderr.WriteString(err.Error() + "\n")
 			failed = true
 		}

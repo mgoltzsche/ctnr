@@ -7,8 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"bytes"
-	"io/ioutil"
+	"time"
+
+	"io"
 
 	"github.com/containers/image/copy"
 	"github.com/containers/image/signature"
@@ -16,17 +17,21 @@ import (
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
 	"github.com/containers/storage"
-	//"github.com/containers/storage/pkg/idtools"
+	"github.com/containers/storage/pkg/archive"
+	"github.com/containers/storage/pkg/idtools"
 	"github.com/mgoltzsche/cntnr/store"
-	imgspecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/opencontainers/runtime-tools/generate"
+	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+// Deprecated since containers/storage cannot be used by
+// unprivileged user (https://github.com/containers/storage/issues/96)
 type Store struct {
 	store         storage.Store
 	trustPolicy   *signature.PolicyContext
 	systemContext *types.SystemContext
 }
+
+var _ store.Store = &Store{}
 
 func NewContainersStore(dir string, systemContext *types.SystemContext) (*Store, error) {
 	dir, err := filepath.Abs(dir)
@@ -36,8 +41,8 @@ func NewContainersStore(dir string, systemContext *types.SystemContext) (*Store,
 
 	opts := storage.DefaultStoreOptions
 	opts.GraphDriverName = "overlay"
-	/*opts.UIDMap = []idtools.IDMap{{HostID: os.Geteuid(), ContainerID: 0, Size: 1}}
-	opts.GIDMap = []idtools.IDMap{{HostID: os.Getegid(), ContainerID: 0, Size: 1}}*/
+	opts.UIDMap = []idtools.IDMap{{HostID: os.Geteuid(), ContainerID: 0, Size: 1}}
+	opts.GIDMap = []idtools.IDMap{{HostID: os.Getegid(), ContainerID: 0, Size: 1}}
 	opts.RunRoot = fmt.Sprintf("/run/user/%d/cntnr/containers-storage", os.Geteuid())
 	opts.GraphRoot = dir
 	store, err := storage.GetStore(opts)
@@ -88,6 +93,16 @@ func (s *Store) ImportImage(src string) (img *store.Image, err error) {
 	return s.ImageByName(src)
 }
 
+func (s *Store) CreateImage(id string, names []string, layerId string, cfg *ispecs.Image) (*store.Image, error) {
+	now := time.Now()
+	img, err := s.store.CreateImage(id, names, layerId, "", &storage.ImageOptions{CreationDate: now})
+	if err != nil {
+		return nil, err
+	}
+	// TODO: write manifest & config
+	return store.NewImage(id, names, now, layerId, cfg), nil
+}
+
 func (s *Store) Image(id string) (r *store.Image, err error) {
 	img, err := s.store.Image(id)
 	if err == nil {
@@ -109,11 +124,7 @@ func (s *Store) ImageByName(name string) (r *store.Image, err error) {
 	if err != nil {
 		return
 	}
-	img, err := s.store.Image(id)
-	if err != nil {
-		return
-	}
-	r = store.NewImage(img.ID, img.Names, img.Created)
+	r, err = s.Image(id)
 	return
 }
 
@@ -138,46 +149,50 @@ func (s *Store) ImageGC() error {
 	return nil
 }
 
-func (s *Store) CreateContainer(id string, spec *generate.Generator, imageId string) (r *store.Container, err error) {
-	c, err := s.store.CreateContainer(id, []string{}, imageId, "", "", nil)
+func (s *Store) Container(id string) (c *store.Container, err error) {
+	sc, err := s.store.Container(id)
 	if err != nil {
 		return
 	}
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("Cannot create container: %s", err)
-			s.store.DeleteContainer(c.ID)
-		}
-	}()
-	dir, err := s.store.Mount(c.ID, "")
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			s.store.Unmount(c.ID)
-		}
-	}()
-
-	// Write config.json
-	var buf bytes.Buffer
-	bundleDir := filepath.Join(dir, "..")
-	spec.SetRootPath(filepath.Base(dir))
-	if err = spec.Save(&buf, generate.ExportOptions{Seccomp: false}); err != nil {
-		return
-	}
-	s.store.SetContainerBigData(c.ID, "config.json", buf.Bytes())
-	err = ioutil.WriteFile(filepath.Join(bundleDir, "config.json"), buf.Bytes(), 0640)
-
-	return store.NewContainer(c.ID, bundleDir), err
+	return store.NewContainer(sc.ID), nil
 }
 
-func (s *Store) ImageConfig(imageId string) (r *imgspecs.Image, err error) {
+func (s *Store) CreateContainer(id string, layerId string) (r *store.Container, err error) {
+	c, err := s.store.CreateContainer(id, []string{}, "", layerId, "", nil)
+	if err != nil {
+		return
+	}
+	return store.NewContainer(c.ID), nil
+}
+
+func (s *Store) Mount(containerId string) (m *store.ContainerMount, err error) {
+	rootfs, err := s.store.Mount(containerId, "")
+	if err != nil {
+		return
+	}
+	bundleDir := filepath.Join(rootfs, "..")
+	return store.NewContainerMount(containerId, bundleDir, "rootfs"), nil
+}
+
+func (s *Store) Unmount(containerId string) error {
+	return s.store.Unmount(containerId)
+}
+
+func (s *Store) Diff(containerId string) (io.ReadCloser, error) {
+	//gzip := archive.Gzip
+	return s.store.Diff("", containerId, &storage.DiffOptions{ /*Compression: &gzip*/ })
+}
+
+func (s *Store) PutLayer(parent string, diff archive.Reader) (*store.Layer, error) {
+	return s.store.PutLayer("", parent, []string{}, "", false, diff)
+}
+
+func (s *Store) ImageConfig(imageId string) (r *ispecs.Image, err error) {
 	m, err := s.imageManifest(imageId)
 	if err != nil {
 		return
 	}
-	r = &imgspecs.Image{}
+	r = &ispecs.Image{}
 	b, err := s.store.ImageBigData(imageId, m.Config.Digest.String())
 	if err != nil {
 		return
@@ -188,12 +203,12 @@ func (s *Store) ImageConfig(imageId string) (r *imgspecs.Image, err error) {
 	return
 }
 
-func (s *Store) imageManifest(imageId string) (m *imgspecs.Manifest, err error) {
+func (s *Store) imageManifest(imageId string) (m *ispecs.Manifest, err error) {
 	mj, err := s.store.ImageBigData(imageId, "manifest")
 	if err != nil {
 		return
 	}
-	m = &imgspecs.Manifest{}
+	m = &ispecs.Manifest{}
 	if err = json.Unmarshal(mj, m); err != nil {
 		err = fmt.Errorf("Cannot read image %q manifest: %s", imageId, err)
 	}

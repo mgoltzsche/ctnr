@@ -36,7 +36,9 @@ initWorkspace() {
 		# Fetch dependencies
 		(
 			cd "$GOPATH/src/$PKGNAME" &&
-			"$VNDR" -whitelist='.*'
+			"$VNDR" -whitelist='.*' &&
+			# Replace 'Sirupsen' with 'sirupsen' since he renamed his profile which causes conflicts in mtree and image-tools
+			(find "$GOPATH/src/$PKGNAME/vendor" -type f -name '*.go' -print0 | xargs -0 -n 1 sed -i 's/"github.com\/Sirupsen\/logrus"/"github.com\/sirupsen\/logrus"/g')
 		) || return 1
 	fi
 }

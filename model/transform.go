@@ -3,19 +3,17 @@ package model
 import (
 	"fmt"
 
+	"github.com/mgoltzsche/cntnr/generate"
 	"github.com/opencontainers/runc/libcontainer/specconv"
-	"github.com/opencontainers/runtime-tools/generate"
 	//"github.com/opencontainers/image-tools/image"
 	"io/ioutil"
 	"os"
 
-	imgspecs "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	//"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 const (
@@ -81,12 +79,12 @@ if _, e := os.Stat(resolvConf); os.IsNotExist(e) {
 	spec.Mounts = mounts
 }*/
 
-func (service *Service) ToSpec(img *imgspecs.Image, vols VolumeResolver, rootless bool, spec *generate.Generator) error {
+func (service *Service) ToSpec(vols VolumeResolver, rootless bool, spec *generate.SpecBuilder) error {
 	if rootless {
 		specconv.ToRootless(spec.Spec())
 	}
 
-	err := applyService(img, service, spec)
+	err := applyService(service, spec)
 	if err != nil {
 		return err
 	}
@@ -256,93 +254,58 @@ func mountHostFile(spec *specs.Spec, file string) error {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(img *imgspecs.Image, service *Service, spec *generate.Generator) error {
-	// Apply args
-	imgCfg := img.Config
-	entrypoint := imgCfg.Entrypoint
-	cmd := imgCfg.Cmd
-	if entrypoint == nil {
-		entrypoint = []string{}
-	}
-	if cmd == nil {
-		cmd = []string{}
-	}
+func applyService(service *Service, spec *generate.SpecBuilder) error {
+	// Entrypoint & command
 	if service.Entrypoint != nil {
-		entrypoint = service.Entrypoint
-		cmd = []string{}
+		spec.SetProcessEntrypoint(service.Entrypoint)
+		spec.SetProcessCmd([]string{})
 	}
 	if service.Command != nil {
-		cmd = service.Command
+		spec.SetProcessCmd(service.Command)
 	}
-	spec.SetProcessArgs(append(entrypoint, cmd...))
 
-	// Apply env
-	for _, e := range imgCfg.Env {
-		kv := strings.SplitN(e, "=", 2)
-		k := kv[0]
-		v := ""
-		if len(kv) == 2 {
-			v = kv[1]
-		}
-		spec.AddProcessEnv(k, v)
-	}
+	// Env
 	for k, v := range service.Environment {
 		spec.AddProcessEnv(k, fmt.Sprintf("%q", v))
 	}
 
-	// Apply cwd
+	// Working dir
 	if service.Cwd != "" {
 		spec.SetProcessCwd(service.Cwd)
-	} else if imgCfg.WorkingDir != "" {
-		spec.SetProcessCwd(imgCfg.WorkingDir)
 	}
 
+	// Terminal
 	spec.SetProcessTerminal(service.Tty)
 
-	// Apply annotations
-	if imgCfg.Labels != nil {
-		for k, v := range imgCfg.Labels {
-			spec.AddAnnotation(k, v)
-		}
-	}
-	// TODO: extract annotations also from image index and manifest
-	if img.Author != "" {
-		spec.AddAnnotation("org.opencontainers.image.author", img.Author)
-	}
-	if !time.Unix(0, 0).Equal(*img.Created) {
-		spec.AddAnnotation("org.opencontainers.image.created", img.Created.String())
-	}
-	spec.AddAnnotation(ANNOTATION_BUNDLE_CREATED, time.Now().String())
-	//spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
-	/* TODO: enable if supported:
-	if img.StopSignal != "" {
-		spec.AddAnnotation("org.opencontainers.image.stopSignal", img.Config.StopSignal)
-	}*/
+	// Annotations
 	if service.StopSignal != "" {
 		spec.AddAnnotation("org.opencontainers.image.stopSignal", service.StopSignal)
 	}
-
-	// Add exposed ports
-	expose := map[string]bool{}
-	if imgCfg.ExposedPorts != nil {
-		for k := range imgCfg.ExposedPorts {
-			expose[k] = true
-		}
-	}
 	if service.Expose != nil {
+		// Merge exposedPorts annotation
+		exposedPortsAnn := ""
+		if spec.Spec().Annotations != nil {
+			exposedPortsAnn = spec.Spec().Annotations["org.opencontainers.image.exposedPorts"]
+		}
+		exposed := map[string]bool{}
+		if exposedPortsAnn != "" {
+			for _, exposePortStr := range strings.Split(exposedPortsAnn, ",") {
+				exposed[strings.Trim(exposePortStr, " ")] = true
+			}
+		}
 		for _, e := range service.Expose {
-			expose[e] = true
+			exposed[strings.Trim(e, " ")] = true
 		}
-	}
-	if len(expose) > 0 {
-		exposecsv := make([]string, len(expose))
-		i := 0
-		for k := range expose {
-			exposecsv[i] = k
-			i++
+		if len(exposed) > 0 {
+			exposecsv := make([]string, len(exposed))
+			i := 0
+			for k := range exposed {
+				exposecsv[i] = k
+				i++
+			}
+			sort.Strings(exposecsv)
+			spec.AddAnnotation("org.opencontainers.image.exposedPorts", strings.Join(exposecsv, ","))
 		}
-		sort.Strings(exposecsv)
-		spec.AddAnnotation("org.opencontainers.image.exposedPorts", strings.Join(exposecsv, ","))
 	}
 
 	// TODO: apply user (username must be parsed from rootfs/etc/passwd and mapped to uid/gid)

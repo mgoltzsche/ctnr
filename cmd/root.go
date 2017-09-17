@@ -26,22 +26,19 @@ import (
 	"path/filepath"
 
 	"github.com/containers/image/types"
-	"github.com/mgoltzsche/cntnr/bundles"
 	"github.com/mgoltzsche/cntnr/run"
 	storeitfc "github.com/mgoltzsche/cntnr/store"
 	simplestore "github.com/mgoltzsche/cntnr/store/oci"
-	containersstore "github.com/mgoltzsche/cntnr/store/storage"
+	//containersstore "github.com/mgoltzsche/cntnr/store/storage"
 )
 
 var (
-	flagVerbose        bool
-	flagRootless       bool
-	flagCfgFile        string
-	flagBundleStoreDir string
-	flagImgStoreDir    string
-	flagStateDir       string
+	flagVerbose  bool
+	flagRootless bool
+	flagCfgFile  string
+	flagStoreDir string
+	flagStateDir string
 
-	bundleMngr    *bundles.Bundles
 	store         storeitfc.Store
 	containerMngr *run.ContainerManager
 	errorLog      = log.NewStdLogger(os.Stderr)
@@ -69,6 +66,7 @@ func Execute() {
 	RootCmd.AddCommand(bundleCmd)
 	RootCmd.AddCommand(composeCmd)
 	RootCmd.AddCommand(netCmd)
+	RootCmd.AddCommand(commitCmd)
 	if err := RootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -87,8 +85,7 @@ func init() {
 	if err != nil {
 		exitError(2, "Cannot get current user: %s", err)
 	}
-	flagImgStoreDir = filepath.Join(currUser.HomeDir, ".cntnr", "images")
-	flagBundleStoreDir = filepath.Join(currUser.HomeDir, ".cntnr", "bundles")
+	flagStoreDir = filepath.Join(currUser.HomeDir, ".cntnr")
 	flagStateDir = "/run/cntnr"
 	if currUser.Uid != "0" {
 		flagStateDir = "/run/user/" + currUser.Uid + "/cntnr"
@@ -96,8 +93,7 @@ func init() {
 	f := RootCmd.PersistentFlags()
 	f.BoolVar(&flagVerbose, "verbose", false, "enables verbose log output")
 	f.BoolVar(&flagRootless, "rootless", currUser.Uid != "0", "enables image and container management as unprivileged user")
-	f.StringVar(&flagImgStoreDir, "image-store-dir", flagImgStoreDir, "directory to store images")
-	f.StringVar(&flagBundleStoreDir, "bundle-store-dir", flagBundleStoreDir, "directory to store OCI runtime bundles")
+	f.StringVar(&flagStoreDir, "store-dir", flagStoreDir, "directory to store images and containers")
 	f.StringVar(&flagStateDir, "state-dir", flagStateDir, "directory to store OCI container states (should be tmpfs)")
 }
 
@@ -121,15 +117,11 @@ func preRun(cmd *cobra.Command, args []string) {
 	if flagRootless {
 		ctx.DockerCertPath = "./docker-cert"
 	}
-	if os.Geteuid() == 0 {
+	/*if os.Geteuid() == 0 {
 		store, err = containersstore.NewContainersStore(filepath.Join(flagImgStoreDir, "storage"), ctx)
-	} else {
-		store, err = simplestore.NewSimpleStore(filepath.Join(flagImgStoreDir, "simple"), ctx, debugLog)
-	}
-	exitOnError(cmd, err)
-
-	// init bundle store
-	bundleMngr, err = bundles.NewBundles(flagBundleStoreDir)
+	} else {*/
+	store, err = simplestore.NewOCIStore(flagStoreDir, flagRootless, ctx, errorLog, debugLog)
+	//}
 	exitOnError(cmd, err)
 
 	// init container manager
