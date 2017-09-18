@@ -52,6 +52,7 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 		name = args[1]
 		if li := strings.LastIndex(name, ":"); li > 0 && li+1 < len(name) {
 			ref = name[li+1:]
+			name = name[:li]
 		}
 	}
 	img, err := store.CreateImage(name, ref, c.Descriptor.Digest)

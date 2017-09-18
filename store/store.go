@@ -24,10 +24,10 @@ type Store interface {
 	ImageConfig(d digest.Digest) (ispecs.Image, error)
 	PutImageManifest(m ispecs.Manifest) (ispecs.Descriptor, error)
 	PutImageConfig(m ispecs.Image) (ispecs.Descriptor, error)
-	CreateImage(name, ref string, manifest digest.Digest) (Image, error)
-	DeleteImage(id digest.Digest) error
+	CreateImage(name, ref string, manifestDigest digest.Digest) (Image, error)
+	DeleteImage(name, ref string) error
 	ImageGC() error
-	CreateContainer(id string, manifest *digest.Digest) (*ContainerBuilder, error) // TODO: return spec builder
+	CreateContainer(id string, manifestDigest *digest.Digest) (*ContainerBuilder, error) // TODO: return spec builder
 	Container(id string) (Container, error)
 	Containers() ([]Container, error)
 	DeleteContainer(id string) error
@@ -44,19 +44,20 @@ type CommitResult struct {
 type Image struct {
 	ID       digest.Digest
 	Name     string
+	Ref      string
 	Manifest ispecs.Manifest
 	Size     uint64
 	Created  time.Time
 }
 
-func NewImage(id digest.Digest, name string, created time.Time, manifest ispecs.Manifest) Image {
+func NewImage(id digest.Digest, name, ref string, created time.Time, manifest ispecs.Manifest) Image {
 	var size uint64
 	for _, l := range manifest.Layers {
 		if l.Size > 0 {
 			size += uint64(l.Size)
 		}
 	}
-	return Image{id, name, manifest, size, created}
+	return Image{id, name, ref, manifest, size, created}
 }
 
 type Container struct {

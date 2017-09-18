@@ -17,6 +17,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
@@ -78,11 +79,10 @@ func runImageList(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	f := "%-71s  %-50s  %-12s  %8s\n"
-	fmt.Printf(f, "ID", "NAME", "CREATED", "SIZE")
+	f := "%-35s %-15s  %-71s  %-15s  %8s\n"
+	fmt.Printf(f, "NAME", "REF", "ID", "CREATED", "SIZE")
 	for _, img := range imgs {
-		size := 0
-		fmt.Printf(f, img.ID, img.Name, humanize.Time(img.Created), humanize.Bytes(uint64(size)))
+		fmt.Printf(f, img.Name, img.Ref, img.ID, humanize.Time(img.Created), humanize.Bytes(img.Size))
 	}
 	return
 }
@@ -104,18 +104,19 @@ func runImageImport(cmd *cobra.Command, args []string) error {
 
 func runImageDelete(cmd *cobra.Command, args []string) (err error) {
 	if len(args) == 0 {
-		return usageError("No image provided to delete")
+		return usageError("No image argument provided")
 	}
-	for _, name := range args {
-		img, e := store.ImageByName(name)
-		if e == nil {
-			if e := store.DeleteImage(img.ID); e != nil {
-				os.Stderr.WriteString(fmt.Sprintf("Cannot delete image %s %q: %s", img.ID, name, e))
-				err = e
-			} else {
-				fmt.Println(img.ID)
-			}
-		} else {
+	for _, arg := range args {
+		refIdx := strings.LastIndex(arg, ":")
+		name := arg
+		ref := ""
+		if refIdx > 0 && refIdx+1 < len(name) {
+			name = arg[:refIdx]
+			ref = arg[refIdx+1:]
+		}
+		e := store.DeleteImage(name, ref)
+		if e != nil {
+			os.Stderr.WriteString(fmt.Sprintf("Cannot delete image %q: %s", arg, e))
 			err = e
 		}
 	}
