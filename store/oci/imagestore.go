@@ -275,7 +275,7 @@ func (s *ImageStore) ImportImage(src string) (img store.Image, err error) {
 
 	// Create temp image directory
 	name, ref := nameAndRef(srcRef)
-	imgDir, err := ioutil.TempDir("", "cimage-")
+	imgDir, err := ioutil.TempDir(s.imageDir, "tmpimg-")
 	if err != nil {
 		return
 	}
