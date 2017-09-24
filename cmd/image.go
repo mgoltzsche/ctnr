@@ -116,7 +116,7 @@ func runImageDelete(cmd *cobra.Command, args []string) (err error) {
 		}
 		e := store.DeleteImage(name, ref)
 		if e != nil {
-			os.Stderr.WriteString(fmt.Sprintf("Cannot delete image %q: %s", arg, e))
+			fmt.Fprintf(os.Stderr, "Error: %s\n", e)
 			err = e
 		}
 	}

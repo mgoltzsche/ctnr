@@ -81,10 +81,6 @@ func NewOCIStore(dir string, rootless bool, systemContext *types.SystemContext, 
 	}, nil
 }
 
-func (s *Store) Close() error {
-	return nil
-}
-
 func (s *Store) Containers() ([]store.Container, error) {
 	fl, err := ioutil.ReadDir(s.containerDir)
 	if err != nil {
