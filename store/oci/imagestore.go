@@ -25,7 +25,7 @@ import (
 )
 
 type ImageStore struct {
-	*BlobStore
+	*BlobStoreExt
 	imageDir       string
 	systemContext  *types.SystemContext
 	trustPolicy    *signature.PolicyContext
@@ -34,7 +34,7 @@ type ImageStore struct {
 	err            log.Logger
 }
 
-func NewImageStore(dir string, blobStore *BlobStore, systemContext *types.SystemContext, errorLog log.Logger) (r ImageStore, err error) {
+func NewImageStore(dir string, blobStore *BlobStoreExt, systemContext *types.SystemContext, errorLog log.Logger) (r ImageStore, err error) {
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		err = fmt.Errorf("init image store: %s", err)
 		return
@@ -569,4 +569,25 @@ func createTrustPolicyContext() (*signature.PolicyContext, error) {
 		return nil, err
 	}
 	return signature.NewPolicyContext(policy)
+}
+
+func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err error) {
+	refFound := false
+	for _, descriptor := range idx.Manifests {
+		if descriptor.Annotations[ispecs.AnnotationRefName] == ref {
+			refFound = true
+			if descriptor.Platform.Architecture == runtime.GOARCH && descriptor.Platform.OS == runtime.GOOS {
+				if descriptor.MediaType != ispecs.MediaTypeImageManifest {
+					err = fmt.Errorf("unsupported manifest media type %q", descriptor.MediaType)
+				}
+				return descriptor, err
+			}
+		}
+	}
+	if refFound {
+		err = fmt.Errorf("no image manifest for architecture %s and OS %s found in image index!", runtime.GOARCH, runtime.GOOS)
+	} else {
+		err = fmt.Errorf("no image manifest for ref %q found in image index!", ref)
+	}
+	return
 }

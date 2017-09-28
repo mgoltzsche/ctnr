@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/generate"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -93,20 +92,4 @@ func (b *ContainerBuilder) Build() (Container, error) {
 // Generate or move into utils package since it also occurs in run
 func GenerateId() string {
 	return strings.TrimRight(base32.StdEncoding.EncodeToString(uuid.NewV4().Bytes()), "=")
-}
-
-func NameAndRef(imgRef types.ImageReference) (name string, tag string) {
-	name = strings.TrimLeft(imgRef.StringWithinTransport(), "/")
-	dckrRef := imgRef.DockerReference()
-	if dckrRef != nil {
-		name = dckrRef.String()
-	}
-	li := strings.LastIndex(name, ":")
-	if li > 0 && li+1 < len(name) {
-		tag = name[li+1:]
-		name = name[:li]
-	} else {
-		tag = "latest"
-	}
-	return
 }

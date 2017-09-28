@@ -60,8 +60,13 @@ func (s *MtreeStore) Put(manifestDigest digest.Digest, spec *mtree.DirectoryHier
 		return nil
 	}
 
+	// Create mtree dir
+	if err := os.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
+		return fmt.Errorf("create mtree dir: %s", err)
+	}
+
 	// Create temp file
-	tmpFile, err := ioutil.TempFile(filepath.Dir(destFile), "mtree-")
+	tmpFile, err := ioutil.TempFile(filepath.Dir(destFile), "tmpmtree-")
 	if err != nil {
 		return fmt.Errorf("create mtree temp file: %s", err)
 	}
