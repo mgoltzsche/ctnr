@@ -15,9 +15,10 @@
 package generate
 
 import (
-	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	//rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"strings"
+
+	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 
 	"time"
 
@@ -32,6 +33,10 @@ type SpecBuilder struct {
 
 func NewSpecBuilder() SpecBuilder {
 	return SpecBuilder{generate.New(), nil, nil}
+}
+
+func FromSpec(spec *rspecs.Spec) SpecBuilder {
+	return SpecBuilder{generate.NewFromSpec(spec), nil, nil}
 }
 
 func (b *SpecBuilder) SetProcessEntrypoint(v []string) {

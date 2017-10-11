@@ -2,23 +2,19 @@ package oci
 
 import (
 	"fmt"
-
-	"os"
 	"path/filepath"
 
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/store"
 	"github.com/openSUSE/umoci/pkg/fseval"
 )
 
 type Store struct {
-	*ContainerStore
+	*ImageStoreImpl
+	*BundleStore
 }
 
-var _ store.Store = &Store{}
-
-func NewOCIStore(dir string, rootless bool, systemContext *types.SystemContext, errorLog log.Logger, debugLog log.Logger) (s Store, err error) {
+func OpenStore(dir string, rootless bool, systemContext *types.SystemContext, errorLog log.Logger, debugLog log.Logger) (r Store, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("init store: %s", err)
@@ -31,10 +27,7 @@ func NewOCIStore(dir string, rootless bool, systemContext *types.SystemContext, 
 	blobDir := filepath.Join(dir, "blobs")
 	mtreeDir := filepath.Join(dir, "mtree")
 	imageDir := filepath.Join(dir, "images")
-	containerDir := filepath.Join(dir, "containers")
-	if err = os.MkdirAll(containerDir, 0755); err != nil {
-		return
-	}
+	bundleDir := filepath.Join(dir, "bundles")
 	blobStore, err := NewBlobStore(blobDir, debugLog)
 	if err != nil {
 		return
@@ -48,14 +41,10 @@ func NewOCIStore(dir string, rootless bool, systemContext *types.SystemContext, 
 		return
 	}
 	blobStoreExt := NewBlobStoreExt(&blobStore, &mtreeStore, debugLog)
-	imageStore, err := NewImageStore(imageDir, &blobStoreExt, systemContext, errorLog)
+	r.ImageStoreImpl, err = NewImageStore(imageDir, &blobStoreExt, systemContext, errorLog)
 	if err != nil {
 		return
 	}
-	cs, err := NewContainerStore(containerDir, &imageStore, debugLog)
-	if err != nil {
-		return
-	}
-	s.ContainerStore = &cs
+	r.BundleStore, err = NewBundleStore(bundleDir, debugLog)
 	return
 }

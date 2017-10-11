@@ -67,6 +67,7 @@ func Execute() {
 	RootCmd.AddCommand(composeCmd)
 	RootCmd.AddCommand(netCmd)
 	RootCmd.AddCommand(commitCmd)
+	RootCmd.AddCommand(gcCmd)
 	if err := RootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -120,7 +121,7 @@ func preRun(cmd *cobra.Command, args []string) {
 	/*if os.Geteuid() == 0 {
 		store, err = containersstore.NewContainersStore(filepath.Join(flagImgStoreDir, "storage"), ctx)
 	} else {*/
-	store, err = simplestore.NewOCIStore(flagStoreDir, flagRootless, ctx, errorLog, debugLog)
+	store, err = simplestore.OpenStore(flagStoreDir, flagRootless, ctx, errorLog, debugLog)
 	//}
 	exitOnError(cmd, err)
 

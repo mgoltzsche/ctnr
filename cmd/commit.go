@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -41,21 +40,24 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 	if len(args) < 1 || len(args) > 2 {
 		return usageError("Invalid argument")
 	}
-	c, err := store.Commit(args[0], flagAuthor, flagComment)
+	b, err := store.Bundle(args[0])
 	if err != nil {
 		return err
 	}
-
+	lb, err := b.Lock()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if e := lb.Close(); e != nil && err == nil {
+			err = e
+		}
+	}()
 	name := ""
-	ref := ""
 	if len(args) > 1 {
 		name = args[1]
-		if li := strings.LastIndex(name, ":"); li > 0 && li+1 < len(name) {
-			ref = name[li+1:]
-			name = name[:li]
-		}
 	}
-	img, err := store.CreateImage(name, ref, c.Descriptor.Digest)
+	img, err := lb.Commit(store, name, flagAuthor, flagComment)
 	if err != nil {
 		return err
 	}

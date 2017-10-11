@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	digest "github.com/opencontainers/go-digest"
 )
 
@@ -56,7 +58,7 @@ func (s *KVStore) Put(key string, value digest.Digest) error {
 	if err := os.MkdirAll(filepath.Dir(file), 755); err != nil {
 		return fmt.Errorf("put %q -> %q: %s", key, value, err)
 	}
-	if err := writeFile(file, []byte(value.String())); err != nil {
+	if _, err := atomic.WriteFile(file, bytes.NewReader([]byte(value.String()))); err != nil {
 		return fmt.Errorf("put %q -> %q: %s", key, value, err)
 	}
 	return nil

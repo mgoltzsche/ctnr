@@ -3,6 +3,7 @@ package store
 type Locker interface {
 	Lock() error
 	Unlock() error
+	Close() error
 }
 
 /*type SharedLocker interface {

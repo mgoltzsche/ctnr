@@ -84,10 +84,7 @@ func (service *Service) ToSpec(vols VolumeResolver, rootless bool, spec *generat
 		specconv.ToRootless(spec.Spec())
 	}
 
-	err := applyService(service, spec)
-	if err != nil {
-		return err
-	}
+	applyService(service, spec)
 
 	/*if rootless {
 		specconv.ToRootless(spec)
@@ -254,7 +251,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(service *Service, spec *generate.SpecBuilder) error {
+func applyService(service *Service, spec *generate.SpecBuilder) {
 	// Entrypoint & command
 	if service.Entrypoint != nil {
 		spec.SetProcessEntrypoint(service.Entrypoint)
@@ -317,6 +314,4 @@ func applyService(service *Service, spec *generate.SpecBuilder) error {
 
 	// TODO: register healthcheck (as Hook)
 	// TODO: bind ports (propably in networking Hook)
-
-	return nil
 }

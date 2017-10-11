@@ -16,7 +16,7 @@ var _ SharedLock = &SharedDirLock{}
 type SharedDirLock struct {
 	dir            string
 	sharedLockFile string
-	lockfile       Lockfile
+	lockfile       *Lockfile
 	timeout        time.Duration
 }
 
@@ -27,7 +27,8 @@ func NewSharedLock(dir string, retryTimeout time.Duration) (l SharedDirLock, err
 	}
 	l.dir = dir
 	l.timeout = retryTimeout
-	if l.lockfile, err = NewLockFile(filepath.Join(dir, "exclusive.lock"), time.Duration(3000000000)); err != nil {
+
+	if l.lockfile, err = LockFile(filepath.Join(dir, "exclusive.lock"), time.Duration(3000000000)); err != nil {
 		return
 	}
 
@@ -63,8 +64,8 @@ func NewSharedLock(dir string, retryTimeout time.Duration) (l SharedDirLock, err
 				err = fmt.Errorf("shared lock: timed out while waiting for existing exclusive lock to be released")
 				return
 			}
-			time.Sleep(time.Millisecond * 500)
 		}
+		time.Sleep(time.Millisecond * 500)
 	}
 	return
 }

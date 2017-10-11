@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/generate"
+	//"github.com/mgoltzsche/cntnr/bundle"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/satori/go.uuid"
@@ -17,30 +17,29 @@ import (
 // Minimal Store interface.
 // containers/storage interface is not used to ease the OCI store implementation
 // which is required by unprivileged users (https://github.com/containers/storage/issues/96)
+
 type Store interface {
+	ImageStore
+	BundleStore
+}
+
+type ImageStore interface {
 	ImportImage(name string) (Image, error)
 	Image(id digest.Digest) (Image, error)
 	ImageByName(name string) (Image, error)
 	Images() ([]Image, error)
-	ImageManifest(d digest.Digest) (ispecs.Manifest, error)
-	ImageConfig(d digest.Digest) (ispecs.Image, error)
 	PutImageManifest(m ispecs.Manifest) (ispecs.Descriptor, error)
 	PutImageConfig(m ispecs.Image) (ispecs.Descriptor, error)
+	CommitImage(rootfs, name string, parentManifest *digest.Digest, author, comment string) (Image, error)
 	CreateImage(name, ref string, manifestDigest digest.Digest) (Image, error)
 	DeleteImage(name, ref string) error
 	ImageGC() error
-	CreateContainer(id string, manifestDigest *digest.Digest) (*ContainerBuilder, error)
-	Container(id string) (Container, error)
-	Containers() ([]Container, error)
-	DeleteContainer(id string) error
-	Commit(containerId, author, comment string) (CommitResult, error)
 	Close() error
 }
 
-type CommitResult struct {
-	Manifest   ispecs.Manifest
-	Config     ispecs.Image
-	Descriptor ispecs.Descriptor
+type ImageReader interface {
+	UnpackLayers(manifestDigest digest.Digest, rootfs string) error
+	ImageConfig(d digest.Digest) (ispecs.Image, error)
 }
 
 type Image struct {
@@ -50,43 +49,41 @@ type Image struct {
 	Manifest ispecs.Manifest
 	Size     uint64
 	Created  time.Time
+	config   *ispecs.Image
+	store    ImageReader
 }
 
-func NewImage(id digest.Digest, name, ref string, created time.Time, manifest ispecs.Manifest) Image {
+func (img *Image) Config() (cfg ispecs.Image, err error) {
+	if img.config == nil {
+		if cfg, err = img.store.ImageConfig(img.Manifest.Config.Digest); err != nil {
+			return
+		}
+		img.config = &cfg
+	} else {
+		cfg = *img.config
+	}
+	return
+}
+
+func (img *Image) Unpack(dest string) error {
+	return img.store.UnpackLayers(img.ID, dest)
+}
+
+func NewImage(id digest.Digest, name, ref string, created time.Time, manifest ispecs.Manifest, config *ispecs.Image, store ImageReader) Image {
 	var size uint64
 	for _, l := range manifest.Layers {
 		if l.Size > 0 {
 			size += uint64(l.Size)
 		}
 	}
-	return Image{id, name, ref, manifest, size, created}
+	return Image{id, name, ref, manifest, size, created, config, store}
 }
 
-type Container struct {
-	ID      string
-	Dir     string
-	Image   *digest.Digest
-	Created time.Time
-}
-
-func NewContainer(id, dir string, image *digest.Digest, created time.Time) Container {
-	return Container{id, dir, image, created}
-}
-
-type ContainerBuilder struct {
-	ID                  string
-	Dir                 string
-	ImageManifestDigest *digest.Digest
-	*generate.SpecBuilder
-	build func(*ContainerBuilder) (Container, error)
-}
-
-func NewContainerBuilder(id, dir string, imageManifestDigest *digest.Digest, spec *generate.SpecBuilder, build func(*ContainerBuilder) (Container, error)) *ContainerBuilder {
-	return &ContainerBuilder{id, dir, imageManifestDigest, spec, build}
-}
-
-func (b *ContainerBuilder) Build() (Container, error) {
-	return b.build(b)
+type BundleStore interface {
+	CreateBundle(id string, builder *BundleBuilder) (Bundle, error)
+	Bundle(id string) (Bundle, error)
+	Bundles() ([]Bundle, error)
+	BundleGC(before time.Time) ([]Bundle, error)
 }
 
 // Generate or move into utils package since it also occurs in run

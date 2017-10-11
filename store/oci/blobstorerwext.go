@@ -7,7 +7,6 @@ import (
 	"runtime"
 
 	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/store"
 	"github.com/openSUSE/umoci/oci/layer"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -19,6 +18,12 @@ type BlobStoreExt struct {
 	*BlobStore
 	mtree *MtreeStore
 	debug log.Logger
+}
+
+type CommitResult struct {
+	Manifest   ispecs.Manifest
+	Config     ispecs.Image
+	Descriptor ispecs.Descriptor
 }
 
 func NewBlobStoreExt(blobStore *BlobStore, mtreeStore *MtreeStore, debug log.Logger) BlobStoreExt {
@@ -43,10 +48,11 @@ func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string)
 	return
 }
 
-func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.Digest, author, comment string) (r store.CommitResult, err error) {
+func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.Digest, author, comment string) (r *CommitResult, err error) {
 	// Load parent
 	var parentMtree *mtree.DirectoryHierarchy
 	var manifest ispecs.Manifest
+	r = &CommitResult{}
 	if parentManifestDigest != nil {
 		manifest, err = s.ImageManifest(*parentManifestDigest)
 		if err != nil {

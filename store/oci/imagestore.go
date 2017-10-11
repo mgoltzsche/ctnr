@@ -17,14 +17,19 @@ import (
 	"github.com/containers/image/signature"
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
-	lock "github.com/mgoltzsche/cntnr/lock"
 	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/pkg/atomic"
+	lock "github.com/mgoltzsche/cntnr/pkg/lock"
 	"github.com/mgoltzsche/cntnr/store"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-type ImageStore struct {
+const (
+	AnnotationImported = "com.github.mgoltzsche.cntnr.image.imported"
+)
+
+type ImageStoreImpl struct {
 	*BlobStoreExt
 	imageDir       string
 	systemContext  *types.SystemContext
@@ -34,7 +39,7 @@ type ImageStore struct {
 	err            log.Logger
 }
 
-func NewImageStore(dir string, blobStore *BlobStoreExt, systemContext *types.SystemContext, errorLog log.Logger) (r ImageStore, err error) {
+func NewImageStore(dir string, blobStore *BlobStoreExt, systemContext *types.SystemContext, errorLog log.Logger) (r *ImageStoreImpl, err error) {
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		err = fmt.Errorf("init image store: %s", err)
 		return
@@ -44,11 +49,11 @@ func NewImageStore(dir string, blobStore *BlobStoreExt, systemContext *types.Sys
 		return
 	}
 	lck, err := lock.NewSharedLock(filepath.Join(os.TempDir(), "cntnr", "lock"), time.Duration(300000000000))
-	return ImageStore{blobStore, dir, systemContext, trustPolicy, &sync.Mutex{}, &lck, errorLog}, err
+	return &ImageStoreImpl{blobStore, dir, systemContext, trustPolicy, &sync.Mutex{}, &lck, errorLog}, err
 }
 
 // Creates a new image. Overwrites existing refs.
-func (s *ImageStore) CreateImage(name, ref string, manifestDigest digest.Digest) (img store.Image, err error) {
+func (s *ImageStoreImpl) CreateImage(name, ref string, manifestDigest digest.Digest) (img store.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("create image: %s", err)
@@ -89,18 +94,19 @@ func (s *ImageStore) CreateImage(name, ref string, manifestDigest digest.Digest)
 		return
 	}
 
-	return store.NewImage(manifestDigest, name, ref, time.Now(), manifest), err
+	return store.NewImage(manifestDigest, name, ref, time.Now(), manifest, nil, s), err
 }
 
-func (s *ImageStore) ImageByName(name string) (r store.Image, err error) {
+func (s *ImageStoreImpl) ImageByName(nameRef string) (r store.Image, err error) {
 	defer func() {
 		if err != nil {
-			err = fmt.Errorf("image %q not found in local store: %s", name, err)
+			err = fmt.Errorf("image %q not found in local store: %s", nameRef, err)
 		}
 	}()
-	if id, e := digest.Parse(name); e == nil && id.Validate() == nil {
+	if id, e := digest.Parse(nameRef); e == nil && id.Validate() == nil {
 		return s.Image(id)
 	}
+	name := nameRef
 	ref := "latest"
 	if imgRef, e := alltransports.ParseImageName(name); e == nil {
 		name, ref = nameAndRef(imgRef)
@@ -116,7 +122,7 @@ func (s *ImageStore) ImageByName(name string) (r store.Image, err error) {
 	return s.Image(d.Digest)
 }
 
-func (s *ImageStore) Image(id digest.Digest) (r store.Image, err error) {
+func (s *ImageStoreImpl) Image(id digest.Digest) (r store.Image, err error) {
 	manifest, err := s.ImageManifest(id)
 	if err != nil {
 		return r, fmt.Errorf("image: %s", err)
@@ -125,10 +131,10 @@ func (s *ImageStore) Image(id digest.Digest) (r store.Image, err error) {
 	if err != nil {
 		return r, fmt.Errorf("image: %s", err)
 	}
-	return store.NewImage(id, "", "", f.ModTime(), manifest), err
+	return store.NewImage(id, "", "", f.ModTime(), manifest, nil, s), err
 }
 
-func (s *ImageStore) Images() (r []store.Image, err error) {
+func (s *ImageStoreImpl) Images() (r []store.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("images: %s", err)
@@ -154,7 +160,7 @@ func (s *ImageStore) Images() (r []store.Image, err error) {
 						} else {
 							manifest, e = s.ImageManifest(d.Digest)
 							if e == nil {
-								r = append(r, store.NewImage(d.Digest, name, ref, f.ModTime(), manifest))
+								r = append(r, store.NewImage(d.Digest, name, ref, f.ModTime(), manifest, nil, s))
 							}
 						}
 					}
@@ -168,9 +174,12 @@ func (s *ImageStore) Images() (r []store.Image, err error) {
 	return
 }
 
-func (s *ImageStore) DeleteImage(name, ref string) (err error) {
+func (s *ImageStoreImpl) DeleteImage(name, ref string) (err error) {
 	if imgRef, e := alltransports.ParseImageName(name); e == nil {
 		name, _ = nameAndRef(imgRef)
+	}
+	if _, e := os.Stat(s.name2dir(name)); os.IsNotExist(e) {
+		return fmt.Errorf("image %q does not exist", name)
 	}
 	err = s.updateImageIndex(name, func(idx *ispecs.Index) error {
 		if ref == "" {
@@ -198,7 +207,22 @@ func (s *ImageStore) DeleteImage(name, ref string) (err error) {
 	return err
 }
 
-func (s *ImageStore) ImageGC() (err error) {
+func (s *ImageStoreImpl) CommitImage(rootfs, name string, parentManifest *digest.Digest, author, comment string) (r store.Image, err error) {
+	c, err := s.CommitLayer(rootfs, parentManifest, author, comment)
+	if err != nil {
+		return r, fmt.Errorf("commit image: %s", err)
+	}
+	name, ref := parseImageName(name)
+	if name != "" {
+		if r, err = s.CreateImage(name, ref, c.Descriptor.Digest); err == nil {
+			err = fmt.Errorf("commit image: %s", err)
+		}
+	}
+	r = store.NewImage(c.Descriptor.Digest, name, ref, time.Now(), c.Manifest, &c.Config, s)
+	return
+}
+
+func (s *ImageStoreImpl) ImageGC() (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("image gc: %s", err)
@@ -210,76 +234,31 @@ func (s *ImageStore) ImageGC() (err error) {
 	}
 	defer s.unlock()
 
-	/*// Collect named transitive blobs to leave them untouched
-	b := map[digest.Digest]bool{}
-	ids := map[string]bool{}
+	// Collect named transitive blobs to leave them untouched
+	keep := map[digest.Digest]bool{}
 	imgs, err := s.Images()
 	if err != nil {
 		return err
 	}
 	for _, img := range imgs {
-		ids[img.ID] = true
-		manifest, err := s.ImageManifest(img.Manifest.Digest)
-		if err != nil {
-			return err
-		}
-		for _, l := range manifest.Layers {
-			b[l.Digest] = true
-		}
-		b[manifest.Config.Digest] = true
-		b[img.Manifest.Digest] = true
-	}
-
-	// Delete all blobs but the named ones
-	ds, err := ioutil.ReadDir(s.blobDir)
-	if err != nil {
-		return err
-	}
-	for _, d := range ds {
-		if d.IsDir() {
-			algDir := filepath.Join(s.blobDir, d.Name())
-			fs, err := ioutil.ReadDir(algDir)
-			if err != nil {
-				return err
-			}
-			for _, f := range fs {
-				blobFile := filepath.Join(algDir, f.Name())
-				blobDigest := digest.NewDigestFromHex(d.Name(), f.Name())
-
-				if !b[blobDigest] {
-					fmt.Println("Deleting blob " + blobDigest)
-					if err = os.Remove(blobFile); err != nil {
-						return err
-					}
-				}
-			}
+		keep[img.ID] = true
+		keep[img.Manifest.Config.Digest] = true
+		for _, l := range img.Manifest.Layers {
+			keep[l.Digest] = true
 		}
 	}
 
-	// Delete all image directories that are not linked
-	ds, err = ioutil.ReadDir(s.imageDir)
-	if err != nil {
-		return err
-	}
-	for _, d := range ds {
-		if !ids[d.Name()] {
-			if err = os.RemoveAll(filepath.Join(s.imageDir, d.Name())); err != nil {
-				return err
-			}
-		}
-	}*/
-	panic("TODO: refactor this")
-
-	return nil
+	// Delete all but the named blobs
+	return s.RetainBlobs(keep)
 }
 
-func (s *ImageStore) unlock() {
+func (s *ImageStoreImpl) unlock() {
 	if err := s.lock.Unlock(); err != nil {
 		fmt.Fprint(os.Stderr, "Error: %s", err)
 	}
 }
 
-func (s *ImageStore) ImportImage(src string) (img store.Image, err error) {
+func (s *ImageStoreImpl) ImportImage(src string) (img store.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("import: %s", err)
@@ -329,14 +308,16 @@ func (s *ImageStore) ImportImage(src string) (img store.Image, err error) {
 	if err = imageIndex(imgDir, &idx); err != nil {
 		return
 	}
+	for _, m := range idx.Manifests {
+		m.Annotations[AnnotationImported] = "true"
+	}
 	if err = s.addImage(name, idx.Manifests); err != nil {
 		return
 	}
-
 	return s.ImageByName(src)
 }
 
-func (s *ImageStore) Close() (err error) {
+func (s *ImageStoreImpl) Close() (err error) {
 	if err = s.lock.Close(); err != nil {
 		err = fmt.Errorf("close store: %s", err)
 	}
@@ -344,7 +325,7 @@ func (s *ImageStore) Close() (err error) {
 }
 
 // Adds manifests to an image using a file lock
-func (s *ImageStore) addImage(name string, manifestDescriptors []ispecs.Descriptor) error {
+func (s *ImageStoreImpl) addImage(name string, manifestDescriptors []ispecs.Descriptor) error {
 	if len(manifestDescriptors) == 0 {
 		return nil
 	}
@@ -366,18 +347,18 @@ func (s *ImageStore) addImage(name string, manifestDescriptors []ispecs.Descript
 	})
 }
 
-func (s *ImageStore) updateImageIndex(name string, transform func(idx *ispecs.Index) error) error {
+func (s *ImageStoreImpl) updateImageIndex(name string, transform func(idx *ispecs.Index) error) error {
 	s.indexWriteLock.Lock()
 	defer s.indexWriteLock.Unlock()
 	return UpdateImageIndex(s.name2dir(name), s.blobDir, transform)
 }
 
-func (s *ImageStore) name2dir(name string) string {
+func (s *ImageStoreImpl) name2dir(name string) string {
 	name = base64.RawStdEncoding.EncodeToString([]byte(name))
 	return filepath.Join(s.imageDir, name)
 }
 
-func (s *ImageStore) dir2name(fileName string) (name string, err error) {
+func (s *ImageStoreImpl) dir2name(fileName string) (name string, err error) {
 	b, err := base64.RawStdEncoding.DecodeString(fileName)
 	if err == nil {
 		name = string(b)
@@ -399,7 +380,7 @@ func UpdateImageIndex(imgDir, externalBlobDir string, transform func(*ispecs.Ind
 	if externalBlobDir != "" && !filepath.IsAbs(externalBlobDir) {
 		return fmt.Errorf("image index: externalBlobDir is not an absolute path: %q", externalBlobDir)
 	}
-	l, err := lock.NewLockFile(filepath.Clean(imgDir)+".lock", time.Duration(2000000000))
+	l, err := lock.LockFile(filepath.Clean(imgDir)+".lock", time.Duration(2000000000))
 	if err != nil {
 		return
 	}
@@ -446,11 +427,7 @@ func UpdateImageIndex(imgDir, externalBlobDir string, transform func(*ispecs.Ind
 		// Create new oci-layout file
 		layout := ispecs.ImageLayout{}
 		layout.Version = ispecs.ImageLayoutVersion
-		var b []byte
-		if b, err = json.Marshal(&layout); err != nil {
-			return
-		}
-		if err = writeFile(layoutFile, b); err != nil {
+		if _, err = atomic.WriteJson(layoutFile, &layout); err != nil {
 			return
 		}
 	} else {
@@ -498,11 +475,8 @@ func UpdateImageIndex(imgDir, externalBlobDir string, transform func(*ispecs.Ind
 	}
 
 	// Write modified index.json
-	j, err := json.Marshal(&idx)
-	if err != nil {
-		return
-	}
-	return writeFile(idxFile, j)
+	_, err = atomic.WriteJson(idxFile, &idx)
+	return
 }
 
 func imageIndex(dir string, r *ispecs.Index) error {
@@ -539,17 +513,30 @@ func addManifests(manifests *[]ispecs.Descriptor, addAll []ispecs.Descriptor) {
 	}
 }
 
-func nameAndRef(imgRef types.ImageReference) (name string, tag string) {
-	name = strings.TrimLeft(imgRef.StringWithinTransport(), "/")
+func parseNameAndRef(nameAndTag string) (name, ref string, err error) {
+	imgRef, err := alltransports.ParseImageName(nameAndTag)
+	if err != nil {
+		return
+	}
+	name, ref = nameAndRef(imgRef)
+	return
+}
+
+func nameAndRef(imgRef types.ImageReference) (string, string) {
+	name := strings.TrimLeft(imgRef.StringWithinTransport(), "/")
 	dckrRef := imgRef.DockerReference()
 	if dckrRef != nil {
 		name = dckrRef.String()
 	}
-	if li := strings.LastIndex(name, ":"); li > 0 && li+1 < len(name) {
-		tag = name[li+1:]
-		name = name[:li]
+	return parseImageName(name)
+}
+
+func parseImageName(nameAndRef string) (name, ref string) {
+	if li := strings.LastIndex(nameAndRef, ":"); li > 0 && li+1 < len(nameAndRef) {
+		ref = nameAndRef[li+1:]
+		name = nameAndRef[:li]
 	} else {
-		tag = "latest"
+		ref = "latest"
 	}
 	return
 }

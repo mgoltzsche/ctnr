@@ -104,7 +104,7 @@ func (s *BlobStore) PutLayer(reader io.Reader) (layer ispecs.Descriptor, diffIdD
 	return
 }
 
-func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (d ispecs.Descriptor, err error) {
+func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("retain blobs: %s", err)

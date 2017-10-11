@@ -58,7 +58,7 @@ func init() {
 }
 
 func runBundleList(cmd *cobra.Command, args []string) (err error) {
-	l, err := store.Containers()
+	l, err := store.Bundles()
 	if err != nil {
 		return
 	}
@@ -66,8 +66,8 @@ func runBundleList(cmd *cobra.Command, args []string) (err error) {
 	fmt.Printf(f, "ID", "IMAGE", "CREATED")
 	for _, c := range l {
 		img := "<none>"
-		if c.Image != nil {
-			img = (*c.Image).String()
+		if c.Image() != nil {
+			img = (*c.Image()).String()
 		}
 		fmt.Printf(f, c.ID, img, humanize.Time(c.Created))
 	}
@@ -91,10 +91,20 @@ func runBundleDelete(cmd *cobra.Command, args []string) (err error) {
 	}
 	failed := false
 	for _, id := range args {
-		if err = store.DeleteContainer(id); err != nil {
-			os.Stderr.WriteString(err.Error() + "\n")
-			failed = true
+		b, err := store.Bundle(id)
+		if err == nil {
+			bl, e := b.Lock()
+			if e == nil {
+				err = bl.Delete()
+				if err == nil {
+					continue
+				}
+			} else {
+				err = e
+			}
 		}
+		os.Stderr.WriteString(err.Error() + "\n")
+		failed = true
 	}
 	if failed {
 		err = fmt.Errorf("bundle rm: Not all specified bundles have been removed")
