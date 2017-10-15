@@ -5,68 +5,51 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/nightlyone/lockfile"
 )
 
-var (
-	locks = map[string]*Lockfile{}
-	mutex = &sync.Mutex{}
-)
-
 type Lockfile struct {
 	file     string
 	lockfile lockfile.Lockfile
-	timeout  time.Duration
-	mutex    *sync.Mutex
 }
 
-func LockFile(file string, retryTimeout time.Duration) (*Lockfile, error) {
-	mutex.Lock()
-	defer mutex.Unlock()
-
+func LockFile(file string) (*Lockfile, error) {
 	file, err := normalize(file)
 	if err != nil {
 		return nil, fmt.Errorf("lock file: %s", err)
 	}
 
-	if exist := locks[file]; exist != nil {
-		return exist, nil
-	}
-
 	l, err := lockfile.New(file)
-	lck := &Lockfile{file, l, retryTimeout, &sync.Mutex{}}
-	locks[file] = lck
+	lck := &Lockfile{file, l}
 	return lck, err
 }
 
-func (l *Lockfile) Lock() error {
-	l.mutex.Lock()
-	maxRetries := l.timeout.Seconds()
-	var n float64
+func (l *Lockfile) Lock() (err error) {
+	lock(l.file)
+
+	defer func() {
+		if err != nil {
+			unlock(l.file)
+		}
+	}()
+
 	for {
 		if l.lockfile.TryLock() == nil {
-			return nil
+			return
 		}
 
-		// TODO: remove (check calls first)
-		n++
-		if n > maxRetries {
-			return fmt.Errorf("lock %s: timed out", string(l.lockfile))
-		}
-
-		if err := awaitFileChange(l.file); err != nil && !os.IsNotExist(err) {
-			return err
+		if err = awaitFileChange(l.file); err != nil && !os.IsNotExist(err) {
+			return
 		}
 	}
-	return nil
+	return
 }
 
 func (l *Lockfile) Unlock() error {
-	defer l.mutex.Unlock()
+	defer unlock(l.file)
 	return l.lockfile.Unlock()
 }
 
@@ -78,15 +61,6 @@ func (l *Lockfile) IsLocked() (bool, error) {
 	} else {
 		return true, err
 	}
-}
-
-func (l *Lockfile) Close() error {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	delete(locks, l.file)
-	l.mutex = nil
-	return nil
 }
 
 func normalize(path string) (f string, err error) {
@@ -102,23 +76,32 @@ func normalize(path string) (f string, err error) {
 	return filepath.Abs(f)
 }
 
-func awaitFileChange(file string) (err error) {
+func awaitFileChange(files ...string) (err error) {
+	if len(files) == 0 {
+		panic("No files provided to watch")
+	}
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return
 	}
 	defer watcher.Close()
-
-	if err = watcher.Add(file); err != nil {
-		return
+	for _, file := range files {
+		if err = watcher.Add(file); err != nil {
+			return
+		}
 	}
-
+	timer := time.NewTimer(5 * time.Second)
 	select {
 	case event := <-watcher.Events:
 		log.Println("watch event:", event)
 		return
 	case err = <-watcher.Errors:
 		log.Println("watch err:", err)
+		return
+	case <-timer.C:
+		// Timeout to prevent deadlock after other process dies without deleting its lockfile
+		log.Println("watch time expired")
 		return
 	}
 }

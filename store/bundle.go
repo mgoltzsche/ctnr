@@ -95,17 +95,21 @@ func NewLockedBundle(bundle Bundle) (*LockedBundle, error) {
 
 func (b *LockedBundle) Close() (err error) {
 	if b.lock != nil {
-		if err := b.resetExpiryTime(); err != nil {
+		if err = b.resetExpiryTime(); err != nil {
 			fmt.Fprintf(os.Stderr, "unlock bundle: %s", err)
 			err = fmt.Errorf("unlock bundle: %s", err)
 		}
-		if e := b.lock.Unlock(); e != nil {
-			err = fmt.Errorf("unlock bundle: %s", e)
+		if e := b.lock.Unlock(); e != nil && err == nil {
+			if err == nil {
+				err = fmt.Errorf("unlock bundle: %s", e)
+			} else {
+				err = fmt.Errorf("unlock bundle: %s. %s", err, e)
+			}
+
 		}
 		b.lock = nil
 	}
-
-	return err
+	return
 }
 
 func (b *LockedBundle) Commit(writer ImageWriter, name, author, comment string) (r Image, err error) {
@@ -136,9 +140,9 @@ func (b *LockedBundle) Delete() (err error) {
 	return
 }
 
-func lockBundle(dir string) (lck *lock.Lockfile, err error) {
+func lockBundle(dir string) (l *lock.Lockfile, err error) {
 	// TODO: use tmpfs for lock file
-	l, err := lock.LockFile(filepath.Clean(dir)+".lock", time.Duration(0))
+	l, err = lock.LockFile(filepath.Clean(dir) + ".lock")
 	if err != nil {
 		return nil, fmt.Errorf("lock bundle: %s", err)
 	}

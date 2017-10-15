@@ -20,53 +20,33 @@ type SharedDirLock struct {
 	timeout        time.Duration
 }
 
-func NewSharedLock(dir string, retryTimeout time.Duration) (l SharedDirLock, err error) {
+func NewSharedLock(dir string) (l SharedDirLock, err error) {
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		err = fmt.Errorf("init lock directory: %s", err)
 		return
 	}
 	l.dir = dir
-	l.timeout = retryTimeout
 
-	if l.lockfile, err = LockFile(filepath.Join(dir, "exclusive.lock"), time.Duration(3000000000)); err != nil {
+	if l.lockfile, err = LockFile(filepath.Join(dir, "exclusive.lock")); err != nil {
 		return
 	}
 
-	// Try to create shared lock, waiting for exclusive lock to become free or timeout
-	deadline := time.Now().Add(retryTimeout)
-	for {
-		locked, e := l.lockfile.IsLocked()
-		if e != nil {
-			err = fmt.Errorf("shared lock: %s", e)
-			return
-		}
-		if !locked {
-			tmp, e := ioutil.TempFile(dir, fmt.Sprintf("sharedlock-%d-", os.Getpid()))
-			if e != nil {
-				err = fmt.Errorf("shared lock: %s", e)
-				return
-			}
-			l.sharedLockFile = tmp.Name()
-			tmp.Close()
-			locked, e = l.lockfile.IsLocked()
-			if e != nil {
-				err = fmt.Errorf("shared lock: %s", e)
-				return
-			}
-			if locked {
-				if e = os.Remove(l.sharedLockFile); e != nil {
-					fmt.Fprintf(os.Stderr, "Error: remove shared lock file: %s\n", e)
-				}
-			} else {
-				break
-			}
-			if time.Now().After(deadline) {
-				err = fmt.Errorf("shared lock: timed out while waiting for existing exclusive lock to be released")
-				return
-			}
-		}
-		time.Sleep(time.Millisecond * 500)
+	// Lock dir exclusively
+	err = l.lockfile.Lock()
+	if err != nil {
+		err = fmt.Errorf("shared lock: %s", err)
+		return
 	}
+	defer l.lockfile.Unlock()
+
+	// Register shared lock file
+	tmp, e := ioutil.TempFile(dir, fmt.Sprintf("sharedlock-%d-", os.Getpid()))
+	if e != nil {
+		err = fmt.Errorf("shared lock: %s", e)
+		return
+	}
+	l.sharedLockFile = tmp.Name()
+	tmp.Close()
 	return
 }
 
@@ -76,25 +56,18 @@ func (l *SharedDirLock) Lock() (err error) {
 	}
 	defer func() {
 		if err != nil {
-			l.unlock()
+
 		}
 	}()
 
-	// Wait until no shared lock acquired or timeout
-	deadline := time.Now().Add(l.timeout)
-	for {
-		empty := false
-		empty, err = l.assertNoSharedLocks()
-		if err != nil {
-			return
+	// Wait until no shared lock acquired
+	err = l.awaitSharedLocks()
+	if err != nil {
+		if e := l.Unlock(); e != nil {
+			err = fmt.Errorf("lock: await free lock: %s, %s", err, e)
+		} else {
+			err = fmt.Errorf("lock: await free lock: %s", err)
 		}
-		if empty {
-			break
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("exclusive lock: timed out while waiting for existing shared locks to be released")
-		}
-		time.Sleep(time.Millisecond * 500)
 	}
 	return
 }
@@ -113,38 +86,44 @@ func (l *SharedDirLock) Close() (err error) {
 	return
 }
 
-func (l *SharedDirLock) unlock() {
-	if e := l.Unlock(); e != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", e)
+func (l *SharedDirLock) awaitSharedLocks() (err error) {
+	own := filepath.Base(l.sharedLockFile)
+	locked := true
+	var fl []os.FileInfo
+	for locked {
+		fl, err = ioutil.ReadDir(l.dir)
+		if err != nil {
+			return
+		}
+		locked = false
+		for _, f := range fl {
+			if f.IsDir() {
+				continue
+			}
+			fname := f.Name()
+			fpath := filepath.Join(l.dir, fname)
+			ns := strings.SplitN(fname, "-", 3)
+			if len(ns) != 3 || ns[2] == "" {
+				continue
+			}
+			pid, e := strconv.Atoi(ns[1])
+			if e != nil || pid < 1 || fname == own {
+				// ignore non shared lock files + own lock file
+				continue
+			}
+			p, e := os.FindProcess(pid)
+			if e != nil || p.Signal(syscall.Signal(0)) != nil {
+				// Ignore and remove file from not existing process
+				//TODO: os.Remove(fpath)
+				continue
+			}
+			locked = true
+			if e = awaitFileChange(fpath, l.dir); e != nil && !os.IsNotExist(e) {
+				err = fmt.Errorf("lock: await exclusive usage: %s", e)
+				return
+			}
+			break
+		}
 	}
-}
-
-func (l *SharedDirLock) assertNoSharedLocks() (r bool, err error) {
-	fl, err := ioutil.ReadDir(l.dir)
-	if err != nil {
-		return
-	}
-	for _, f := range fl {
-		if f.IsDir() {
-			continue
-		}
-		ns := strings.SplitN(f.Name(), "-", 3)
-		if len(ns) != 3 {
-			continue
-		}
-		pid, e := strconv.Atoi(ns[1])
-		if e != nil || pid < 1 || pid == os.Getpid() {
-			continue
-		}
-		p, e := os.FindProcess(pid)
-		if e != nil {
-			// Ignore not existing process
-			continue
-		} else if e = p.Signal(syscall.Signal(0)); e != nil { // must check since on unix process is always returned
-			// Ignore not existing process
-			continue
-		}
-		return false, nil
-	}
-	return true, nil
+	return
 }

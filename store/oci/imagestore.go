@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/containers/image/copy"
@@ -31,12 +30,11 @@ const (
 
 type ImageStoreImpl struct {
 	*BlobStoreExt
-	imageDir       string
-	systemContext  *types.SystemContext
-	trustPolicy    *signature.PolicyContext
-	indexWriteLock *sync.Mutex
-	lock           lock.SharedLock
-	err            log.Logger
+	imageDir      string
+	systemContext *types.SystemContext
+	trustPolicy   *signature.PolicyContext
+	lock          lock.SharedLock
+	err           log.Logger
 }
 
 func NewImageStore(dir string, blobStore *BlobStoreExt, systemContext *types.SystemContext, errorLog log.Logger) (r *ImageStoreImpl, err error) {
@@ -48,8 +46,8 @@ func NewImageStore(dir string, blobStore *BlobStoreExt, systemContext *types.Sys
 	if err != nil {
 		return
 	}
-	lck, err := lock.NewSharedLock(filepath.Join(os.TempDir(), "cntnr", "lock"), time.Duration(300000000000))
-	return &ImageStoreImpl{blobStore, dir, systemContext, trustPolicy, &sync.Mutex{}, &lck, errorLog}, err
+	lck, err := lock.NewSharedLock(filepath.Join(os.TempDir(), "cntnr", "lock"))
+	return &ImageStoreImpl{blobStore, dir, systemContext, trustPolicy, &lck, errorLog}, err
 }
 
 // Creates a new image. Overwrites existing refs.
@@ -348,8 +346,6 @@ func (s *ImageStoreImpl) addImage(name string, manifestDescriptors []ispecs.Desc
 }
 
 func (s *ImageStoreImpl) updateImageIndex(name string, transform func(idx *ispecs.Index) error) error {
-	s.indexWriteLock.Lock()
-	defer s.indexWriteLock.Unlock()
 	return UpdateImageIndex(s.name2dir(name), s.blobDir, transform)
 }
 
@@ -380,7 +376,8 @@ func UpdateImageIndex(imgDir, externalBlobDir string, transform func(*ispecs.Ind
 	if externalBlobDir != "" && !filepath.IsAbs(externalBlobDir) {
 		return fmt.Errorf("image index: externalBlobDir is not an absolute path: %q", externalBlobDir)
 	}
-	l, err := lock.LockFile(filepath.Clean(imgDir)+".lock", time.Duration(2000000000))
+	// TODO: Use tmpfs
+	l, err := lock.LockFile(filepath.Clean(imgDir) + ".lock")
 	if err != nil {
 		return
 	}
