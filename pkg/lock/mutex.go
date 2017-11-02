@@ -1,4 +1,4 @@
-package store
+package lock
 
 import (
 	"sync"

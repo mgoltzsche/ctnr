@@ -69,7 +69,7 @@ func runBundleList(cmd *cobra.Command, args []string) (err error) {
 		if c.Image() != nil {
 			img = (*c.Image()).String()
 		}
-		fmt.Printf(f, c.ID, img, humanize.Time(c.Created))
+		fmt.Printf(f, c.ID(), img, humanize.Time(c.Created()))
 	}
 	return
 }
@@ -81,7 +81,7 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 	panic("TODO: bundle dir option")
 	bundleDir := ""
 	c, err := createRuntimeBundle(&model.Project{}, flagsBundle.last(), bundleDir)
-	fmt.Println(c.Dir)
+	fmt.Println(c.Dir())
 	return
 }
 

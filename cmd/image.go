@@ -17,9 +17,9 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	humanize "github.com/dustin/go-humanize"
+	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/spf13/cobra"
 )
 
@@ -82,7 +82,7 @@ func runImageList(cmd *cobra.Command, args []string) (err error) {
 	f := "%-35s %-15s  %-71s  %-15s  %8s\n"
 	fmt.Printf(f, "NAME", "REF", "ID", "CREATED", "SIZE")
 	for _, img := range imgs {
-		fmt.Printf(f, img.Name, img.Ref, img.ID, humanize.Time(img.Created), humanize.Bytes(img.Size))
+		fmt.Printf(f, img.Name, img.Ref, img.ID(), humanize.Time(img.Created), humanize.Bytes(img.Size))
 	}
 	return
 }
@@ -98,27 +98,24 @@ func runImageImport(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return usageError("No image provided to import")
 	}
-	_, err := store.ImportImage(args[0])
-	return err
+	return store.RunBatch(func(store image.ImageStoreRW) error {
+		_, err := store.ImportImage(args[0])
+		return err
+	})
 }
 
 func runImageDelete(cmd *cobra.Command, args []string) (err error) {
 	if len(args) == 0 {
 		return usageError("No image argument provided")
 	}
-	for _, arg := range args {
-		refIdx := strings.LastIndex(arg, ":")
-		name := arg
-		ref := ""
-		if refIdx > 0 && refIdx+1 < len(name) {
-			name = arg[:refIdx]
-			ref = arg[refIdx+1:]
+	return store.RunBatch(func(store image.ImageStoreRW) (err error) {
+		for _, img := range args {
+			e := store.DeleteImage(img)
+			if e != nil {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", e)
+				err = e
+			}
 		}
-		e := store.DeleteImage(name, ref)
-		if e != nil {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", e)
-			err = e
-		}
-	}
-	return
+		return
+	})
 }

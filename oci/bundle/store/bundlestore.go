@@ -1,19 +1,20 @@
-package oci
+package store
 
 import (
+	"encoding/base32"
 	"fmt"
-	//"io"
-	"encoding/json"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/store"
+	"github.com/mgoltzsche/cntnr/oci/bundle"
+	"github.com/satori/go.uuid"
 )
 
-var _ store.BundleStore = &BundleStore{}
+var _ bundle.BundleStore = &BundleStore{}
 
 type BundleStore struct {
 	dir   string
@@ -35,9 +36,9 @@ func NewBundleStore(dir string, debugLog log.Logger) (s *BundleStore, err error)
 	return &BundleStore{dir, debugLog}, err
 }
 
-func (s *BundleStore) Bundles() (l []store.Bundle, err error) {
+func (s *BundleStore) Bundles() (l []bundle.Bundle, err error) {
 	fl, err := ioutil.ReadDir(s.dir)
-	l = make([]store.Bundle, 0, len(fl))
+	l = make([]bundle.Bundle, 0, len(fl))
 	if err != nil {
 		return l, fmt.Errorf("bundles: %s", err)
 	}
@@ -55,36 +56,26 @@ func (s *BundleStore) Bundles() (l []store.Bundle, err error) {
 	return
 }
 
-func (s *BundleStore) Bundle(id string) (r store.Bundle, err error) {
-	r.ID = id
-	r.Dir = filepath.Join(s.dir, id)
-	cfgFile := filepath.Join(r.Dir, "config.json")
-	f, err := os.Stat(r.Dir)
+func (s *BundleStore) Bundle(id string) (r bundle.Bundle, err error) {
+	dir := filepath.Join(s.dir, id)
+	f, err := os.Stat(dir)
 	if err != nil {
 		return r, fmt.Errorf("bundle %q not found: %s", id, err)
 	}
-	r.Created = f.ModTime()
-	b, err := ioutil.ReadFile(cfgFile)
-	if err != nil {
-		return r, fmt.Errorf("bundle %q: %s", id, err)
-	}
-	if err = json.Unmarshal(b, &r.Spec); err != nil {
-		return r, fmt.Errorf("bundle %q: %s", id, err)
-	}
-	return
+	return bundle.NewBundle(id, dir, f.ModTime()), nil
 }
 
-func (s *BundleStore) CreateBundle(id string, builder *store.BundleBuilder) (store.Bundle, error) {
+func (s *BundleStore) CreateBundle(id string, builder *bundle.BundleBuilder) (bundle.Bundle, error) {
 	if id == "" {
-		id = store.GenerateId()
+		id = generateId()
 	}
 	return builder.Build(filepath.Join(s.dir, id))
 }
 
 // Deletes all bundles older than the given time
-func (s *BundleStore) BundleGC(before time.Time) (r []store.Bundle, err error) {
+func (s *BundleStore) BundleGC(before time.Time) (r []bundle.Bundle, err error) {
 	l, err := s.Bundles()
-	r = make([]store.Bundle, 0, len(l))
+	r = make([]bundle.Bundle, 0, len(l))
 	if err != nil {
 		s.debug.Printf("bundle gc: %s", err)
 	}
@@ -100,4 +91,9 @@ func (s *BundleStore) BundleGC(before time.Time) (r []store.Bundle, err error) {
 		}
 	}
 	return
+}
+
+// TODO: Move into utils package since it also occurs in run
+func generateId() string {
+	return strings.ToLower(strings.TrimRight(base32.StdEncoding.EncodeToString(uuid.NewV4().Bytes()), "="))
 }

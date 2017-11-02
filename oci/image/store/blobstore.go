@@ -1,4 +1,4 @@
-package oci
+package store
 
 import (
 	"bytes"
@@ -102,6 +102,10 @@ func (s *BlobStore) PutLayer(reader io.Reader) (layer ispecs.Descriptor, diffIdD
 	diffIdDigest = diffIdDigester.Digest()
 	layer.MediaType = ispecs.MediaTypeImageLayerGzip
 	return
+}
+
+func (s *BlobStore) BlobFileInfo(id digest.Digest) (os.FileInfo, error) {
+	return os.Stat(s.blobFile(id))
 }
 
 func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {

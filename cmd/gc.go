@@ -41,7 +41,7 @@ func runBundleGc(cmd *cobra.Command, args []string) error {
 	}
 	gcd, err := store.BundleGC(time.Now().Add(-bundleTTL))
 	for _, b := range gcd {
-		os.Stdout.WriteString(b.ID + "\n")
+		os.Stdout.WriteString(b.ID() + "\n")
 	}
 	return err
 }

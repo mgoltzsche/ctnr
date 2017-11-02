@@ -42,14 +42,14 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 	}
 	b, err := store.Bundle(args[0])
 	if err != nil {
-		return err
+		return
 	}
-	lb, err := b.Lock()
+	imgBuilder, err := store.ImageBuilderFromBundle(b, flagAuthor)
 	if err != nil {
-		return err
+		return
 	}
 	defer func() {
-		if e := lb.Close(); e != nil && err == nil {
+		if e := imgBuilder.Close(); e != nil && err == nil {
 			err = e
 		}
 	}()
@@ -57,10 +57,10 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 	if len(args) > 1 {
 		name = args[1]
 	}
-	img, err := lb.Commit(store, name, flagAuthor, flagComment)
+	img, err := imgBuilder.CommitLayer(name)
 	if err != nil {
-		return err
+		return
 	}
-	fmt.Println(img.ID)
+	fmt.Println(img.ID())
 	return
 }

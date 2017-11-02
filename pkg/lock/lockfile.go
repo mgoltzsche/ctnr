@@ -1,4 +1,4 @@
-package store
+package lock
 
 import (
 	"fmt"
@@ -51,16 +51,6 @@ func (l *Lockfile) Lock() (err error) {
 func (l *Lockfile) Unlock() error {
 	defer unlock(l.file)
 	return l.lockfile.Unlock()
-}
-
-func (l *Lockfile) IsLocked() (bool, error) {
-	// TODO: verify lock and delete old lock file
-	_, err := os.Stat(string(l.lockfile))
-	if os.IsNotExist(err) {
-		return false, nil
-	} else {
-		return true, err
-	}
 }
 
 func normalize(path string) (f string, err error) {

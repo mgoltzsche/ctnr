@@ -1,7 +1,9 @@
-package store
+package bundle
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,21 +18,53 @@ const (
 	ANNOTATION_BUNDLE_IMAGE = "com.github.mgoltzsche.cntnr.bundle.image"
 )
 
-type ImageWriter interface {
-	CommitImage(rootfs, name string, parentManifest *digest.Digest, author, comment string) (Image, error)
+type Bundle struct {
+	id      string
+	dir     string
+	created time.Time
 }
 
-type Bundle struct {
-	ID      string
-	Dir     string
-	Spec    rspecs.Spec
-	Created time.Time
+func NewBundle(id, dir string, created time.Time) Bundle {
+	return Bundle{id, dir, created}
+}
+
+func (b *Bundle) ID() string {
+	return b.id
+}
+
+func (b *Bundle) Dir() string {
+	return b.dir
+}
+
+func (b *Bundle) Created() time.Time {
+	return b.created
+}
+
+func (b *Bundle) loadSpec() (r rspecs.Spec, err error) {
+	file := filepath.Join(b.dir, "config.json")
+	c, err := ioutil.ReadFile(file)
+	if err != nil {
+		return r, fmt.Errorf("bundle %q spec: %s", b.id, err)
+	}
+	if err = json.Unmarshal(c, &r); err != nil {
+		err = fmt.Errorf("bundle %q spec: %s", b.id, err)
+	}
+	return
 }
 
 func (b *Bundle) Image() *digest.Digest {
-	if id := b.Spec.Annotations[ANNOTATION_BUNDLE_IMAGE]; id != "" {
-		if d, err := digest.Parse(id); err == nil {
-			return &d
+	if s, err := b.loadSpec(); err == nil {
+		return imageDigest(&s)
+	}
+	return nil
+}
+
+func imageDigest(spec *rspecs.Spec) *digest.Digest {
+	if spec.Annotations != nil {
+		if id := spec.Annotations[ANNOTATION_BUNDLE_IMAGE]; id != "" {
+			if d, err := digest.Parse(id); err == nil {
+				return &d
+			}
 		}
 	}
 	return nil
@@ -40,21 +74,21 @@ func (b *Bundle) Lock() (*LockedBundle, error) {
 	return NewLockedBundle(*b)
 }
 
-// Updates config.json mod time so that gc doesn't touch it for a while
+// Update mod time so that gc doesn't touch it for a while
 func (b *Bundle) resetExpiryTime() error {
-	configFile := filepath.Join(b.Dir)
+	configFile := filepath.Join(b.dir)
 	now := time.Now()
 	os.Chtimes(configFile, now, now)
 	return nil
 }
 
 func (b *Bundle) GC(before time.Time) (bool, error) {
-	st, err := os.Stat(b.Dir)
+	st, err := os.Stat(b.dir)
 	if err != nil {
 		return false, fmt.Errorf("bundle gc check: %s", err)
 	}
 	if st.ModTime().Before(before) {
-		bl, err := lockBundle(b.Dir)
+		bl, err := lockBundle(b.dir)
 		if err != nil {
 			return false, fmt.Errorf("bundle gc check: %s", err)
 		}
@@ -63,12 +97,12 @@ func (b *Bundle) GC(before time.Time) (bool, error) {
 				fmt.Fprintf(os.Stderr, "bundle gc check: %s\n", err)
 			}
 		}()
-		st, err = os.Stat(b.Dir)
+		st, err = os.Stat(b.dir)
 		if err != nil {
 			return true, fmt.Errorf("bundle gc check: %s", err)
 		}
 		if st.ModTime().Before(before) {
-			if err = deleteBundle(b.Dir); err != nil {
+			if err = deleteBundle(b.dir); err != nil {
 				return true, fmt.Errorf("garbage collect: %s", err)
 			}
 		} else {
@@ -82,15 +116,20 @@ func (b *Bundle) GC(before time.Time) (bool, error) {
 
 type LockedBundle struct {
 	Bundle
+	spec rspecs.Spec
 	lock *lock.Lockfile
 }
 
 func NewLockedBundle(bundle Bundle) (*LockedBundle, error) {
-	lck, err := lockBundle(bundle.Dir)
+	lck, err := lockBundle(bundle.dir)
 	if err := bundle.resetExpiryTime(); err != nil {
 		return nil, fmt.Errorf("lock bundle: %s", err)
 	}
-	return &LockedBundle{bundle, lck}, err
+	spec, err := bundle.loadSpec()
+	if err != nil {
+		return nil, fmt.Errorf("lock bundle: %s", err)
+	}
+	return &LockedBundle{bundle, spec, lck}, err
 }
 
 func (b *LockedBundle) Close() (err error) {
@@ -112,24 +151,20 @@ func (b *LockedBundle) Close() (err error) {
 	return
 }
 
-func (b *LockedBundle) Commit(writer ImageWriter, name, author, comment string) (r Image, err error) {
-	// Commit layer
-	rootfs := filepath.Join(b.Dir, "rootfs")
-	r, err = writer.CommitImage(rootfs, name, b.Image(), author, comment)
-	if err != nil {
-		return
-	}
+func (b *LockedBundle) Image() *digest.Digest {
+	return imageDigest(&b.spec)
+}
 
-	// Update container parent
-	b.Spec.Annotations[ANNOTATION_BUNDLE_IMAGE] = r.ID.String()
-	if _, err = atomic.WriteJson(filepath.Join(rootfs, "config.json"), &b.Spec); err != nil {
-		err = fmt.Errorf("commit: %s", err)
+func (b *LockedBundle) SetParentImageId(imageID string) (err error) {
+	b.spec.Annotations[ANNOTATION_BUNDLE_IMAGE] = imageID
+	if _, err = atomic.WriteJson(filepath.Join(b.dir, "config.json"), &b.spec); err != nil {
+		err = fmt.Errorf("set bundle's parent image id: %s", err)
 	}
 	return
 }
 
 func (b *LockedBundle) Delete() (err error) {
-	err = deleteBundle(b.Dir)
+	err = deleteBundle(b.dir)
 	if e := b.Close(); e != nil {
 		if err == nil {
 			err = fmt.Errorf("delete bundle: %s", e)

@@ -20,7 +20,8 @@ import (
 	"path/filepath"
 
 	"github.com/mgoltzsche/cntnr/model"
-	storeitfc "github.com/mgoltzsche/cntnr/store"
+	"github.com/mgoltzsche/cntnr/oci/bundle"
+	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/spf13/cobra"
 )
 
@@ -74,7 +75,7 @@ func runProject(project *model.Project) error {
 		if err != nil {
 			return err
 		}
-		c, err := containerMngr.NewContainer("", m.Dir, s.Tty, s.StdinOpen)
+		c, err := containerMngr.NewContainer("", m.Dir(), s.Tty, s.StdinOpen)
 		if err != nil {
 			return err
 		}
@@ -88,43 +89,47 @@ func runProject(project *model.Project) error {
 	return containerMngr.Wait()
 }
 
-func createRuntimeBundle(p *model.Project, service *model.Service, bundleDir string) (b storeitfc.Bundle, err error) {
+func createRuntimeBundle(p *model.Project, service *model.Service, bundleDir string) (b bundle.Bundle, err error) {
 	if service.Image == "" {
 		err = fmt.Errorf("service %q has no image", service.Name)
 		return
 	}
 
-	// Load image and bundle builder
-	var builder *storeitfc.BundleBuilder
-	if service.Image == "" {
-		builder = storeitfc.NewBundleBuilder()
-	} else {
-		var img storeitfc.Image
-		img, err = store.ImageByName(service.Image)
-		if err != nil {
-			img, err = store.ImportImage(service.Image)
+	err = store.RunBatch(func(rwstore image.ImageStoreRW) (err error) {
+		// Load image and bundle builder
+		var builder *bundle.BundleBuilder
+		if service.Image == "" {
+			builder = bundle.Builder()
+		} else {
+			var img image.Image
+			img, err = rwstore.ImageByName(service.Image)
+			if err != nil {
+				img, err = rwstore.ImportImage(service.Image)
+				if err != nil {
+					return
+				}
+			}
+			builder, err = bundle.BuilderFromImage(&img)
 			if err != nil {
 				return
 			}
 		}
-		builder, err = storeitfc.FromImage(&img)
-		if err != nil {
+
+		// Generate config.json
+		// TODO: clean this up: don't create anonymous volume dirs in container dir before container is created
+		vols := model.NewVolumeResolver(p, filepath.Join(bundleDir, "volumes"))
+		/*defer func() {
+			if err != nil {
+				os.RemoveAll(bundleDir)
+			}
+		}()*/
+		if err = service.ToSpec(vols, flagRootless, builder.SpecBuilder); err != nil {
 			return
 		}
-	}
 
-	// Generate config.json
-	// TODO: clean this up: don't create anonymous volume dirs in container dir before container is created
-	vols := model.NewVolumeResolver(p, filepath.Join(bundleDir, "volumes"))
-	/*defer func() {
-		if err != nil {
-			os.RemoveAll(bundleDir)
-		}
-	}()*/
-	if err = service.ToSpec(vols, flagRootless, builder.SpecBuilder); err != nil {
+		// Create bundle
+		b, err = store.CreateBundle("", builder)
 		return
-	}
-
-	// Create bundle
-	return store.CreateBundle("", builder)
+	})
+	return
 }

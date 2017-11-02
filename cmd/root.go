@@ -26,9 +26,8 @@ import (
 	"path/filepath"
 
 	"github.com/containers/image/types"
+	storepkg "github.com/mgoltzsche/cntnr/oci/store"
 	"github.com/mgoltzsche/cntnr/run"
-	storeitfc "github.com/mgoltzsche/cntnr/store"
-	simplestore "github.com/mgoltzsche/cntnr/store/oci"
 	//containersstore "github.com/mgoltzsche/cntnr/store/storage"
 )
 
@@ -39,7 +38,7 @@ var (
 	flagStoreDir string
 	flagStateDir string
 
-	store         storeitfc.Store
+	store         *storepkg.Store
 	containerMngr *run.ContainerManager
 	errorLog      = log.NewStdLogger(os.Stderr)
 	warnLog       = log.NewStdLogger(os.Stderr)
@@ -52,8 +51,7 @@ var RootCmd = &cobra.Command{
 	Short: "a lightweight container engine",
 	Long: `cntnr is a lightweight OCI-compliant container engine.
 It supports single image and container operations as well as high-level service composition.`,
-	PersistentPreRun:  preRun,
-	PersistentPostRun: postRun,
+	PersistentPreRun: preRun,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -121,17 +119,13 @@ func preRun(cmd *cobra.Command, args []string) {
 	/*if os.Geteuid() == 0 {
 		store, err = containersstore.NewContainersStore(filepath.Join(flagImgStoreDir, "storage"), ctx)
 	} else {*/
-	store, err = simplestore.OpenStore(flagStoreDir, flagRootless, ctx, errorLog, debugLog)
+	store, err = storepkg.OpenStore(flagStoreDir, flagRootless, ctx, errorLog, debugLog)
 	//}
 	exitOnError(cmd, err)
 
 	// init container manager
 	containerMngr, err = run.NewContainerManager(flagStateDir, debugLog)
 	exitOnError(cmd, err)
-}
-
-func postRun(cmd *cobra.Command, args []string) {
-	store.Close()
 }
 
 // initConfig reads in config file and ENV variables if set.

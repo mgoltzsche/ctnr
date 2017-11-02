@@ -1,4 +1,4 @@
-package store
+package lock
 
 import (
 	"fmt"
@@ -8,29 +8,32 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 )
 
-var _ SharedLock = &SharedDirLock{}
+// TODO: Make sure sharedLockDir is thread-safe.
+//   Currently this is not the case since Lock() can be called concurrently while changing the sharedLockFile property this results in an inconsistent state
+//     => already fixed by having sharedDirLock acquire lock at construction time again
 
-type SharedDirLock struct {
-	dir            string
-	sharedLockFile string
+type sharedDirLock struct {
 	lockfile       *Lockfile
-	timeout        time.Duration
+	sharedLockFile string
+	dir            string
 }
 
-func NewSharedLock(dir string) (l SharedDirLock, err error) {
+func NewSharedLock(dir string) (r SharedLock, err error) {
 	if err = os.MkdirAll(dir, 0755); err != nil {
-		err = fmt.Errorf("init lock directory: %s", err)
-		return
+		return nil, fmt.Errorf("init lock directory: %s", err)
 	}
-	l.dir = dir
-
+	l := sharedDirLock{}
 	if l.lockfile, err = LockFile(filepath.Join(dir, "exclusive.lock")); err != nil {
 		return
 	}
+	l.dir = dir
+	l.sharedLockFile, err = l.lockShared()
+	return &l, err
+}
 
+func (l *sharedDirLock) lockShared() (f string, err error) {
 	// Lock dir exclusively
 	err = l.lockfile.Lock()
 	if err != nil {
@@ -40,54 +43,57 @@ func NewSharedLock(dir string) (l SharedDirLock, err error) {
 	defer l.lockfile.Unlock()
 
 	// Register shared lock file
-	tmp, e := ioutil.TempFile(dir, fmt.Sprintf("sharedlock-%d-", os.Getpid()))
-	if e != nil {
-		err = fmt.Errorf("shared lock: %s", e)
+	file, err := ioutil.TempFile(l.dir, fmt.Sprintf("sharedlock-%d-", os.Getpid()))
+	if err != nil {
+		err = fmt.Errorf("shared lock: %s", err)
 		return
 	}
-	l.sharedLockFile = tmp.Name()
-	tmp.Close()
+	f = file.Name()
+	file.Close()
 	return
 }
 
-func (l *SharedDirLock) Lock() (err error) {
+func (l *sharedDirLock) Close() (err error) {
+	if l.sharedLockFile == "" {
+		// If this happens there is some serious misusage of this package
+		// happening which can lead to further errors due to inconsistency.
+		panic("unlock: invalid state - was not locked")
+	}
+	if err = os.Remove(l.sharedLockFile); err != nil {
+		err = fmt.Errorf("unlock shared: %s", err)
+	}
+	l.sharedLockFile = ""
+	return
+}
+
+func (l *sharedDirLock) Lock() (err error) {
 	if err = l.lockfile.Lock(); err != nil {
 		return
 	}
 	defer func() {
 		if err != nil {
-
+			if e := l.Unlock(); e != nil {
+				err = fmt.Errorf("%s, lock: %s", err, e)
+			}
 		}
 	}()
 
 	// Wait until no shared lock acquired
-	err = l.awaitSharedLocks()
-	if err != nil {
-		if e := l.Unlock(); e != nil {
-			err = fmt.Errorf("lock: await free lock: %s, %s", err, e)
-		} else {
-			err = fmt.Errorf("lock: await free lock: %s", err)
-		}
+	if err = l.awaitSharedLocks(); err != nil {
+		err = fmt.Errorf("lock: await free shared lock: %s", err)
 	}
 	return
 }
 
-func (l *SharedDirLock) Unlock() (err error) {
+func (l *sharedDirLock) Unlock() (err error) {
 	if err = l.lockfile.Unlock(); err != nil {
 		err = fmt.Errorf("unlock: %s", err)
 	}
 	return
 }
 
-func (l *SharedDirLock) Close() (err error) {
-	if err = os.Remove(l.sharedLockFile); err != nil {
-		err = fmt.Errorf("unlock shared: %s", err)
-	}
-	return
-}
-
-func (l *SharedDirLock) awaitSharedLocks() (err error) {
-	own := filepath.Base(l.sharedLockFile)
+func (l *sharedDirLock) awaitSharedLocks() (err error) {
+	ownFile := filepath.Base(l.sharedLockFile)
 	locked := true
 	var fl []os.FileInfo
 	for locked {
@@ -107,7 +113,7 @@ func (l *SharedDirLock) awaitSharedLocks() (err error) {
 				continue
 			}
 			pid, e := strconv.Atoi(ns[1])
-			if e != nil || pid < 1 || fname == own {
+			if e != nil || pid < 1 || fname == ownFile {
 				// ignore non shared lock files + own lock file
 				continue
 			}
@@ -119,7 +125,7 @@ func (l *SharedDirLock) awaitSharedLocks() (err error) {
 			}
 			locked = true
 			if e = awaitFileChange(fpath, l.dir); e != nil && !os.IsNotExist(e) {
-				err = fmt.Errorf("lock: await exclusive usage: %s", e)
+				err = fmt.Errorf("await exclusive usage: %s", e)
 				return
 			}
 			break

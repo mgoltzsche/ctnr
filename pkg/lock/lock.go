@@ -1,4 +1,4 @@
-package store
+package lock
 
 type Locker interface {
 	Lock() error

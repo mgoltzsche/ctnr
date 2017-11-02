@@ -1,4 +1,4 @@
-package store
+package bundle
 
 import (
 	"fmt"
@@ -11,16 +11,16 @@ import (
 
 type BundleBuilder struct {
 	*generate.SpecBuilder
-	image *Image
+	image Image
 }
 
-func NewBundleBuilder() *BundleBuilder {
+func Builder() *BundleBuilder {
 	spec := generate.NewSpecBuilder()
 	spec.SetRootPath("rootfs")
 	return FromSpec(&spec)
 }
 
-func FromImage(image *Image) (*BundleBuilder, error) {
+func BuilderFromImage(image Image) (*BundleBuilder, error) {
 	spec := generate.NewSpecBuilder()
 	spec.SetRootPath("rootfs")
 	conf, err := image.Config()
@@ -28,7 +28,7 @@ func FromImage(image *Image) (*BundleBuilder, error) {
 		return nil, fmt.Errorf("bundle build from image: %s", err)
 	}
 	spec.ApplyImage(conf)
-	spec.AddAnnotation(ANNOTATION_BUNDLE_IMAGE, image.ID.String())
+	spec.AddAnnotation(ANNOTATION_BUNDLE_IMAGE, image.ID())
 	r := FromSpec(&spec)
 	r.image = image
 	return r, nil
@@ -39,7 +39,7 @@ func FromSpec(spec *generate.SpecBuilder) *BundleBuilder {
 }
 
 func (b *BundleBuilder) Build(dir string) (r Bundle, err error) {
-	r.Dir = dir
+	r.dir = dir
 	rootfs := filepath.Join(dir, b.Spec().Root.Path)
 
 	// Create bundle directory
@@ -63,7 +63,7 @@ func (b *BundleBuilder) Build(dir string) (r Bundle, err error) {
 	}
 
 	// Write runtime config
-	confFile := filepath.Join(r.Dir, "config.json")
+	confFile := filepath.Join(r.dir, "config.json")
 	err = b.SaveToFile(confFile, gen.ExportOptions{Seccomp: false})
 	if err != nil {
 		err = fmt.Errorf("write bundle config.json: %s", err)
