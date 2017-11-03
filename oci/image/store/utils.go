@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/containers/image/signature"
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
+	"github.com/mgoltzsche/cntnr/pkg/lock"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -89,4 +91,14 @@ func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err
 		err = fmt.Errorf("no image manifest for ref %q found in image index!", ref)
 	}
 	return
+}
+
+func unlock(lock lock.Locker, err *error) {
+	if e := lock.Unlock(); e != nil {
+		if *err == nil {
+			*err = e
+		} else {
+			fmt.Fprint(os.Stderr, "Error: %s", e)
+		}
+	}
 }

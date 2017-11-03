@@ -5,7 +5,7 @@ type Locker interface {
 	Unlock() error
 }
 
-type SharedLock interface {
+type ExclusiveLocker interface {
 	Locker
-	Close() error
+	NewSharedLocker() Locker
 }

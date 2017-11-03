@@ -1,8 +1,14 @@
 package store
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/oci/image"
+	"github.com/mgoltzsche/cntnr/pkg/lock"
+	digest "github.com/opencontainers/go-digest"
 )
 
 const (
@@ -12,16 +18,21 @@ const (
 var _ image.ImageStore = &ImageStore{}
 
 type ImageStore struct {
+	lock lock.ExclusiveLocker
 	*ImageStoreRO
 	systemContext *types.SystemContext
 }
 
-func NewImageStore(store *ImageStoreRO, systemContext *types.SystemContext) *ImageStore {
-	return &ImageStore{store, systemContext}
+func NewImageStore(store *ImageStoreRO, systemContext *types.SystemContext) (*ImageStore, error) {
+	lck, err := lock.NewExclusiveDirLocker(filepath.Join(os.TempDir(), "cntnr", "lock"))
+	if err != nil {
+		err = fmt.Errorf("NewImageStore: %s", err)
+	}
+	return &ImageStore{lck, store, systemContext}, err
 }
 
 func (s *ImageStore) OpenImageRWStore() (image.ImageStoreRW, error) {
-	return NewImageStoreRW(s.ImageStoreRO, s.systemContext)
+	return NewImageStoreRW(s.lock.NewSharedLocker(), s.ImageStoreRO, s.systemContext)
 }
 
 func (s *ImageStore) RunBatch(batch func(store image.ImageStoreRW) error) error {
@@ -34,8 +45,32 @@ func (s *ImageStore) RunBatch(batch func(store image.ImageStoreRW) error) error 
 	return batch(tx)
 }
 
-func (s *ImageStore) ImageGC() error {
-	return s.RunBatch(func(store image.ImageStoreRW) error {
-		return store.ImageGC()
-	})
+func (s *ImageStore) ImageGC() (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("image gc: %s", err)
+		}
+	}()
+
+	if err = s.lock.Lock(); err != nil {
+		return
+	}
+	defer unlock(s.lock, &err)
+
+	// Collect named transitive blobs to leave them untouched
+	keep := map[digest.Digest]bool{}
+	imgs, err := s.Images()
+	if err != nil {
+		return err
+	}
+	for _, img := range imgs {
+		keep[img.Digest] = true
+		keep[img.Manifest.Config.Digest] = true
+		for _, l := range img.Manifest.Layers {
+			keep[l.Digest] = true
+		}
+	}
+
+	// Delete all but the named blobs
+	return s.blobs.RetainBlobs(keep)
 }

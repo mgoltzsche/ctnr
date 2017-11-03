@@ -14,59 +14,38 @@ import (
 //   Currently this is not the case since Lock() can be called concurrently while changing the sharedLockFile property this results in an inconsistent state
 //     => already fixed by having sharedDirLock acquire lock at construction time again
 
-type sharedDirLock struct {
-	lockfile       *Lockfile
-	sharedLockFile string
-	dir            string
+type exclusiveLocker struct {
+	lockfile *Lockfile
+	dir      string
 }
 
-func NewSharedLock(dir string) (r SharedLock, err error) {
+/*type noopLocker string
+
+func NewNoopLocker() Locker {
+	return noopLocker("nooplocker")
+}
+
+func (l *NoopLocker) Locker {
+
+}*/
+
+func NewExclusiveDirLocker(dir string) (r ExclusiveLocker, err error) {
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("init lock directory: %s", err)
 	}
-	l := sharedDirLock{}
+	l := exclusiveLocker{}
 	if l.lockfile, err = LockFile(filepath.Join(dir, "exclusive.lock")); err != nil {
 		return
 	}
 	l.dir = dir
-	l.sharedLockFile, err = l.lockShared()
 	return &l, err
 }
 
-func (l *sharedDirLock) lockShared() (f string, err error) {
-	// Lock dir exclusively
-	err = l.lockfile.Lock()
-	if err != nil {
-		err = fmt.Errorf("shared lock: %s", err)
-		return
-	}
-	defer l.lockfile.Unlock()
-
-	// Register shared lock file
-	file, err := ioutil.TempFile(l.dir, fmt.Sprintf("sharedlock-%d-", os.Getpid()))
-	if err != nil {
-		err = fmt.Errorf("shared lock: %s", err)
-		return
-	}
-	f = file.Name()
-	file.Close()
-	return
+func (l *exclusiveLocker) NewSharedLocker() Locker {
+	return &sharedLocker{"", l.dir, l.lockfile}
 }
 
-func (l *sharedDirLock) Close() (err error) {
-	if l.sharedLockFile == "" {
-		// If this happens there is some serious misusage of this package
-		// happening which can lead to further errors due to inconsistency.
-		panic("unlock: invalid state - was not locked")
-	}
-	if err = os.Remove(l.sharedLockFile); err != nil {
-		err = fmt.Errorf("unlock shared: %s", err)
-	}
-	l.sharedLockFile = ""
-	return
-}
-
-func (l *sharedDirLock) Lock() (err error) {
+func (l *exclusiveLocker) Lock() (err error) {
 	if err = l.lockfile.Lock(); err != nil {
 		return
 	}
@@ -85,15 +64,14 @@ func (l *sharedDirLock) Lock() (err error) {
 	return
 }
 
-func (l *sharedDirLock) Unlock() (err error) {
+func (l *exclusiveLocker) Unlock() (err error) {
 	if err = l.lockfile.Unlock(); err != nil {
 		err = fmt.Errorf("unlock: %s", err)
 	}
 	return
 }
 
-func (l *sharedDirLock) awaitSharedLocks() (err error) {
-	ownFile := filepath.Base(l.sharedLockFile)
+func (l *exclusiveLocker) awaitSharedLocks() (err error) {
 	locked := true
 	var fl []os.FileInfo
 	for locked {
@@ -113,7 +91,7 @@ func (l *sharedDirLock) awaitSharedLocks() (err error) {
 				continue
 			}
 			pid, e := strconv.Atoi(ns[1])
-			if e != nil || pid < 1 || fname == ownFile {
+			if e != nil || pid < 1 {
 				// ignore non shared lock files + own lock file
 				continue
 			}
@@ -131,5 +109,48 @@ func (l *sharedDirLock) awaitSharedLocks() (err error) {
 			break
 		}
 	}
+	return
+}
+
+type sharedLocker struct {
+	sharedLockFile string
+	dir            string
+	exclusive      *Lockfile
+}
+
+func (l *sharedLocker) Lock() (err error) {
+	if l.sharedLockFile != "" {
+		panic("lock shared: shared lock is already locked: " + l.sharedLockFile)
+	}
+
+	// Lock dir exclusively
+	err = l.exclusive.Lock()
+	if err != nil {
+		err = fmt.Errorf("shared lock: %s", err)
+		return
+	}
+	defer l.exclusive.Unlock()
+
+	// Register shared lock file
+	file, err := ioutil.TempFile(l.dir, fmt.Sprintf("sharedlock-%d-", os.Getpid()))
+	if err != nil {
+		err = fmt.Errorf("shared lock: %s", err)
+		return
+	}
+	l.sharedLockFile = file.Name()
+	file.Close()
+	return
+}
+
+func (l *sharedLocker) Unlock() (err error) {
+	if l.sharedLockFile == "" {
+		// If this happens there is some serious misusage of this package
+		// happening which can lead to further errors due to inconsistency.
+		panic("unlock shared: invalid state - was not locked")
+	}
+	if err = os.Remove(l.sharedLockFile); err != nil {
+		err = fmt.Errorf("unlock shared: %s", err)
+	}
+	l.sharedLockFile = ""
 	return
 }

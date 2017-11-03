@@ -26,20 +26,22 @@ type ImageStoreRW struct {
 	*ImageStoreRO
 	systemContext *types.SystemContext
 	trustPolicy   *signature.PolicyContext
-	lock          lock.SharedLock
+	lock          lock.Locker
 }
 
-func NewImageStoreRW(roStore *ImageStoreRO, systemContext *types.SystemContext) (r *ImageStoreRW, err error) {
+func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, systemContext *types.SystemContext) (r *ImageStoreRW, err error) {
 	trustPolicy, err := createTrustPolicyContext()
 	if err != nil {
 		return
 	}
-	lck, err := lock.NewSharedLock(filepath.Join(os.TempDir(), "cntnr", "lock"))
-	return &ImageStoreRW{roStore, systemContext, trustPolicy, lck}, err
+	if err = locker.Lock(); err != nil {
+		err = fmt.Errorf("open image store: %s", err)
+	}
+	return &ImageStoreRW{roStore, systemContext, trustPolicy, locker}, err
 }
 
 func (s *ImageStoreRW) Close() error {
-	err := s.lock.Close()
+	err := s.lock.Unlock()
 	s.ImageStoreRO = nil
 	return err
 }
@@ -246,45 +248,4 @@ func (s *ImageStoreRW) updateImageIndex(name string, create bool, transform func
 	}()
 
 	return transform(repo)
-}
-
-// TODO: move GC outside this object or fix locking
-func (s *ImageStoreRW) ImageGC() (err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("image gc: %s", err)
-		}
-	}()
-
-	if err = s.lock.Lock(); err != nil {
-		return
-	}
-	defer unlock(s.lock, &err)
-
-	// Collect named transitive blobs to leave them untouched
-	keep := map[digest.Digest]bool{}
-	imgs, err := s.Images()
-	if err != nil {
-		return err
-	}
-	for _, img := range imgs {
-		keep[img.Digest] = true
-		keep[img.Manifest.Config.Digest] = true
-		for _, l := range img.Manifest.Layers {
-			keep[l.Digest] = true
-		}
-	}
-
-	// Delete all but the named blobs
-	return s.blobs.RetainBlobs(keep)
-}
-
-func unlock(lock lock.Locker, err *error) {
-	if e := lock.Unlock(); e != nil {
-		if *err == nil {
-			*err = e
-		} else {
-			fmt.Fprint(os.Stderr, "Error: %s", e)
-		}
-	}
 }

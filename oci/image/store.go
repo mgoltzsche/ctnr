@@ -41,6 +41,5 @@ type ImageStoreRW interface {
 	CommitImage(rootfs, name string, parentManifest *digest.Digest, author, comment string) (Image, error)
 	CreateImage(name string, manifestDigest digest.Digest) (Image, error)
 	DeleteImage(name string) error
-	ImageGC() error
 	Close() error
 }

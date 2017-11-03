@@ -95,7 +95,10 @@ func OpenStore(dir string, rootless bool, systemContext *types.SystemContext, er
 		return
 	}
 	r = &Store{}
-	r.ImageStore = istore.NewImageStore(rostore, systemContext)
+	r.ImageStore, err = istore.NewImageStore(rostore, systemContext)
+	if err != nil {
+		return
+	}
 	r.BundleStore, err = bstore.NewBundleStore(bundleDir, debugLog)
 	return
 }
