@@ -21,15 +21,14 @@ import (
 
 type ImageStore interface {
 	ImageStoreRO
-	OpenImageRWStore() (ImageStoreRW, error)
-	RunBatch(func(ImageStoreRW) error) error
+	OpenLockedImageStore() (ImageStoreRW, error)
 	ImageGC() error
 }
 
 type ImageStoreRO interface {
+	Images() ([]Image, error)
 	Image(id digest.Digest) (Image, error)
 	ImageByName(name string) (Image, error)
-	Images() ([]Image, error)
 }
 
 type ImageStoreRW interface {

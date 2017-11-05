@@ -16,9 +16,10 @@ import (
 var _ image.ImageStoreRO = &ImageStoreRO{}
 
 type ImageStoreRO struct {
-	blobs    *BlobStoreExt
-	imageDir string
-	warn     log.Logger
+	blobs       *BlobStoreExt
+	imageReader image.ImageReader
+	imageDir    string
+	warn        log.Logger
 }
 
 func NewImageStoreRO(dir string, blobStore *BlobStoreExt, warn log.Logger) (r *ImageStoreRO, err error) {
@@ -26,7 +27,11 @@ func NewImageStoreRO(dir string, blobStore *BlobStoreExt, warn log.Logger) (r *I
 		err = fmt.Errorf("init image store: %s", err)
 		return
 	}
-	return &ImageStoreRO{blobStore, dir, warn}, err
+	return &ImageStoreRO{blobStore, nil, dir, warn}, err
+}
+
+func (s *ImageStoreRO) WithNonAtomicAccess() *ImageStoreRO {
+	return &ImageStoreRO{s.blobs, s.blobs, s.imageDir, s.warn}
 }
 
 func (s *ImageStoreRO) Image(id digest.Digest) (r image.Image, err error) {
@@ -88,7 +93,7 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 						} else {
 							manifest, e = s.blobs.ImageManifest(d.Digest)
 							if e == nil {
-								r = append(r, image.NewImage(d.Digest, name, ref, f.ModTime(), manifest, nil, s.blobs))
+								r = append(r, image.NewImage(d.Digest, name, ref, f.ModTime(), manifest, nil, s.imageReader))
 							}
 						}
 					}

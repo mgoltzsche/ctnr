@@ -28,7 +28,6 @@ import (
 	"github.com/containers/image/types"
 	storepkg "github.com/mgoltzsche/cntnr/oci/store"
 	"github.com/mgoltzsche/cntnr/run"
-	//containersstore "github.com/mgoltzsche/cntnr/store/storage"
 )
 
 var (
@@ -38,7 +37,7 @@ var (
 	flagStoreDir string
 	flagStateDir string
 
-	store         *storepkg.Store
+	store         storepkg.Store
 	containerMngr *run.ContainerManager
 	errorLog      = log.NewStdLogger(os.Stderr)
 	warnLog       = log.NewStdLogger(os.Stderr)
@@ -97,13 +96,11 @@ func init() {
 }
 
 func preRun(cmd *cobra.Command, args []string) {
-	var err error
-
 	if flagVerbose {
 		debugLog = log.NewStdLogger(os.Stderr)
 	}
 
-	// Init image store
+	// init store
 	// TODO: provide CLI options
 	ctx := &types.SystemContext{
 		RegistriesDirPath:           "",
@@ -113,14 +110,11 @@ func preRun(cmd *cobra.Command, args []string) {
 		// TODO: add docker auth
 		//DockerAuthConfig: dockerAuth,
 	}
-	if flagRootless {
-		ctx.DockerCertPath = "./docker-cert"
+	var err error
+	if flagRootless && ctx.DockerCertPath == "" {
+		ctx.DockerCertPath = "./docker-certs"
 	}
-	/*if os.Geteuid() == 0 {
-		store, err = containersstore.NewContainersStore(filepath.Join(flagImgStoreDir, "storage"), ctx)
-	} else {*/
-	store, err = storepkg.OpenStore(flagStoreDir, flagRootless, ctx, errorLog, debugLog)
-	//}
+	store, err = storepkg.NewStore(flagStoreDir, flagRootless, ctx, errorLog, debugLog)
 	exitOnError(cmd, err)
 
 	// init container manager

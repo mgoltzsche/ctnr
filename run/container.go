@@ -17,6 +17,32 @@ type Container interface {
 	Wait() error
 }
 
+type ExitError struct {
+	status int
+	cause  error
+}
+
+func (e *ExitError) Status() int {
+	return e.status
+}
+
+func (e *ExitError) Error() string {
+	if e.cause == nil {
+		return fmt.Sprintf("container terminated: exit status %d", e.status)
+	} else {
+		return fmt.Sprintf("container terminated: exit status %d. error: %s", e.status, e.cause)
+	}
+}
+
+func exitError(err error) error {
+	if exiterr, ok := err.(*exec.ExitError); ok {
+		if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+			return &ExitError{status.ExitStatus(), nil}
+		}
+	}
+	return err
+}
+
 type RuncContainer struct {
 	id    string
 	cmd   *exec.Cmd
@@ -30,17 +56,13 @@ func (c *RuncContainer) ID() string {
 func (c *RuncContainer) Start() (err error) {
 	err = c.cmd.Start()
 	if err != nil {
-		err = fmt.Errorf("Container %q start failed: %v", c.id, err)
+		err = fmt.Errorf("container %q start: %v", c.id, err)
 	}
 	return
 }
 
 func (c *RuncContainer) Wait() error {
-	err := c.cmd.Wait()
-	if err != nil {
-		err = fmt.Errorf("Container %q terminated: %v", c.id, err)
-	}
-	return err
+	return exitError(c.cmd.Wait())
 }
 
 func (c *RuncContainer) Stop() (err error) {
@@ -49,25 +71,34 @@ func (c *RuncContainer) Stop() (err error) {
 		c.cmd.Process.Signal(syscall.SIGINT)
 	}
 
-	quit := make(chan bool, 1)
+	quit := make(chan error, 1)
 	go func() {
-		c.cmd.Wait()
-		quit <- true
+		quit <- exitError(c.cmd.Wait())
 	}()
+	var ex error
 	select {
 	case <-time.After(time.Duration(10000000)): // TODO: read value from OCI runtime configuration
 		os.Stderr.WriteString(fmt.Sprintf("Killing container %q since stop timeout exceeded\n", c.id))
 		if c.cmd.Process != nil {
-			err = c.cmd.Process.Kill()
-			if err != nil && !c.cmd.ProcessState.Exited() {
-				err = fmt.Errorf("Failed to kill container %s: %s", c.id, err)
+			e := c.cmd.Process.Kill()
+			if e != nil && c.cmd.ProcessState != nil && !c.cmd.ProcessState.Exited() {
+				err = fmt.Errorf("killing container %s", c.ID(), e)
 			}
 			c.cmd.Wait()
 		}
-		<-quit
-	case <-quit:
+		ex = <-quit
+	case ex = <-quit:
 	}
 	close(quit)
 
-	return err
+	if err == nil {
+		err = ex
+	} else if ex != nil {
+		if exiterr, ok := ex.(*ExitError); ok {
+			err = &ExitError{exiterr.status, err}
+		} else {
+			err = fmt.Errorf("%s, await container termination: %s", err, ex)
+		}
+	}
+	return
 }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/openSUSE/umoci/oci/layer"
@@ -30,20 +31,36 @@ func NewBlobStoreExt(blobStore *BlobStore, mtreeStore *MtreeStore, debug log.Log
 	return BlobStoreExt{blobStore, mtreeStore, debug}
 }
 
+func (s *BlobStoreExt) MarkUsedBlob(id digest.Digest) (err error) {
+	now := time.Now()
+	if err = os.Chtimes(s.blobFile(id), now, now); err != nil {
+		err = fmt.Errorf("mark used blob: %s", err)
+	}
+	return
+}
+
 func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("unpack image layers: %s", err)
+		}
+	}()
+	if err = s.MarkUsedBlob(manifestDigest); err != nil {
+		return
+	}
 	manifest, err := s.ImageManifest(manifestDigest)
 	if err != nil {
-		return fmt.Errorf("unpack image: %s", err)
+		return
 	}
 	if err = s.unpackLayers(&manifest, rootfs); err != nil {
-		return fmt.Errorf("unpack image: %s", err)
+		return
 	}
 	spec, err := s.mtree.Create(rootfs)
 	if err != nil {
-		return fmt.Errorf("unpack image: %s", err)
+		return
 	}
 	if err = s.mtree.Put(manifestDigest, spec); err != nil {
-		return fmt.Errorf("unpack image: %s", err)
+		return
 	}
 	return
 }

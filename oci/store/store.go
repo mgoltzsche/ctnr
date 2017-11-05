@@ -14,9 +14,6 @@ import (
 	"github.com/openSUSE/umoci/pkg/fseval"
 )
 
-// TODO: Make sure store is closed before running any container to free shared lock to allow other container to be prepared
-// TODO: base Commit method in BlobStore (so that mtree can move to blobstore), UnpackImage method in ImageStore
-
 // Minimal Store interface.
 // containers/storage interface is not used to ease the OCI store implementation
 // which is required by unprivileged users (https://github.com/containers/storage/issues/96)
@@ -28,8 +25,13 @@ type Store struct {
 	bundle.BundleStore
 }
 
+type LockedStore struct {
+	image.ImageStoreRW
+	bundle.BundleStore
+}
+
 func (s *Store) ImageBuilder(baseImageId string, newContainerId, author string) (b *builder.ImageBuilder, err error) {
-	rwstore, err := s.OpenImageRWStore()
+	rwstore, err := s.OpenLockedImageStore()
 	if err != nil {
 		return
 	}
@@ -49,26 +51,26 @@ func (s *Store) ImageBuilder(baseImageId string, newContainerId, author string) 
 }
 
 func (s *Store) ImageBuilderFromBundle(container bundle.Bundle, author string) (b *builder.ImageBuilder, err error) {
-	rwstore, err := s.OpenImageRWStore()
+	rwstore, err := s.OpenLockedImageStore()
 	if err != nil {
 		return
 	}
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("image builder from bundle: %s", err)
-			rwstore.Close()
-		}
-	}()
-
-	return builder.NewImageBuilderFromBundle(rwstore, container, author)
+	if b, err = builder.NewImageBuilderFromBundle(rwstore, container, author); err != nil {
+		err = fmt.Errorf("image builder from bundle: %s", err)
+		rwstore.Close()
+	}
+	return
 }
 
-func OpenStore(dir string, rootless bool, systemContext *types.SystemContext, errorLog log.Logger, debugLog log.Logger) (r *Store, err error) {
+func NewStore(dir string, rootless bool, systemContext *types.SystemContext, errorLog log.Logger, debugLog log.Logger) (r Store, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("init store: %s", err)
 		}
 	}()
+	if dir == "" {
+		return r, fmt.Errorf("no store directory provided")
+	}
 	dir, err = filepath.Abs(dir)
 	if err != nil {
 		return
@@ -94,8 +96,7 @@ func OpenStore(dir string, rootless bool, systemContext *types.SystemContext, er
 	if err != nil {
 		return
 	}
-	r = &Store{}
-	r.ImageStore, err = istore.NewImageStore(rostore, systemContext)
+	r.ImageStore, err = istore.NewImageStore(rostore, systemContext, errorLog)
 	if err != nil {
 		return
 	}

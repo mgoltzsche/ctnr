@@ -14,6 +14,7 @@ import (
 	"github.com/containers/image/signature"
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
+	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	digest "github.com/opencontainers/go-digest"
@@ -27,9 +28,10 @@ type ImageStoreRW struct {
 	systemContext *types.SystemContext
 	trustPolicy   *signature.PolicyContext
 	lock          lock.Locker
+	warn          log.Logger
 }
 
-func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, systemContext *types.SystemContext) (r *ImageStoreRW, err error) {
+func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, systemContext *types.SystemContext, warn log.Logger) (r *ImageStoreRW, err error) {
 	trustPolicy, err := createTrustPolicyContext()
 	if err != nil {
 		return
@@ -37,16 +39,21 @@ func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, systemContext *t
 	if err = locker.Lock(); err != nil {
 		err = fmt.Errorf("open image store: %s", err)
 	}
-	return &ImageStoreRW{roStore, systemContext, trustPolicy, locker}, err
+	return &ImageStoreRW{roStore.WithNonAtomicAccess(), systemContext, trustPolicy, locker, warn}, err
 }
 
-func (s *ImageStoreRW) Close() error {
-	err := s.lock.Unlock()
+func (s *ImageStoreRW) Close() (err error) {
+	if s.ImageStoreRO == nil {
+		return nil
+	}
+	if err = s.lock.Unlock(); err != nil {
+		s.warn.Printf("close store: %s", err)
+	}
 	s.ImageStoreRO = nil
 	return err
 }
 
-// Creates a new image. Overwrites existing refs.
+// Creates a new image ref. Overwrites existing refs.
 func (s *ImageStoreRW) CreateImage(name string, manifestDigest digest.Digest) (img image.Image, err error) {
 	defer func() {
 		if err != nil {
@@ -124,13 +131,10 @@ func (s *ImageStoreRW) CommitImage(rootfs, name string, parentManifest *digest.D
 	if err != nil {
 		return r, fmt.Errorf("commit image: %s", err)
 	}
-	if name != "" {
-		if r, err = s.CreateImage(name, c.Descriptor.Digest); err != nil {
-			err = fmt.Errorf("commit image: %s", err)
-		}
-		return
+	if r, err = s.CreateImage(name, c.Descriptor.Digest); err != nil {
+		err = fmt.Errorf("commit image: %s", err)
 	}
-	r = image.NewImage(c.Descriptor.Digest, "", "", time.Now(), c.Manifest, &c.Config, s.blobs)
+	//r = image.NewImage(c.Descriptor.Digest, "", "", time.Now(), c.Manifest, &c.Config, s.blobs)
 	return
 }
 
@@ -194,8 +198,7 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 }
 
 func (s *ImageStoreRW) MarkUsedImage(id digest.Digest) error {
-	now := time.Now()
-	return os.Chtimes(s.blobs.blobFile(id), now, now)
+	return s.blobs.MarkUsedBlob(id)
 }
 
 func (s *ImageStoreRW) PutImageConfig(config ispecs.Image) (ispecs.Descriptor, error) {

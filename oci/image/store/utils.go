@@ -31,7 +31,7 @@ func imageIndex(dir string, r *ispecs.Index) error {
 func normalizeImageName(nameAndTag string) (name, ref string) {
 	imgRef, err := alltransports.ParseImageName(nameAndTag)
 	if err != nil {
-		return nameAndTag, "latest"
+		return parseImageName(nameAndTag)
 	}
 	return nameAndRef(imgRef)
 }

@@ -19,7 +19,6 @@ import (
 	"os"
 
 	humanize "github.com/dustin/go-humanize"
-	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/spf13/cobra"
 )
 
@@ -94,28 +93,39 @@ func runImageGc(cmd *cobra.Command, args []string) error {
 	return store.ImageGC()
 }
 
-func runImageImport(cmd *cobra.Command, args []string) error {
+func runImageImport(cmd *cobra.Command, args []string) (err error) {
 	if len(args) != 1 {
 		return usageError("No image provided to import")
 	}
-	return store.RunBatch(func(store image.ImageStoreRW) error {
-		_, err := store.ImportImage(args[0])
-		return err
-	})
+	lockedStore, err := store.OpenLockedImageStore()
+	if err != nil {
+		return
+	}
+	defer lockedStore.Close()
+
+	img, err := lockedStore.ImportImage(args[0])
+	if err == nil {
+		fmt.Fprintln(os.Stdout, img.ID())
+	}
+	return
 }
 
 func runImageDelete(cmd *cobra.Command, args []string) (err error) {
 	if len(args) == 0 {
 		return usageError("No image argument provided")
 	}
-	return store.RunBatch(func(store image.ImageStoreRW) (err error) {
-		for _, img := range args {
-			e := store.DeleteImage(img)
-			if e != nil {
-				fmt.Fprintf(os.Stderr, "Error: %s\n", e)
-				err = e
-			}
-		}
+	lockedStore, err := store.OpenLockedImageStore()
+	if err != nil {
 		return
-	})
+	}
+	defer lockedStore.Close()
+
+	for _, img := range args {
+		e := lockedStore.DeleteImage(img)
+		if e != nil {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", e)
+			err = e
+		}
+	}
+	return
 }

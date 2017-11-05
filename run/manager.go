@@ -33,16 +33,11 @@ func NewContainerManager(rootDir string, debug log.Logger) (*ContainerManager, e
 	return &ContainerManager{map[string]Container{}, absRoot, debug}, nil
 }
 
-func (m *ContainerManager) NewContainer(id, bundleDir string, terminal, bindStdin bool) (Container, error) {
-	/*c := exec.Command("runc", "--root", rootDir, "create", id)
-	c.Dir = runtimeBundleDir
-	c.Stderr = os.Stderr
-	c.Stdout = os.Stdout
-	err := c.Run()
-	if err != nil {
-		return nil, fmt.Errorf("Error: runc container creation: %s", err)
-	}*/
+func (m *ContainerManager) Close() (err error) {
+	return m.Stop()
+}
 
+func (m *ContainerManager) NewContainer(id, bundleDir string, terminal, bindStdin bool) Container {
 	if id == "" {
 		id = GenerateId()
 	}
@@ -60,7 +55,7 @@ func (m *ContainerManager) NewContainer(id, bundleDir string, terminal, bindStdi
 		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	}
 
-	return &RuncContainer{id, c, m.debug}, nil
+	return &RuncContainer{id, c, m.debug}
 }
 
 func (m *ContainerManager) Kill(id, signal string, all bool) error {
@@ -92,7 +87,7 @@ func (m *ContainerManager) Stop() (err error) {
 	for _, c := range m.runners {
 		e := c.Stop()
 		if e != nil {
-			m.debug.Printf("Failed to stop container %s: %v", c.ID(), err)
+			m.debug.Printf("Failed to stop container %s: %s", c.ID(), err)
 			if err == nil {
 				err = e
 			}
@@ -105,7 +100,7 @@ func (m *ContainerManager) Wait() (err error) {
 	for _, c := range m.runners {
 		e := c.Wait()
 		if e != nil {
-			m.debug.Printf("Failed to wait for container %s: %v", c.ID(), err)
+			m.debug.Println(e)
 			if err == nil {
 				err = e
 			}

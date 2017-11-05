@@ -11,7 +11,7 @@ import (
 
 type BundleBuilder struct {
 	*generate.SpecBuilder
-	image Image
+	image BundleImage
 }
 
 func Builder() *BundleBuilder {
@@ -20,7 +20,7 @@ func Builder() *BundleBuilder {
 	return FromSpec(&spec)
 }
 
-func BuilderFromImage(image Image) (*BundleBuilder, error) {
+func BuilderFromImage(image BundleImage) (*BundleBuilder, error) {
 	spec := generate.NewSpecBuilder()
 	spec.SetRootPath("rootfs")
 	conf, err := image.Config()

@@ -80,7 +80,12 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 	}
 	panic("TODO: bundle dir option")
 	bundleDir := ""
-	c, err := createRuntimeBundle(&model.Project{}, flagsBundle.last(), bundleDir)
+	istore, err := store.OpenLockedImageStore()
+	if err != nil {
+		return
+	}
+	defer istore.Close()
+	c, err := createRuntimeBundle(istore, &model.Project{}, flagsBundle.last(), bundleDir)
 	fmt.Println(c.Dir())
 	return
 }

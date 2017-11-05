@@ -23,12 +23,25 @@ type Image struct {
 	reader   ImageReader
 }
 
+func NewImage(id digest.Digest, name, ref string, created time.Time, manifest ispecs.Manifest, config *ispecs.Image, reader ImageReader) Image {
+	var size uint64
+	for _, l := range manifest.Layers {
+		if l.Size > 0 {
+			size += uint64(l.Size)
+		}
+	}
+	return Image{id, name, ref, manifest, size, created, config, reader}
+}
+
 func (img *Image) ID() string {
 	return img.Digest.String()
 }
 
 func (img *Image) Config() (cfg ispecs.Image, err error) {
 	if img.config == nil {
+		if img.reader == nil {
+			panic("refused to load image config since image instance has not been loaded by locked store")
+		}
 		if cfg, err = img.reader.ImageConfig(img.Manifest.Config.Digest); err != nil {
 			return
 		}
@@ -40,15 +53,8 @@ func (img *Image) Config() (cfg ispecs.Image, err error) {
 }
 
 func (img *Image) Unpack(dest string) error {
-	return img.reader.UnpackLayers(img.Digest, dest)
-}
-
-func NewImage(id digest.Digest, name, ref string, created time.Time, manifest ispecs.Manifest, config *ispecs.Image, reader ImageReader) Image {
-	var size uint64
-	for _, l := range manifest.Layers {
-		if l.Size > 0 {
-			size += uint64(l.Size)
-		}
+	if img.reader == nil {
+		panic("refused to unpack image since image instance has not been loaded by locked store")
 	}
-	return Image{id, name, ref, manifest, size, created, config, reader}
+	return img.reader.UnpackLayers(img.Digest, dest)
 }
