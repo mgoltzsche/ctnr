@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"github.com/mgoltzsche/cntnr/model"
+	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
 )
 
@@ -34,6 +35,7 @@ var (
 )
 
 func init() {
+	initBundleCreateFlags(runCmd.Flags())
 	initBundleRunFlags(runCmd.Flags())
 }
 
@@ -51,12 +53,19 @@ func runRun(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
+
 	project := model.NewProject()
 	for _, s := range flagsBundle.apps {
 		project.Services[s.Name] = *s
 	}
 
-	return runProject(project)
+	containers, err := run.NewContainerManager(flagStateDir, debugLog)
+	if err != nil {
+		return err
+	}
+	defer containers.Close()
+
+	return runProject(project, containers)
 }
 
 func split(args []string, sep string) [][]string {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/mgoltzsche/cntnr/generate"
 	gen "github.com/opencontainers/runtime-tools/generate"
@@ -40,6 +41,7 @@ func FromSpec(spec *generate.SpecBuilder) *BundleBuilder {
 
 func (b *BundleBuilder) Build(dir string) (r Bundle, err error) {
 	r.dir = dir
+	r.created = time.Now()
 	rootfs := filepath.Join(dir, b.Spec().Root.Path)
 
 	// Create bundle directory

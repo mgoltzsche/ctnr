@@ -17,6 +17,7 @@ package cmd
 import (
 	"os"
 
+	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
 )
 
@@ -40,8 +41,15 @@ func runKill(cmd *cobra.Command, args []string) (err error) {
 	if len(args) == 0 {
 		return usageError("At least one container ID argument expected")
 	}
+
+	containers, err := run.NewContainerManager(flagStateDir, debugLog)
+	if err != nil {
+		return err
+	}
+	defer containers.Close()
+
 	for _, id := range args {
-		if e := containerMngr.Kill(id, flagSignal, flagAll); e != nil {
+		if e := containers.Kill(id, flagSignal, flagAll); e != nil {
 			os.Stderr.WriteString(e.Error() + "\n")
 			err = e
 		}

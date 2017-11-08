@@ -58,11 +58,7 @@ func (s *BundleStore) Bundles() (l []bundle.Bundle, err error) {
 
 func (s *BundleStore) Bundle(id string) (r bundle.Bundle, err error) {
 	dir := filepath.Join(s.dir, id)
-	f, err := os.Stat(dir)
-	if err != nil {
-		return r, fmt.Errorf("bundle %q not found: %s", id, err)
-	}
-	return bundle.NewBundle(id, dir, f.ModTime()), nil
+	return bundle.NewBundle(dir)
 }
 
 func (s *BundleStore) CreateBundle(id string, builder *bundle.BundleBuilder) (bundle.Bundle, error) {

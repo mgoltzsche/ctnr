@@ -27,7 +27,6 @@ import (
 
 	"github.com/containers/image/types"
 	storepkg "github.com/mgoltzsche/cntnr/oci/store"
-	"github.com/mgoltzsche/cntnr/run"
 )
 
 var (
@@ -37,11 +36,10 @@ var (
 	flagStoreDir string
 	flagStateDir string
 
-	store         storepkg.Store
-	containerMngr *run.ContainerManager
-	errorLog      = log.NewStdLogger(os.Stderr)
-	warnLog       = log.NewStdLogger(os.Stderr)
-	debugLog      = log.NewNopLogger()
+	store    storepkg.Store
+	errorLog = log.NewStdLogger(os.Stderr)
+	warnLog  = log.NewStdLogger(os.Stderr)
+	debugLog = log.NewNopLogger()
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -115,10 +113,6 @@ func preRun(cmd *cobra.Command, args []string) {
 		ctx.DockerCertPath = "./docker-certs"
 	}
 	store, err = storepkg.NewStore(flagStoreDir, flagRootless, ctx, errorLog, debugLog)
-	exitOnError(cmd, err)
-
-	// init container manager
-	containerMngr, err = run.NewContainerManager(flagStateDir, debugLog)
 	exitOnError(cmd, err)
 }
 

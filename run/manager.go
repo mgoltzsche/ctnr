@@ -37,25 +37,8 @@ func (m *ContainerManager) Close() (err error) {
 	return m.Stop()
 }
 
-func (m *ContainerManager) NewContainer(id, bundleDir string, terminal, bindStdin bool) Container {
-	if id == "" {
-		id = GenerateId()
-	}
-	c := exec.Command("runc", "--root", m.rootDir, "run", id)
-	c.Dir = bundleDir
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-
-	if bindStdin || terminal {
-		c.Stdin = os.Stdin
-	}
-
-	if !terminal {
-		// Run in separate process group to be able to control orderly shutdown
-		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	}
-
-	return &RuncContainer{id, c, m.debug}
+func (m *ContainerManager) NewContainer(id string, bundle ContainerBundle) *RuncContainer {
+	return NewRuncContainer(id, bundle, m.rootDir, m.debug)
 }
 
 func (m *ContainerManager) Kill(id, signal string, all bool) error {
@@ -85,11 +68,14 @@ func (m *ContainerManager) Deploy(c Container) error {
 
 func (m *ContainerManager) Stop() (err error) {
 	for _, c := range m.runners {
-		e := c.Stop()
-		if e != nil {
-			m.debug.Printf("Failed to stop container %s: %s", c.ID(), err)
+		c.Stop()
+	}
+	for _, c := range m.runners {
+		if e := c.Wait(); e != nil {
 			if err == nil {
 				err = e
+			} else {
+				err = multiError(e, err)
 			}
 		}
 	}

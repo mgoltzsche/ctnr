@@ -20,6 +20,8 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/mgoltzsche/cntnr/model"
+	"github.com/mgoltzsche/cntnr/oci/bundle"
+	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
 )
 
@@ -47,14 +49,24 @@ var (
 		Long:  `Deletes a bundle from the local store.`,
 		Run:   handleError(runBundleDelete),
 	}
-	// TODO: bundle run
+	bundleRunCmd = &cobra.Command{
+		Use:   "run [flags] BUNDLEID|BUNDLEDIR",
+		Short: "Runs an existing bundle",
+		Long:  `Runs an existing OCI runtime bundle`,
+		Run:   handleError(runBundleRun),
+	}
+	flagBundleDir string
+	flagBundleId  string
 )
 
 func init() {
 	bundleCmd.AddCommand(bundleListCmd)
 	bundleCmd.AddCommand(bundleDeleteCmd)
 	bundleCmd.AddCommand(bundleCreateCmd)
-	initBundleFlags(bundleCreateCmd.Flags())
+	bundleCmd.AddCommand(bundleRunCmd)
+	initBundleCreateFlags(bundleCreateCmd.Flags())
+	bundleCreateCmd.Flags().StringVarP(&flagBundleDir, "bundle", "b", "", "bundle name or directory")
+	initBundleRunFlags(bundleRunCmd.Flags())
 }
 
 func runBundleList(cmd *cobra.Command, args []string) (err error) {
@@ -78,14 +90,12 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 	if err = flagsBundle.setBundleArgs(args); err != nil {
 		return
 	}
-	panic("TODO: bundle dir option")
-	bundleDir := ""
 	istore, err := store.OpenLockedImageStore()
 	if err != nil {
 		return
 	}
 	defer istore.Close()
-	c, err := createRuntimeBundle(istore, &model.Project{}, flagsBundle.last(), bundleDir)
+	c, err := createRuntimeBundle(istore, &model.Project{}, flagsBundle.last(), flagBundleDir)
 	fmt.Println(c.Dir())
 	return
 }
@@ -113,6 +123,49 @@ func runBundleDelete(cmd *cobra.Command, args []string) (err error) {
 	}
 	if failed {
 		err = fmt.Errorf("bundle rm: Not all specified bundles have been removed")
+	}
+	return
+}
+
+func runBundleRun(cmd *cobra.Command, args []string) (err error) {
+	if len(args) != 1 {
+		return usageError("Exactly one argument required")
+	}
+
+	containers, err := run.NewContainerManager(flagStateDir, debugLog)
+	if err != nil {
+		return err
+	}
+	defer containers.Close()
+
+	b, err := bundleByIdOrDir(args[0])
+	if err != nil {
+		return
+	}
+
+	lockedBundle, err := b.Lock()
+	if err != nil {
+		return err
+	}
+	c := run.NewRuncContainer("", lockedBundle, flagStateDir, debugLog)
+	if flagsBundle.last().StdinOpen {
+		c.Stdin = os.Stdin
+	}
+	defer c.Close()
+
+	if err = c.Start(); err != nil {
+		return
+	}
+
+	// TODO: handle signals
+	return c.Wait()
+}
+
+func bundleByIdOrDir(idOrDir string) (b bundle.Bundle, err error) {
+	if isFile(idOrDir) {
+		b, err = bundle.NewBundle(idOrDir)
+	} else {
+		b, err = store.Bundle(idOrDir)
 	}
 	return
 }

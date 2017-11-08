@@ -28,12 +28,10 @@ import (
 var flagsBundle = newApps()
 
 func initBundleRunFlags(f *pflag.FlagSet) {
-	initBundleFlags(f)
 	f.VarP((*cStdin)(flagsBundle), "stdin", "i", "binds stdin to the container")
-	f.VarP((*cTty)(flagsBundle), "tty", "t", "binds a terminal to the container")
 }
 
-func initBundleFlags(f *pflag.FlagSet) {
+func initBundleCreateFlags(f *pflag.FlagSet) {
 	c := flagsBundle
 	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
 	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
@@ -41,6 +39,7 @@ func initBundleFlags(f *pflag.FlagSet) {
 	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.Var((*cReadOnly)(c), "readonly", "mounts the root file system in read only mode")
+	f.VarP((*cTty)(flagsBundle), "tty", "t", "binds a terminal to the container")
 	initNetConfFlags(f, &c.netCfg)
 	// Stop parsing after first non flag argument (image)
 	f.SetInterspersed(false)

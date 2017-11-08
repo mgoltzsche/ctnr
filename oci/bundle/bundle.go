@@ -24,8 +24,18 @@ type Bundle struct {
 	created time.Time
 }
 
-func NewBundle(id, dir string, created time.Time) Bundle {
-	return Bundle{id, dir, created}
+func NewBundle(dir string) (r Bundle, err error) {
+	r.id = filepath.Base(dir)
+	f, err := os.Stat(dir)
+	if err != nil {
+		return r, fmt.Errorf("new bundle: %s", err)
+	}
+	if !f.IsDir() {
+		return r, fmt.Errorf("new bundle: no directory provided but %s", dir)
+	}
+	r.dir = dir
+	r.created = f.ModTime()
+	return
 }
 
 func (b *Bundle) ID() string {
@@ -149,6 +159,10 @@ func (b *LockedBundle) Close() (err error) {
 		b.lock = nil
 	}
 	return
+}
+
+func (b *LockedBundle) Spec() rspecs.Spec {
+	return b.spec
 }
 
 func (b *LockedBundle) Image() *digest.Digest {

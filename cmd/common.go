@@ -74,7 +74,7 @@ func exitError(exitCode int, frmt string, values ...interface{}) {
 	os.Exit(exitCode)
 }
 
-func runProject(project *model.Project) error {
+func runProject(project *model.Project, containerMngr *run.ContainerManager) error {
 	istore, err := store.OpenLockedImageStore()
 	if err != nil {
 		return err
@@ -83,11 +83,18 @@ func runProject(project *model.Project) error {
 
 	for _, s := range project.Services {
 		fmt.Println(s.JSON())
-		m, err := createRuntimeBundle(istore, project, &s, "")
+		bundle, err := createRuntimeBundle(istore, project, &s, "")
 		if err != nil {
 			return err
 		}
-		c := containerMngr.NewContainer("", m.Dir(), s.Tty, s.StdinOpen)
+		lockedBundle, err := bundle.Lock()
+		if err != nil {
+			return err
+		}
+		c := containerMngr.NewContainer("", lockedBundle)
+		if s.StdinOpen {
+			c.Stdin = os.Stdin
+		}
 		if err = containerMngr.Deploy(c); err != nil {
 			containerMngr.Stop()
 			return err
@@ -98,7 +105,7 @@ func runProject(project *model.Project) error {
 	return containerMngr.Wait()
 }
 
-func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *model.Service, bundleDir string) (b bundle.Bundle, err error) {
+func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *model.Service, bundleIdOrDir string) (b bundle.Bundle, err error) {
 	if service.Image == "" {
 		err = fmt.Errorf("service %q has no image", service.Name)
 		return
@@ -125,7 +132,7 @@ func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *m
 
 	// Generate config.json
 	// TODO: clean this up: don't create anonymous volume dirs in container dir before container is created
-	vols := model.NewVolumeResolver(p, filepath.Join(bundleDir, "volumes"))
+	vols := model.NewVolumeResolver(p, filepath.Join(bundleIdOrDir, "volumes"))
 	/*defer func() {
 		if err != nil {
 			os.RemoveAll(bundleDir)
@@ -136,6 +143,14 @@ func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *m
 	}
 
 	// Create bundle
-	b, err = store.CreateBundle("", builder)
+	if isFile(bundleIdOrDir) {
+		b, err = builder.Build(bundleIdOrDir)
+	} else {
+		b, err = store.CreateBundle(bundleIdOrDir, builder)
+	}
 	return
+}
+
+func isFile(file string) bool {
+	return file != "" && (filepath.IsAbs(file) || file == "." || file == ".." || len(file) > 1 && file[0:2] == "./" || len(file) > 2 && file[0:3] == "../" || file == "~" || len(file) > 1 && file[0:2] == "~/")
 }
