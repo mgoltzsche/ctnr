@@ -16,12 +16,10 @@ package generate
 
 import (
 	"strings"
+	"time"
 
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
-
-	"time"
-
 	"github.com/opencontainers/runtime-tools/generate"
 )
 

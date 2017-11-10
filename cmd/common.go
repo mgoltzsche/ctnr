@@ -131,14 +131,7 @@ func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *m
 	}
 
 	// Generate config.json
-	// TODO: clean this up: don't create anonymous volume dirs in container dir before container is created
-	vols := model.NewVolumeResolver(p, filepath.Join(bundleIdOrDir, "volumes"))
-	/*defer func() {
-		if err != nil {
-			os.RemoveAll(bundleDir)
-		}
-	}()*/
-	if err = service.ToSpec(vols, flagRootless, builder.SpecBuilder); err != nil {
+	if err = service.ToSpec(p, flagRootless, builder.SpecBuilder); err != nil {
 		return
 	}
 

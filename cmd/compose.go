@@ -27,7 +27,7 @@ var (
 		Long:  `Converts and runs docker compose files.`,
 	}
 	composeRunCmd = &cobra.Command{
-		Use:   "run",
+		Use:   "run [flags] FILE",
 		Short: "Run a docker compose file",
 		Long:  `Converts and runs a docker compose file.`,
 		Run:   handleError(runComposeRun),

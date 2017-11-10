@@ -1,0 +1,9 @@
+version: '2'
+services:
+  myservice:
+    image: alpine:3.6
+    tty: true
+    volumes:
+      - "./build/testvol:/data"
+      - "./vendor.conf:/vendor.conf"
+      - "/anon"

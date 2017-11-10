@@ -3,52 +3,47 @@ package model
 import (
 	"encoding/base64"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type volumeResolver struct {
-	baseDir   string
-	bundleDir string
-	volumes   map[string]Volume
+	baseDir string
+	volumes map[string]Volume
 }
 
-func NewVolumeResolver(project *Project, bundleDir string) *volumeResolver {
-	return &volumeResolver{project.Dir, bundleDir, project.Volumes}
+func NewVolumeResolver(project *Project) *volumeResolver {
+	return &volumeResolver{project.Dir, project.Volumes}
 }
 
-func (self *volumeResolver) PrepareVolumeMount(m VolumeMount) (specs.Mount, error) {
+func (self *volumeResolver) PrepareVolumeMount(m VolumeMount) (r specs.Mount, err error) {
 	t := m.Type
 	if t == "" {
 		t = "bind"
 	}
 	var src string
-	var err error
 	if m.IsNamedVolume() {
 		src, err = self.named(m)
 	} else if m.Source == "" {
-		src, err = self.anonymous(m.Target)
+		src = self.anonymous(m.Target)
 	} else {
-		src, err = self.path(m.Source)
+		src = self.path(m.Source)
 	}
+
 	opts := m.Options
 	if len(opts) == 0 {
 		// Apply default mount options. See man7.org/linux/man-pages/man8/mount.8.html
 		opts = []string{"rbind", "nodev", "mode=0755"}
 	}
-	r := specs.Mount{
+
+	r = specs.Mount{
 		Type:        t,
 		Source:      src,
 		Destination: m.Target,
 		Options:     opts,
 	}
-	if err != nil {
-		return r, err
-	}
-
-	return r, err
+	return
 }
 
 func (self *volumeResolver) named(m VolumeMount) (string, error) {
@@ -57,29 +52,20 @@ func (self *volumeResolver) named(m VolumeMount) (string, error) {
 		return "", fmt.Errorf("Volume %q not found", m.Source)
 	}
 	if r.Source == "" {
-		return self.anonymous("!" + m.Source)
+		return self.anonymous("!" + m.Source), nil
 	}
 	return r.Source, nil
 }
 
-func (self *volumeResolver) anonymous(id string) (f string, err error) {
+func (self *volumeResolver) anonymous(id string) string {
 	id = filepath.Clean(id)
-	f = filepath.Join(self.bundleDir, "volumes", base64.RawStdEncoding.EncodeToString([]byte(id)))
-	err = os.MkdirAll(f, 0755)
-	if err != nil {
-		err = fmt.Errorf("Cannot create anonymous volume for %s at %s: %s", id, f, err)
-	}
-	return f, err
+	return filepath.Join("volumes", base64.RawStdEncoding.EncodeToString([]byte(id)))
 }
 
-func (self *volumeResolver) path(file string) (r string, err error) {
+func (self *volumeResolver) path(file string) string {
+	file = filepath.Clean(file)
 	if !filepath.IsAbs(file) && !(file == "~" || len(file) > 1 && file[0:2] == "~/") {
 		file = filepath.Join(self.baseDir, file)
 	}
-
-	if _, err = os.Stat(file); os.IsNotExist(err) {
-		err = os.MkdirAll(file, 0755)
-	}
-
-	return file, err
+	return file
 }

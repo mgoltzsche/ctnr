@@ -79,7 +79,9 @@ if _, e := os.Stat(resolvConf); os.IsNotExist(e) {
 	spec.Mounts = mounts
 }*/
 
-func (service *Service) ToSpec(vols VolumeResolver, rootless bool, spec *generate.SpecBuilder) error {
+func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBuilder) error {
+	vols := NewVolumeResolver(p)
+
 	if rootless {
 		specconv.ToRootless(spec.Spec())
 	}
@@ -109,9 +111,6 @@ func (service *Service) ToSpec(vols VolumeResolver, rootless bool, spec *generat
 
 	// Add mounts
 	for _, m := range service.Volumes {
-		if spec.Spec().Mounts == nil {
-			spec.Spec().Mounts = []specs.Mount{}
-		}
 		mount, err := vols.PrepareVolumeMount(m)
 		if err != nil {
 			return err
