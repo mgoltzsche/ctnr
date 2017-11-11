@@ -1,6 +1,6 @@
 #!/bin/sh
 
-CNI_VERSION=${CNI_VERSION:-0.6.0-rc1}
+CNI_VERSION=${CNI_VERSION:-0.6.0}
 
 REPOPATH="$(dirname "$0")"
 REPOPATH="$(cd "$REPOPATH" && pwd)"
