@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/containernetworking/cni/pkg/types/current"
 )
 
 type ConfigFileGenerator struct {
@@ -19,13 +21,26 @@ type ConfigFileGenerator struct {
 	hostsOrder    []string
 }
 
-func NewConfigFileGenerator() *ConfigFileGenerator {
-	return &ConfigFileGenerator{
+func NewConfigFileGenerator() ConfigFileGenerator {
+	return ConfigFileGenerator{
 		dnsNameserver: []string{},
 		dnsSearch:     []string{},
 		dnsOptions:    []string{},
 		hosts:         map[string]string{},
 		hostsOrder:    []string{},
+		ip:            "127.0.0.1",
+	}
+}
+
+func (b *ConfigFileGenerator) AddCniResult(r *current.Result) {
+	b.AddDnsNameserver(r.DNS.Nameservers)
+	b.AddDnsOptions(r.DNS.Options)
+	b.AddDnsSearch(r.DNS.Search)
+	if r.DNS.Domain != "" {
+		b.SetDomainname(r.DNS.Domain)
+	}
+	if len(r.IPs) > 0 {
+		b.SetMainIP(r.IPs[0].Address.IP.String())
 	}
 }
 
@@ -70,7 +85,7 @@ func (b *ConfigFileGenerator) AddDnsOptions(opts []string) {
 	}
 }
 
-func (b *ConfigFileGenerator) Apply(rootfs string) error {
+func (b *ConfigFileGenerator) WriteConfigFiles(rootfs string) error {
 	// Create /etc dir in bundle's rootfs
 	etcDir := filepath.Join(rootfs, "etc")
 	if _, err := os.Stat(etcDir); os.IsNotExist(err) {

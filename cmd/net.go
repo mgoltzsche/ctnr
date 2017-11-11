@@ -90,29 +90,24 @@ func runNetInit(cmd *cobra.Command, args []string) (err error) {
 			}
 		}
 	}()
-	hasOwnNet := false
-	mainIP := "127.0.0.1"
+	cfg := net.NewConfigFileGenerator()
 	for i, netConf := range netConfigs {
 		r, err := mngr.AddNet("eth"+strconv.Itoa(i), netConf)
 		if err != nil {
 			return err
 		}
-		for _, ip := range r.IPs {
-			mainIP = ip.Address.IP.String()
-			break
-		}
-		hasOwnNet = true
+		cfg.AddCniResult(r)
 	}
 
 	// Generate hostname, hosts, resolv.conf files
 	// TODO: when hasOwnNet host configuration should not be applied here
 	hostname := spec.Hostname
-	if hasOwnNet && hostname == "" {
+	if hostname == "" {
 		hostname = state.ID
 	}
-	rootfs := filepath.Join(state.Bundle, spec.Root.Path)
-	err = generateConfigFiles(rootfs, hostname, mainIP)
-	return
+	cfg.SetHostname(hostname)
+	applyArgs(&cfg)
+	return cfg.WriteConfigFiles(filepath.Join(state.Bundle, spec.Root.Path))
 }
 
 func runNetRemove(cmd *cobra.Command, args []string) (err error) {
@@ -147,11 +142,8 @@ func runNetRemove(cmd *cobra.Command, args []string) (err error) {
 	return
 }
 
-func generateConfigFiles(rootfs, hostname, mainIP string) error {
-	cfg := net.NewConfigFileGenerator()
+func applyArgs(cfg *net.ConfigFileGenerator) {
 	c := flagsNetInit.curr
-	cfg.SetHostname(hostname)
-	cfg.SetMainIP(mainIP)
 	if c.Domainname != "" {
 		cfg.SetDomainname(c.Domainname)
 	}
@@ -164,7 +156,6 @@ func generateConfigFiles(rootfs, hostname, mainIP string) error {
 	cfg.AddDnsNameserver(c.Dns)
 	cfg.AddDnsSearch(c.DnsSearch)
 	cfg.AddDnsOptions(c.DnsOptions)
-	return cfg.Apply(rootfs)
 }
 
 func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {

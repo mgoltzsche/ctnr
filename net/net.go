@@ -139,8 +139,7 @@ func (m *NetManager) AddNet(ifName string, netConf *libcni.NetworkConfigList) (r
 	}
 	r, err = current.NewResultFromResult(rs)
 	if err != nil {
-		m.DelNet(ifName, netConf)
-		return nil, fmt.Errorf("Could not convert CNI result for network %s: %s", netConf.Name, err)
+		err = fmt.Errorf("CNI result for network %s: %s", netConf.Name, err)
 	}
 	return
 }
