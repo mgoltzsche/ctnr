@@ -13,9 +13,9 @@ import (
 type ConfigFileGenerator struct {
 	ip            string
 	hostname      string
-	domainname    string
 	dnsNameserver []string
 	dnsSearch     []string
+	dnsDomain     string
 	dnsOptions    []string
 	hosts         map[string]string
 	hostsOrder    []string
@@ -25,6 +25,7 @@ func NewConfigFileGenerator() ConfigFileGenerator {
 	return ConfigFileGenerator{
 		dnsNameserver: []string{},
 		dnsSearch:     []string{},
+		dnsDomain:     "localdomain",
 		dnsOptions:    []string{},
 		hosts:         map[string]string{},
 		hostsOrder:    []string{},
@@ -37,29 +38,23 @@ func (b *ConfigFileGenerator) AddCniResult(r *current.Result) {
 	b.AddDnsOptions(r.DNS.Options)
 	b.AddDnsSearch(r.DNS.Search)
 	if r.DNS.Domain != "" {
-		b.SetDomainname(r.DNS.Domain)
+		b.SetDnsDomain(r.DNS.Domain)
 	}
 	if len(r.IPs) > 0 {
 		b.SetMainIP(r.IPs[0].Address.IP.String())
 	}
 }
 
-func (b *ConfigFileGenerator) SetHostname(hostname string) {
-	dotPos := strings.Index(hostname, ".")
-	if dotPos > 0 && dotPos+1 < len(hostname) {
-		b.hostname = hostname[:dotPos]
-		b.domainname = hostname[dotPos+1:]
-	} else {
-		b.hostname = hostname
-	}
-}
-
-func (b *ConfigFileGenerator) SetDomainname(domainname string) {
-	b.domainname = domainname
-}
-
 func (b *ConfigFileGenerator) SetMainIP(ip string) {
 	b.ip = ip
+}
+
+func (b *ConfigFileGenerator) SetHostname(hostname string) {
+	b.hostname = hostname
+}
+
+func (b *ConfigFileGenerator) SetDnsDomain(domain string) {
+	b.dnsDomain = domain
 }
 
 func (b *ConfigFileGenerator) AddHostsEntry(host, ip string) {
@@ -125,8 +120,8 @@ func (b *ConfigFileGenerator) writeResolvConf(dest string) error {
 		rc += "search " + s + "\n"
 	}
 
-	if b.domainname != "" {
-		rc += "domain " + b.domainname + "\n"
+	if b.dnsDomain != "" {
+		rc += "domain " + b.dnsDomain + "\n"
 	}
 
 	if len(b.dnsOptions) > 0 {
@@ -155,11 +150,12 @@ func (b *ConfigFileGenerator) writeHosts(dest string) error {
 		"ff02::3":   "ip6-allhosts",
 	}
 	if b.ip != "" && b.hostname != "" {
-		if b.domainname == "" {
-			hosts[b.ip] = strings.Trim(b.hostname+" "+hosts[b.ip], " ")
-		} else {
-			hosts[b.ip] = strings.Trim(b.hostname+"."+b.domainname+" "+b.hostname+" "+hosts[b.ip], " ")
+		hostname := b.hostname
+		dotPos := strings.Index(hostname, ".")
+		if dotPos > 0 && dotPos+1 < len(b.hostname) {
+			hostname = hostname + " " + hostname[:dotPos]
 		}
+		hosts[b.ip] = strings.Trim(hostname+" "+hosts[b.ip], " ")
 	}
 	for _, name := range b.hostsOrder {
 		ip := b.hosts[name]

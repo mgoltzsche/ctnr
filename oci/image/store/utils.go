@@ -72,6 +72,7 @@ func createTrustPolicyContext() (*signature.PolicyContext, error) {
 	return signature.NewPolicyContext(policy)
 }
 
+// TODO: Move into imagerepo
 func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err error) {
 	refFound := false
 	for _, descriptor := range idx.Manifests {

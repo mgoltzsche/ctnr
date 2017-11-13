@@ -111,10 +111,17 @@ func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *m
 		return
 	}
 
+	bundleId := bundleIdOrDir
+	bundleDir := ""
+	if isFile(bundleIdOrDir) {
+		bundleDir = bundleIdOrDir
+		bundleId = ""
+	}
+
 	// Load image and bundle builder
 	var builder *bundle.BundleBuilder
 	if service.Image == "" {
-		builder = bundle.Builder()
+		builder = bundle.Builder(bundleId)
 	} else {
 		var img image.Image
 		img, err = istore.ImageByName(service.Image)
@@ -124,7 +131,7 @@ func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *m
 				return
 			}
 		}
-		builder, err = bundle.BuilderFromImage(&img)
+		builder, err = bundle.BuilderFromImage(bundleId, &img)
 		if err != nil {
 			return
 		}
@@ -136,10 +143,10 @@ func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *m
 	}
 
 	// Create bundle
-	if isFile(bundleIdOrDir) {
-		b, err = builder.Build(bundleIdOrDir)
+	if bundleDir != "" {
+		b, err = builder.Build(bundleDir)
 	} else {
-		b, err = store.CreateBundle(bundleIdOrDir, builder)
+		b, err = store.CreateBundle(builder)
 	}
 	return
 }

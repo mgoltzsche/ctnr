@@ -14,6 +14,7 @@ import (
 )
 
 type ContainerBundle interface {
+	ID() string
 	Dir() string
 	Spec() rspecs.Spec
 	Close() error
@@ -82,7 +83,9 @@ type RuncContainer struct {
 
 func NewRuncContainer(id string, bundle ContainerBundle, rootDir string, debug log.Logger) *RuncContainer {
 	if id == "" {
-		id = GenerateId()
+		if id = bundle.ID(); id == "" {
+			panic("no container ID provided and bundle ID is empty")
+		}
 	}
 	return &RuncContainer{
 		Stdout:  os.Stdout,

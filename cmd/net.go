@@ -100,12 +100,7 @@ func runNetInit(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	// Generate hostname, hosts, resolv.conf files
-	// TODO: when hasOwnNet host configuration should not be applied here
-	hostname := spec.Hostname
-	if hostname == "" {
-		hostname = state.ID
-	}
-	cfg.SetHostname(hostname)
+	cfg.SetHostname(spec.Hostname)
 	applyArgs(&cfg)
 	return cfg.WriteConfigFiles(filepath.Join(state.Bundle, spec.Root.Path))
 }
@@ -144,11 +139,11 @@ func runNetRemove(cmd *cobra.Command, args []string) (err error) {
 
 func applyArgs(cfg *net.ConfigFileGenerator) {
 	c := flagsNetInit.curr
-	if c.Domainname != "" {
-		cfg.SetDomainname(c.Domainname)
-	}
 	if c.Hostname != "" {
 		cfg.SetHostname(c.Hostname)
+	}
+	if c.Domainname != "" {
+		cfg.SetDnsDomain(c.Domainname)
 	}
 	for _, e := range c.ExtraHosts {
 		cfg.AddHostsEntry(e.Name, e.Ip)

@@ -144,17 +144,10 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		spec.RemoveLinuxNamespace(specs.NetworkNamespace)
 	}
 
-	// Add hostname
-	hostname := service.Hostname
-	domainname := service.Domainname
-	if hostname != "" {
-		dotPos := strings.Index(hostname, ".")
-		if dotPos != -1 {
-			domainname = hostname[dotPos+1:]
-			hostname = hostname[:dotPos]
-		}
+	// Add hostname. Empty string results in host's hostname
+	if service.Hostname != "" || useHostNetwork {
+		spec.SetHostname(service.Hostname)
 	}
-	spec.SetHostname(hostname)
 
 	// Add network hooks
 	if !useHostNetwork && len(networks) > 0 {
@@ -181,11 +174,8 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 
 		hookArgs := make([]string, 0, 10)
 		hookArgs = append(hookArgs, "cntnr", "net", "init")
-		if hostname != "" {
-			hookArgs = append(hookArgs, "--hostname="+hostname)
-		}
-		if domainname != "" {
-			hookArgs = append(hookArgs, "--domainname="+domainname)
+		if service.Domainname != "" {
+			hookArgs = append(hookArgs, "--domainname="+service.Domainname)
 		}
 		for _, dnsip := range service.Dns {
 			hookArgs = append(hookArgs, "--dns="+dnsip)

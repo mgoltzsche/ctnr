@@ -1,37 +1,34 @@
 package bundle
 
 import (
+	"encoding/base32"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mgoltzsche/cntnr/generate"
-	//specs "github.com/opencontainers/runtime-spec/specs-go"
 	gen "github.com/opencontainers/runtime-tools/generate"
+	"github.com/satori/go.uuid"
 )
 
+const ANNOTATION_BUNDLE_ID = "com.github.mgoltzsche.cntnr.bundle.id"
+
 type BundleBuilder struct {
+	id string
 	*generate.SpecBuilder
-	image BundleImage `json:"-"`
+	image BundleImage
 }
 
-/*type bundleMount struct {
-	specs.Mount
-	relSource string
-}
-
-func (m *bundleMount) setBaseDir(dir string) {
-	m.Source = filepath.Join(dir, m.relSource)
-}*/
-
-func Builder() *BundleBuilder {
+func Builder(id string) *BundleBuilder {
 	spec := generate.NewSpecBuilder()
+	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
 	spec.SetRootPath("rootfs")
 	return FromSpec(&spec)
 }
 
-func BuilderFromImage(image BundleImage) (*BundleBuilder, error) {
+func BuilderFromImage(id string, image BundleImage) (*BundleBuilder, error) {
 	spec := generate.NewSpecBuilder()
 	spec.SetRootPath("rootfs")
 	conf, err := image.Config()
@@ -40,24 +37,40 @@ func BuilderFromImage(image BundleImage) (*BundleBuilder, error) {
 	}
 	spec.ApplyImage(conf)
 	spec.AddAnnotation(ANNOTATION_BUNDLE_IMAGE, image.ID())
+	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
 	r := FromSpec(&spec)
 	r.image = image
 	return r, nil
 }
 
 func FromSpec(spec *generate.SpecBuilder) *BundleBuilder {
-	return &BundleBuilder{spec, nil}
+	id := ""
+	if s := spec.Spec(); s != nil && s.Annotations != nil {
+		id = s.Annotations[ANNOTATION_BUNDLE_ID]
+	}
+	if id == "" {
+		id = generateId()
+	}
+	b := &BundleBuilder{"", spec, nil}
+	b.SetID(id)
+	return b
 }
 
-/*func (b *BundleBuilder) AddBindMountBundleRelative(src, dest string, opts []string) {
-	spec := b.Spec()
-	i := len(spec.Mounts)
-	b.AddBindMount(src, dest, opts)
-	m := spec.Mounts[i]
-	spec.Mounts[i] = bundleMount{m, src}
-}*/
+func (b *BundleBuilder) SetID(id string) {
+	if id == "" {
+		panic("no bundle id provided")
+	}
+	b.id = id
+	b.SetHostname(id)
+	b.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
+}
+
+func (b *BundleBuilder) GetID() string {
+	return b.id
+}
 
 func (b *BundleBuilder) Build(dir string) (r Bundle, err error) {
+	r.id = b.id
 	r.dir = dir
 	r.created = time.Now()
 	rootfs := filepath.Join(dir, b.Spec().Root.Path)
@@ -106,4 +119,8 @@ func (b *BundleBuilder) Build(dir string) (r Bundle, err error) {
 		}
 	}
 	return
+}
+
+func generateId() string {
+	return strings.ToLower(strings.TrimRight(base32.StdEncoding.EncodeToString(uuid.NewV4().Bytes()), "="))
 }

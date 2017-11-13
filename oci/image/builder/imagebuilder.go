@@ -24,11 +24,11 @@ func NewImageBuilder(images image.ImageStoreRW, containers bundle.BundleStore, b
 	if err = b.init(&baseImage, author); err != nil {
 		return
 	}
-	bb, err := bundle.BuilderFromImage(&baseImage)
+	bb, err := bundle.BuilderFromImage(newContainerId, &baseImage)
 	if err != nil {
 		return b, fmt.Errorf("image builder: %s", err)
 	}
-	cb, err := containers.CreateBundle(newContainerId, bb)
+	cb, err := containers.CreateBundle(bb)
 	if err != nil {
 		return b, fmt.Errorf("image builder: %s", err)
 	}

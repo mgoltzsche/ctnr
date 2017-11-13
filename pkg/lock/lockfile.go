@@ -37,10 +37,11 @@ func (l *Lockfile) Lock() (err error) {
 	}()
 
 	for {
-		if l.lockfile.TryLock() == nil {
+		err = l.lockfile.TryLock()
+		if terr, ok := err.(lockfile.TemporaryError); err == nil || !ok || !terr.Temporary() {
+			// return when locked successfully or error is not temporary
 			return
 		}
-
 		if err = awaitFileChange(l.file); err != nil && !os.IsNotExist(err) {
 			return
 		}

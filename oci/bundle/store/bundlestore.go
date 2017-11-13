@@ -1,17 +1,14 @@
 package store
 
 import (
-	"encoding/base32"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/bundle"
-	"github.com/satori/go.uuid"
 )
 
 var _ bundle.BundleStore = &BundleStore{}
@@ -61,11 +58,8 @@ func (s *BundleStore) Bundle(id string) (r bundle.Bundle, err error) {
 	return bundle.NewBundle(dir)
 }
 
-func (s *BundleStore) CreateBundle(id string, builder *bundle.BundleBuilder) (bundle.Bundle, error) {
-	if id == "" {
-		id = generateId()
-	}
-	return builder.Build(filepath.Join(s.dir, id))
+func (s *BundleStore) CreateBundle(builder *bundle.BundleBuilder) (bundle.Bundle, error) {
+	return builder.Build(filepath.Join(s.dir, builder.GetID()))
 }
 
 // Deletes all bundles older than the given time
@@ -87,9 +81,4 @@ func (s *BundleStore) BundleGC(before time.Time) (r []bundle.Bundle, err error) 
 		}
 	}
 	return
-}
-
-// TODO: Move into utils package since it also occurs in run
-func generateId() string {
-	return strings.ToLower(strings.TrimRight(base32.StdEncoding.EncodeToString(uuid.NewV4().Bytes()), "="))
 }
