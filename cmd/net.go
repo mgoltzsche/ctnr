@@ -86,13 +86,13 @@ func runNetInit(cmd *cobra.Command, args []string) (err error) {
 		if err != nil {
 			// Free all network resources on error
 			for i, netConf := range netConfigs {
-				mngr.DelNet("eth"+strconv.Itoa(i), netConf)
+				mngr.DelNet("cni"+strconv.Itoa(i), netConf)
 			}
 		}
 	}()
 	cfg := net.NewConfigFileGenerator()
 	for i, netConf := range netConfigs {
-		r, err := mngr.AddNet("eth"+strconv.Itoa(i), netConf)
+		r, err := mngr.AddNet("cni"+strconv.Itoa(i), netConf)
 		if err != nil {
 			return err
 		}
@@ -130,7 +130,7 @@ func runNetRemove(cmd *cobra.Command, args []string) (err error) {
 	}
 	for i, netConf := range netConfigs {
 		// TODO: Check that/when/how /etc/lib/cni/networks/<net>/last_reserved_ip is reset
-		if e := mngr.DelNet("eth"+strconv.Itoa(i), netConf); e != nil && err == nil {
+		if e := mngr.DelNet("cni"+strconv.Itoa(i), netConf); e != nil && err == nil {
 			err = e
 		}
 	}

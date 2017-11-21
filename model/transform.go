@@ -2,18 +2,17 @@ package model
 
 import (
 	"fmt"
-
-	"github.com/mgoltzsche/cntnr/generate"
-	"github.com/opencontainers/runc/libcontainer/specconv"
-	//"github.com/opencontainers/image-tools/image"
 	"io/ioutil"
 	"os"
 
-	specs "github.com/opencontainers/runtime-spec/specs-go"
-	//"os/exec"
+	"github.com/mgoltzsche/cntnr/generate"
+	"github.com/opencontainers/runc/libcontainer/specconv"
+	//"github.com/mgoltzsche/cntnr/pkg/atomic"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 const (
@@ -21,23 +20,6 @@ const (
 	ANNOTATION_BUNDLE_CREATED    = "com.github.mgoltzsche.cntnr.bundle.created"
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.cntnr.bundle.id"
 )
-
-// TODO: put somewhere
-/*// Copy host's /etc/hostname into bundle
-if err = copyHostFile("/etc/hostname", rootDir); err != nil {
-	return
-}
-// Copy host's /etc/hosts into bundle
-if err = copyHostFile("/etc/hosts", rootDir); err != nil {
-	return
-}
-// Copy host's /etc/resolv.conf into bundle if image didn't provide resolv.conf
-resolvConf := filepath.Join(rootDir, "/etc/resolv.conf")
-if _, e := os.Stat(resolvConf); os.IsNotExist(e) {
-	if err = copyHostFile("/etc/resolv.conf", rootDir); err != nil {
-		return
-	}
-}*/
 
 /*func makeRootless(spec *generate.Generator) {
 	// Remove network namespace
@@ -142,6 +124,9 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 	// Use host networks by removing 'network' namespace
 	if useHostNetwork {
 		spec.RemoveLinuxNamespace(specs.NetworkNamespace)
+		opts := []string{"bind", "mode=0444", "nosuid", "noexec", "nodev", "ro"}
+		spec.AddBindMount("/etc/hosts", "/etc/hosts", opts)
+		spec.AddBindMount("/etc/resolv.conf", "/etc/resolv.conf", opts)
 	}
 
 	// Add hostname. Empty string results in host's hostname

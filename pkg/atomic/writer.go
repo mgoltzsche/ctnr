@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 )
 
+// Writes a file atomically by first writing into a temp file before moving it to its final destination
 func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 	// Create temp file to write blob to
 	tmpFile, err := ioutil.TempFile(filepath.Dir(dest), "tmp-")
@@ -47,6 +48,7 @@ func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 	return
 }
 
+// Writes a JSON file atomically by first writing into a temp file before moving it to its final destination
 func WriteJson(dest string, o interface{}) (size int64, err error) {
 	var buf bytes.Buffer
 	if err = json.NewEncoder(&buf).Encode(o); err != nil {
