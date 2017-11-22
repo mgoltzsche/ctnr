@@ -422,7 +422,7 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, baseFile, destBaseFi
 
 func ParseVolumeMount(expr string, r *VolumeMount) (err error) {
 	r.Options = []string{}
-	s := strings.SplitN(expr, ":", 3)
+	s := strings.Split(expr, ":")
 	switch len(s) {
 	case 1:
 		r.Source = ""

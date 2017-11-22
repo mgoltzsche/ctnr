@@ -34,7 +34,18 @@ func (self *volumeResolver) PrepareVolumeMount(m VolumeMount) (r specs.Mount, er
 	opts := m.Options
 	if len(opts) == 0 {
 		// Apply default mount options. See man7.org/linux/man-pages/man8/mount.8.html
-		opts = []string{"rbind", "nodev", "mode=0755"}
+		opts = []string{"bind", "nodev", "mode=0755"}
+	} else {
+		foundBindOpt := false
+		for _, opt := range opts {
+			if opt == "bind" || opt == "rbind" {
+				foundBindOpt = true
+				break
+			}
+		}
+		if !foundBindOpt {
+			opts = append(opts, "bind")
+		}
 	}
 
 	r = specs.Mount{
