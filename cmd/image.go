@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -37,7 +38,7 @@ var (
 	imageDeleteCmd = &cobra.Command{
 		Use:   "delete IMAGE...",
 		Short: "Deletes one or many image references from the local store",
-		Long:  `Deletes an image reference from the local store.`,
+		Long:  `Deletes one or many image references from the local store.`,
 		Run:   handleError(runImageDelete),
 	}
 	imageGcCmd = &cobra.Command{
@@ -62,6 +63,12 @@ to a local or remote destination.`,
 			panic("TODO: export image")
 		},
 	}
+	imageCatConfigCmd = &cobra.Command{
+		Use:   "cat-config IMAGE",
+		Short: "Prints an image's configuration",
+		Long:  `Prints an image's configuration.`,
+		Run:   handleError(runImageCatConfig),
+	}
 )
 
 func init() {
@@ -70,6 +77,7 @@ func init() {
 	imageCmd.AddCommand(imageGcCmd)
 	imageCmd.AddCommand(imageImportCmd)
 	imageCmd.AddCommand(imageExportCmd)
+	imageCmd.AddCommand(imageCatConfigCmd)
 	// TODO: image build
 }
 
@@ -127,5 +135,31 @@ func runImageDelete(cmd *cobra.Command, args []string) (err error) {
 			err = e
 		}
 	}
+	return
+}
+
+func runImageCatConfig(cmd *cobra.Command, args []string) (err error) {
+	if len(args) != 1 {
+		return usageError("No IMAGE argument provided")
+	}
+	lockedStore, err := store.OpenLockedImageStore()
+	if err != nil {
+		return
+	}
+	defer lockedStore.Close()
+
+	img, err := lockedStore.ImageByName(args[0])
+	if err != nil {
+		return
+	}
+	cfg, err := img.Config()
+	if err != nil {
+		return
+	}
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return
+	}
+	fmt.Println(string(b))
 	return
 }

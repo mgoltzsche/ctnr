@@ -50,10 +50,12 @@ Build the binary dist/bin/cntnr
 
 ### Install and run Firefox in an unprivileged user's container
 ```
-cntnr run --tty=true --env DISPLAY=$DISPLAY --mount /tmp/.X11-unix:/tmp/.X11-unix docker://alpine:3.6
+cntnr run --tty=true \
+	--env DISPLAY=$DISPLAY \
+	--mount /tmp/.X11-unix:/tmp/.X11-unix \
+	docker://alpine:3.6
 > apk add --update firefox-esr libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family
 > echo `cat /proc/sys/kernel/random/uuid | sed s/-//g` > /etc/machine-id
-> export DISPLAY=:0
 > firefox
 ```
 

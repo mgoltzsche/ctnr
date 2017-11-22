@@ -237,7 +237,7 @@ func applyService(service *Service, spec *generate.SpecBuilder) {
 
 	// Env
 	for k, v := range service.Environment {
-		spec.AddProcessEnv(k, fmt.Sprintf("%q", v))
+		spec.AddProcessEnv(k, v)
 	}
 
 	// Working dir
