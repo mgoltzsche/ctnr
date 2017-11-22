@@ -68,7 +68,9 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		specconv.ToRootless(spec.Spec())
 	}
 
-	applyService(service, spec)
+	if err := applyService(service, vols, spec); err != nil {
+		return err
+	}
 
 	/*if rootless {
 		specconv.ToRootless(spec)
@@ -90,15 +92,6 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		addCap(&c.Permitted, cap)
 		addCap(&c.Ambient, cap)
 	}*/
-
-	// Add mounts
-	for _, m := range service.Volumes {
-		mount, err := vols.PrepareVolumeMount(m)
-		if err != nil {
-			return err
-		}
-		spec.Spec().Mounts = append(spec.Spec().Mounts, mount)
-	}
 
 	if !rootless {
 		// Limit resources
@@ -225,7 +218,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(service *Service, spec *generate.SpecBuilder) {
+func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuilder) error {
 	// Entrypoint & command
 	if service.Entrypoint != nil {
 		spec.SetProcessEntrypoint(service.Entrypoint)
@@ -284,8 +277,16 @@ func applyService(service *Service, spec *generate.SpecBuilder) {
 	// TODO: mount separate paths in /proc/self/fd to apply service.StdinOpen
 	spec.SetRootReadonly(service.ReadOnly)
 
-	// TODO: mount volumes
+	// Add mounts
+	for _, m := range service.Volumes {
+		mount, err := vols.PrepareVolumeMount(m)
+		if err != nil {
+			return err
+		}
+		spec.Spec().Mounts = append(spec.Spec().Mounts, mount)
+	}
 
 	// TODO: register healthcheck (as Hook)
 	// TODO: bind ports (propably in networking Hook)
+	return nil
 }

@@ -67,7 +67,7 @@ func (b *SpecBuilder) ApplyImage(img ispecs.Image) {
 
 	// Entrypoint
 	b.SetProcessEntrypoint(cfg.Entrypoint)
-	b.SetProcessEntrypoint(cfg.Cmd)
+	b.SetProcessCmd(cfg.Cmd)
 
 	// Env
 	if len(cfg.Env) > 0 {

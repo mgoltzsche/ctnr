@@ -202,11 +202,7 @@ func (c *cVolumeMount) Set(s string) (err error) {
 		return
 	}
 	r := &(*apps)(c).last().Volumes
-	if *r == nil {
-		*r = []model.VolumeMount{v}
-	} else {
-		*r = append(*r, v)
-	}
+	*r = append(*r, v)
 	return
 }
 
@@ -352,15 +348,15 @@ func parseBool(s string) (bool, error) {
 }
 
 func addStringEntries(s string, r *[]string) error {
+	if s == "" {
+		*r = nil
+		return nil
+	}
 	e, err := shellwords.Parse(s)
 	if err != nil {
 		return err
 	}
-	if *r == nil {
-		*r = e
-	} else {
-		*r = append(*r, e...)
-	}
+	*r = append(*r, e...)
 	return nil
 }
 
@@ -368,10 +364,10 @@ func entriesToString(l []string) string {
 	s := ""
 	if len(l) > 0 {
 		for _, e := range l {
-			s += strings.Trim(fmt.Sprintf(" %q", e), " ")
+			s += fmt.Sprintf(" %q", e)
 		}
 	}
-	return s
+	return strings.Trim(s, " ")
 }
 
 func addMapEntries(s string, r *map[string]string) error {

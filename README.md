@@ -48,15 +48,27 @@ Build the binary dist/bin/cntnr
 
 ## Examples
 
+### Create and run OCI bundle from docker image
+```
+> cntnr run docker://alpine:3.6 echo hello world
+hello world
+```
+or
+```
+> cntnr bundle create -b mybundle docker://alpine:3.6 echo hello world
+> cntnr bundle run mybundle
+hello world
+```
+
 ### Install and run Firefox in an unprivileged user's container
 ```
-cntnr run --tty=true \
+> cntnr run --tty=true \
 	--env DISPLAY=$DISPLAY \
 	--mount /tmp/.X11-unix:/tmp/.X11-unix \
 	docker://alpine:3.6
-> apk add --update firefox-esr libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family
-> echo `cat /proc/sys/kernel/random/uuid | sed s/-//g` > /etc/machine-id
-> firefox
+/ # apk add --update --no-cache firefox-esr libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family
+/ # echo `cat /proc/sys/kernel/random/uuid | sed s/-//g` > /etc/machine-id
+/ # firefox
 ```
 
 

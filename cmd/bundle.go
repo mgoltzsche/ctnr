@@ -95,6 +95,7 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	defer istore.Close()
+	// TODO: Introduce --update flag to update existing bundle when flagBundleDir is set
 	c, err := createRuntimeBundle(istore, &model.Project{}, flagsBundle.last(), flagBundleDir)
 	fmt.Println(c.Dir())
 	return
