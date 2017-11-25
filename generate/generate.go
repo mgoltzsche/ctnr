@@ -30,25 +30,25 @@ type SpecBuilder struct {
 }
 
 func NewSpecBuilder() SpecBuilder {
-	return SpecBuilder{generate.New(), nil, nil}
+	return SpecBuilder{Generator: generate.New()}
 }
 
 func FromSpec(spec *rspecs.Spec) SpecBuilder {
-	return SpecBuilder{generate.NewFromSpec(spec), nil, nil}
+	return SpecBuilder{Generator: generate.NewFromSpec(spec)}
 }
 
 func (b *SpecBuilder) SetProcessEntrypoint(v []string) {
 	b.entrypoint = v
 	b.cmd = nil
-	b.apply()
+	b.applyEntrypoint()
 }
 
 func (b *SpecBuilder) SetProcessCmd(v []string) {
 	b.cmd = v
-	b.apply()
+	b.applyEntrypoint()
 }
 
-func (b *SpecBuilder) apply() {
+func (b *SpecBuilder) applyEntrypoint() {
 	if b.entrypoint != nil || b.cmd != nil {
 		if b.entrypoint != nil && b.cmd != nil {
 			b.SetProcessArgs(append(b.entrypoint, b.cmd...))

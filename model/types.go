@@ -44,15 +44,14 @@ type Service struct {
 }
 
 type NetConf struct {
-	Hostname   string      `json:"hostname,omitempty"`
-	Domainname string      `json:"domainname,omitempty"`
-	Dns        []string    `json:"dns,omitempty"`
-	DnsSearch  []string    `json:"dns_search,omitempty"`
-	DnsOptions []string    `json:"dns_options,omitempty"`
-	ExtraHosts []ExtraHost `json:"extra_hosts,omitempty"`
-	// TODO: bind ports
-	Ports []PortBinding `json:"ports,omitempty"`
-	// TODO: add networks
+	Hostname   string        `json:"hostname,omitempty"`
+	Domainname string        `json:"domainname,omitempty"`
+	Dns        []string      `json:"dns,omitempty"`
+	DnsSearch  []string      `json:"dns_search,omitempty"`
+	DnsOptions []string      `json:"dns_options,omitempty"`
+	ExtraHosts []ExtraHost   `json:"extra_hosts,omitempty"`
+	Ports      []PortBinding `json:"ports,omitempty"`
+	Networks   []string      `json:"networks,omitempty"`
 }
 
 type ExtraHost struct {

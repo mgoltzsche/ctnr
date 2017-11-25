@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -20,46 +21,6 @@ const (
 	ANNOTATION_BUNDLE_CREATED    = "com.github.mgoltzsche.cntnr.bundle.created"
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.cntnr.bundle.id"
 )
-
-/*func makeRootless(spec *generate.Generator) {
-	// Remove network namespace
-	spec.RemoveLinuxNamespace(specs.NetworkNamespace)
-	// Add user namespace
-	spec.AddOrReplaceLinuxNamespace(specs.UserNamespace, "")
-	// Add user/group ID mapping
-	spec.AddLinuxUIDMapping(uint32(os.Geteuid()), 0, 1)
-	spec.AddLinuxGIDMapping(uint32(os.Getegid()), 0, 1)
-	// Remove cgroup settings
-	spec.Spec().Linux.Resources = nil
-
-	// Fix mounts (taken from github.com/opencontainers/runc/libcontainer/specconv
-	var mounts []specs.Mount
-	for _, mount := range spec.Mounts {
-		// Ignore all mounts that are under /sys.
-		if strings.HasPrefix(mount.Destination, "/sys") {
-			continue
-		}
-
-		// Remove all gid= and uid= mappings.
-		var options []string
-		for _, option := range mount.Options {
-			if !strings.HasPrefix(option, "gid=") && !strings.HasPrefix(option, "uid=") {
-				options = append(options, option)
-			}
-		}
-
-		mount.Options = options
-		mounts = append(mounts, mount)
-	}
-	// Add the sysfs mount as an rbind.
-	mounts = append(mounts, specs.Mount{
-		Source:      "/sys",
-		Destination: "/sys",
-		Type:        "none",
-		Options:     []string{"rbind", "nosuid", "noexec", "nodev", "ro"},
-	})
-	spec.Mounts = mounts
-}*/
 
 func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBuilder) error {
 	vols := NewVolumeResolver(p)
@@ -72,32 +33,11 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		return err
 	}
 
-	/*if rootless {
-		specconv.ToRootless(spec)
-	} else {
-		// Add Linux capabilities
-		cap := []string{
-			"CAP_KILL",
-			"CAP_CHOWN",
-			"CAP_FSETID",
-			"CAP_SETGID",
-			"CAP_SETUID",
-			"CAP_NET_BIND_SERVICE",
-			"CAP_NET_RAW",
-		}
-		c := spec.Process.Capabilities
-		addCap(&c.Bounding, cap)
-		addCap(&c.Effective, cap)
-		addCap(&c.Inheritable, cap)
-		addCap(&c.Permitted, cap)
-		addCap(&c.Ambient, cap)
-	}*/
-
 	if !rootless {
 		// Limit resources
 		spec.SetLinuxResourcesPidsLimit(32771)
 		spec.AddLinuxResourcesHugepageLimit("2MB", 9223372036854772000)
-		// TODO: limit memory, cpu and blockIO access
+		// TODO: add options to limit memory, cpu and blockIO access
 
 		/*// Add network priority
 		spec.Linux.Resources.Network.ClassID = ""
@@ -107,12 +47,25 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		}*/
 	}
 
-	// TODO: read networks from compose file or CLI
-	networks := []string{"default"}
-	if rootless {
+	// Init network IDs or host mode
+	networks := service.Networks
+	useHostNetwork := sliceutils.Contains(networks, "host")
+	if useHostNetwork && len(networks) > 1 {
+		return fmt.Errorf("transform: multiple networks are not supported when host network is used")
+	}
+	if len(networks) == 0 {
+		if rootless {
+			networks = []string{}
+			useHostNetwork = true
+		} else {
+			networks = []string{"default"}
+		}
+	} else if rootless && !useHostNetwork {
+		return fmt.Errorf("transform: no networks supported in rootless mode")
+	}
+	if useHostNetwork && len(networks) > 0 {
 		networks = []string{}
 	}
-	useHostNetwork := len(networks) == 0
 
 	// Use host networks by removing 'network' namespace
 	if useHostNetwork {
@@ -127,54 +80,43 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		spec.SetHostname(service.Hostname)
 	}
 
-	// Add network hooks
+	// Add network hook
 	if !useHostNetwork && len(networks) > 0 {
-		//hookBinary, err := exec.LookPath("cntnr-hooks")
-		executable, err := os.Executable()
+		hook, err := generate.NewHookBuilderFromSpec(spec.Spec())
 		if err != nil {
-			return fmt.Errorf("Cannot find network hook binary! %s", err)
+			return err
 		}
-		cniPluginPaths := os.Getenv("CNI_PATH")
-		if cniPluginPaths == "" {
-			pluginPath := filepath.Join(filepath.Dir(executable), "..", "cni-plugins")
-			if s, err := os.Stat(pluginPath); err == nil && s.IsDir() {
-				cniPluginPaths = pluginPath
-			}
+		for _, net := range networks {
+			hook.AddNetwork(net)
 		}
-		if cniPluginPaths == "" {
-			return fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
-		}
-		// TODO: add all CNI env vars
-		cniEnv := []string{
-			"PATH=" + os.Getenv("PATH"),
-			"CNI_PATH=" + cniPluginPaths,
-		}
-
-		hookArgs := make([]string, 0, 10)
-		hookArgs = append(hookArgs, "cntnr", "net", "init")
 		if service.Domainname != "" {
-			hookArgs = append(hookArgs, "--domainname="+service.Domainname)
+			hook.SetDomainname(service.Domainname)
 		}
 		for _, dnsip := range service.Dns {
-			hookArgs = append(hookArgs, "--dns="+dnsip)
+			hook.AddDnsNameserver(dnsip)
 		}
 		for _, search := range service.DnsSearch {
-			hookArgs = append(hookArgs, "--dns-search="+search)
+			hook.AddDnsSearch(search)
 		}
 		for _, opt := range service.DnsOptions {
-			hookArgs = append(hookArgs, "--dns-opts="+opt)
+			hook.AddDnsOption(opt)
 		}
 		for _, e := range service.ExtraHosts {
-			hookArgs = append(hookArgs, "--hosts-entry="+e.Name+"="+e.Ip)
+			hook.AddHost(e.Name, e.Ip)
 		}
 		for _, p := range service.Ports {
-			hookArgs = append(hookArgs, "--publish="+p.String())
+			hook.AddPortMapEntry(generate.PortMapEntry{
+				Target:    p.Target,
+				Published: p.Published,
+				Protocol:  p.Protocol,
+				IP:        p.IP,
+			})
 		}
-		spec.AddPreStartHook(executable, append(hookArgs, networks...))
-		spec.AddPreStartHookEnv(executable, cniEnv)
-		spec.AddPostStopHook(executable, append([]string{"cntnr", "net", "rm"}, networks...))
-		spec.AddPostStopHookEnv(executable, cniEnv)
+		hook.Build(&spec.Generator)
+	} else if len(service.Ports) > 0 {
+		return fmt.Errorf("transform: port mapping only supported with container network - add network or remove port mapping")
 	}
+	// TODO: register healthcheck (as Hook)
 
 	return nil
 }
@@ -286,7 +228,5 @@ func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuil
 		spec.Spec().Mounts = append(spec.Spec().Mounts, mount)
 	}
 
-	// TODO: register healthcheck (as Hook)
-	// TODO: bind ports (propably in networking Hook)
 	return nil
 }

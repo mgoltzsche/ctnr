@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	shellwords "github.com/mattn/go-shellwords"
+	//"github.com/mgoltzsche/cntnr/generate"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/spf13/pflag"
 )
@@ -35,7 +36,7 @@ func initBundleCreateFlags(f *pflag.FlagSet) {
 	c := flagsBundle
 	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
 	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
-	f.Var((*cEnvironment)(c), "env", "container environment variables")
+	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
 	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.Var((*cReadOnly)(c), "readonly", "mounts the root file system in read only mode")
@@ -46,13 +47,14 @@ func initBundleCreateFlags(f *pflag.FlagSet) {
 }
 
 func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
-	f.Var((*cHostname)(c), "hostname", "hostname that is written to /etc/hostname and /etc/hosts")
+	f.Var((*cHostname)(c), "hostname", "container hostname")
 	f.Var((*cDomainname)(c), "domainname", "container domainname")
-	f.Var((*cDns)(c), "dns", "DNS nameservers to write in /etc/resolv.conf")
-	f.Var((*cDnsSearch)(c), "dns-search", "DNS search domains to write in /etc/resolv.conf")
-	f.Var((*cDnsOptions)(c), "dns-opts", "DNS search options to write in /etc/resolv.conf")
-	f.Var((*cExtraHosts)(c), "hosts-entry", "additional entries to write in /etc/hosts")
+	f.Var((*cDns)(c), "dns", "DNS nameservers to write in container's /etc/resolv.conf")
+	f.Var((*cDnsSearch)(c), "dns-search", "DNS search domains to write in container's /etc/resolv.conf")
+	f.Var((*cDnsOptions)(c), "dns-opts", "DNS search options to write in container's /etc/resolv.conf")
+	f.Var((*cExtraHosts)(c), "hosts-entry", "additional entries to write in container's /etc/hosts")
 	f.VarP((*cPortBinding)(c), "publish", "p", "container ports to be published on the host: [[HOSTIP:]HOSTPORT:]PORT[/PROT]")
+	f.Var((*cNetworks)(c), "network", "add CNI network to container's network namespace")
 }
 
 func newApps() *apps {
@@ -60,6 +62,36 @@ func newApps() *apps {
 	f.add()
 	return f
 }
+
+/*type bundleFlags struct {
+	flags []bundleFlag
+}
+
+func (f *bundleFlags) reset() {
+	for _, e := range flags {
+		e.reset()
+	}
+}
+
+func (f *bundleFlags) apply(spec *generate.SpecBuilder) {
+	for _, e := range flags {
+		e.apply(spec)
+	}
+}
+
+type bundleFlag interface {
+	resetValue()
+	apply(*generate.SpecBuilder)
+}
+
+type stringFlag struct {
+	value  string
+	setter func(string)
+}
+
+func (f *stringFlag) resetValue() {
+	f.value = ""
+}*/
 
 type apps struct {
 	netCfg
@@ -337,6 +369,20 @@ func (c *cPortBinding) String() string {
 		}
 	}
 	return s
+}
+
+type cNetworks netCfg
+
+func (c *cNetworks) Set(s string) error {
+	return addStringEntries(s, &(*netCfg)(c).curr.Networks)
+}
+
+func (c *cNetworks) Type() string {
+	return "string..."
+}
+
+func (c *cNetworks) String() string {
+	return entriesToString((*netCfg)(c).curr.Networks)
 }
 
 func parseBool(s string) (bool, error) {
