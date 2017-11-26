@@ -1,21 +1,19 @@
 package bundle
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	lock "github.com/mgoltzsche/cntnr/pkg/lock"
-	digest "github.com/opencontainers/go-digest"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
-)
-
-const (
-	ANNOTATION_BUNDLE_IMAGE = "com.github.mgoltzsche.cntnr.bundle.image"
+	gen "github.com/opencontainers/runtime-tools/generate"
 )
 
 type Bundle struct {
@@ -62,26 +60,19 @@ func (b *Bundle) loadSpec() (r rspecs.Spec, err error) {
 	return
 }
 
-func (b *Bundle) Image() *digest.Digest {
-	if s, err := b.loadSpec(); err == nil {
-		return imageDigest(&s)
+func (b *Bundle) Image() string {
+	if imgIdb, err := ioutil.ReadFile(b.imageFile()); err == nil {
+		return strings.Trim(string(imgIdb), " \n")
 	}
-	return nil
+	return ""
 }
 
-func imageDigest(spec *rspecs.Spec) *digest.Digest {
-	if spec.Annotations != nil {
-		if id := spec.Annotations[ANNOTATION_BUNDLE_IMAGE]; id != "" {
-			if d, err := digest.Parse(id); err == nil {
-				return &d
-			}
-		}
-	}
-	return nil
+func (b *Bundle) imageFile() string {
+	return filepath.Join(b.dir, "rootfs.image")
 }
 
 func (b *Bundle) Lock() (*LockedBundle, error) {
-	return NewLockedBundle(*b)
+	return OpenLockedBundle(*b)
 }
 
 // Update mod time so that gc doesn't touch it for a while
@@ -98,7 +89,7 @@ func (b *Bundle) GC(before time.Time) (bool, error) {
 		return false, fmt.Errorf("bundle gc check: %s", err)
 	}
 	if st.ModTime().Before(before) {
-		bl, err := lockBundle(b.dir)
+		bl, err := lockBundle(b)
 		if err != nil {
 			return false, fmt.Errorf("bundle gc check: %s", err)
 		}
@@ -125,26 +116,69 @@ func (b *Bundle) GC(before time.Time) (bool, error) {
 }
 
 type LockedBundle struct {
-	Bundle
-	spec rspecs.Spec
-	lock *lock.Lockfile
+	bundle Bundle
+	spec   *rspecs.Spec
+	image  string
+	lock   *lock.Lockfile
 }
 
-func NewLockedBundle(bundle Bundle) (*LockedBundle, error) {
-	lck, err := lockBundle(bundle.dir)
+func OpenLockedBundle(bundle Bundle) (*LockedBundle, error) {
+	lck, err := lockBundle(&bundle)
+	if err != nil {
+		return nil, err
+	}
 	if err := bundle.resetExpiryTime(); err != nil {
 		return nil, fmt.Errorf("lock bundle: %s", err)
 	}
-	spec, err := bundle.loadSpec()
-	if err != nil {
-		return nil, fmt.Errorf("lock bundle: %s", err)
+	return &LockedBundle{bundle, nil, "", lck}, err
+}
+
+func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *LockedBundle, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("create bundle: %s", err)
+		}
+	}()
+
+	// Create bundle
+	id := ""
+	sp := spec.Spec()
+	if sp.Annotations != nil {
+		id = sp.Annotations[ANNOTATION_BUNDLE_ID]
 	}
-	return &LockedBundle{bundle, spec, lck}, err
+	if id == "" {
+		id = filepath.Base(dir)
+	}
+	bundle := Bundle{id, dir, time.Now()}
+
+	// Create bundle directory
+	if err = os.Mkdir(dir, 0770); err != nil {
+		err = fmt.Errorf("build bundle: %s", err)
+		return
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(dir)
+		}
+	}()
+
+	// Lock bundle
+	lck, err := lockBundle(&bundle)
+	if err != nil {
+		return nil, err
+	}
+
+	r = &LockedBundle{bundle, nil, "", lck}
+	if err = r.SetSpec(spec); err != nil {
+		return
+	}
+	err = r.UpdateRootfs(image)
+	return
 }
 
 func (b *LockedBundle) Close() (err error) {
 	if b.lock != nil {
-		if err = b.resetExpiryTime(); err != nil {
+		if err = b.bundle.resetExpiryTime(); err != nil {
 			fmt.Fprintf(os.Stderr, "unlock bundle: %s", err)
 			err = fmt.Errorf("unlock bundle: %s", err)
 		}
@@ -161,24 +195,105 @@ func (b *LockedBundle) Close() (err error) {
 	return
 }
 
-func (b *LockedBundle) Spec() rspecs.Spec {
-	return b.spec
+func (b *LockedBundle) ID() string {
+	return b.bundle.id
 }
 
-func (b *LockedBundle) Image() *digest.Digest {
-	return imageDigest(&b.spec)
+func (b *LockedBundle) Dir() string {
+	return b.bundle.dir
 }
 
-func (b *LockedBundle) SetParentImageId(imageID string) (err error) {
-	b.spec.Annotations[ANNOTATION_BUNDLE_IMAGE] = imageID
-	if _, err = atomic.WriteJson(filepath.Join(b.dir, "config.json"), &b.spec); err != nil {
-		err = fmt.Errorf("set bundle's parent image id: %s", err)
+func (b *LockedBundle) Spec() (*rspecs.Spec, error) {
+	if b.spec == nil {
+		spec, err := b.bundle.loadSpec()
+		if err != nil {
+			return nil, err
+		}
+		b.spec = &spec
+	}
+	return b.spec, nil
+}
+
+func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
+	spec, err := b.Spec()
+	if err != nil {
+		return
+	}
+	rootfs := filepath.Join(b.Dir(), spec.Root.Path)
+	if err = os.MkdirAll(rootfs, 0755); err != nil {
+		return
+	}
+	if image == nil {
+		err = b.SetParentImageId("")
+	} else {
+		// Unpack image
+		oldImageId := b.Image()
+		if oldImageId != image.ID() {
+			// Update rootfs when image changed only
+			if err = image.Unpack(rootfs); err != nil {
+				return
+			}
+			err = b.SetParentImageId(image.ID())
+		}
 	}
 	return
 }
 
+func (b *LockedBundle) SetSpec(spec *gen.Generator) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("update bundle %q spec: %s", b.ID(), err)
+		}
+	}()
+
+	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, b.ID())
+	tmpConfFile, err := ioutil.TempFile(b.Dir(), "tmp-conf-")
+	if err != nil {
+		return
+	}
+	tmpConfPath := tmpConfFile.Name()
+	tmpConfRemoved := false
+	defer func() {
+		tmpConfFile.Close()
+		if !tmpConfRemoved {
+			os.Remove(tmpConfPath)
+		}
+	}()
+	if err = spec.Save(tmpConfFile, gen.ExportOptions{Seccomp: false}); err != nil {
+		return
+	}
+	tmpConfFile.Close()
+	confFile := filepath.Join(b.Dir(), "config.json")
+	if err = os.Rename(tmpConfPath, confFile); err != nil {
+		return
+	}
+	tmpConfRemoved = true
+	b.spec = spec.Spec()
+	return
+}
+
+// Reads image ID from cached spec
+func (b *LockedBundle) Image() string {
+	if b.image == "" {
+		b.image = b.bundle.Image()
+	}
+	return b.image
+}
+
+func (b *LockedBundle) SetParentImageId(imageID string) error {
+	if imageID == "" {
+		if e := os.Remove(b.bundle.imageFile()); e != nil && !os.IsNotExist(e) {
+			return fmt.Errorf("set bundle's parent image id: %s", e)
+		}
+	} else if _, err := atomic.WriteFile(b.bundle.imageFile(), bytes.NewBufferString(imageID)); err != nil {
+		return fmt.Errorf("set bundle's parent image id: %s", err)
+	}
+	b.image = imageID
+	return nil
+}
+
 func (b *LockedBundle) Delete() (err error) {
-	err = deleteBundle(b.dir)
+	err = deleteBundle(b.Dir())
 	if e := b.Close(); e != nil {
 		if err == nil {
 			err = fmt.Errorf("delete bundle: %s", e)
@@ -189,9 +304,9 @@ func (b *LockedBundle) Delete() (err error) {
 	return
 }
 
-func lockBundle(dir string) (l *lock.Lockfile, err error) {
+func lockBundle(bundle *Bundle) (l *lock.Lockfile, err error) {
 	// TODO: use tmpfs for lock file
-	l, err = lock.LockFile(filepath.Clean(dir) + ".lock")
+	l, err = lock.LockFile(filepath.Clean(bundle.dir) + ".lock")
 	if err != nil {
 		return nil, fmt.Errorf("lock bundle: %s", err)
 	}

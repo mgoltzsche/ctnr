@@ -54,11 +54,10 @@ func (s *BundleStore) Bundles() (l []bundle.Bundle, err error) {
 }
 
 func (s *BundleStore) Bundle(id string) (r bundle.Bundle, err error) {
-	dir := filepath.Join(s.dir, id)
-	return bundle.NewBundle(dir)
+	return bundle.NewBundle(filepath.Join(s.dir, id))
 }
 
-func (s *BundleStore) CreateBundle(builder *bundle.BundleBuilder) (bundle.Bundle, error) {
+func (s *BundleStore) CreateBundle(builder *bundle.BundleBuilder) (*bundle.LockedBundle, error) {
 	return builder.Build(filepath.Join(s.dir, builder.GetID()))
 }
 

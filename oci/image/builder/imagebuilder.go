@@ -8,6 +8,7 @@ import (
 
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/oci/image"
+	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -28,11 +29,7 @@ func NewImageBuilder(images image.ImageStoreRW, containers bundle.BundleStore, b
 	if err != nil {
 		return b, fmt.Errorf("image builder: %s", err)
 	}
-	cb, err := containers.CreateBundle(bb)
-	if err != nil {
-		return b, fmt.Errorf("image builder: %s", err)
-	}
-	if b.container, err = cb.Lock(); err != nil {
+	if b.container, err = containers.CreateBundle(bb); err != nil {
 		return b, fmt.Errorf("image builder: %s", err)
 	}
 	return
@@ -52,12 +49,14 @@ func NewImageBuilderFromBundle(images image.ImageStoreRW, container bundle.Bundl
 
 	// Get base image from container
 	var baseImage *image.Image
-	if baseImageId := b.container.Image(); baseImageId != nil {
-		img, e := images.Image(*baseImageId)
-		if e != nil {
-			return b, fmt.Errorf("image builder: bundle's base image %q: %s", baseImageId, err)
+	if baseImageId := b.container.Image(); baseImageId != "" {
+		if imgId, e := digest.Parse(baseImageId); e == nil {
+			img, e := images.Image(imgId)
+			if e != nil {
+				return b, fmt.Errorf("image builder: bundle's base image %q: %s", baseImageId, err)
+			}
+			baseImage = &img
 		}
-		baseImage = &img
 	}
 
 	return b, b.init(baseImage, author)
@@ -82,19 +81,36 @@ func (b *ImageBuilder) init(baseImage *image.Image, author string) (err error) {
 }
 
 func (b *ImageBuilder) CommitLayer(name string) (img image.Image, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("commit layer: %s", err)
+		}
+	}()
+
 	rootfs := filepath.Join(b.container.Dir(), "rootfs")
+	containerImage := b.container.Image()
+	var parentImageId *digest.Digest
+	if containerImage != "" {
+		d, e := digest.Parse(containerImage)
+		if e != nil {
+			return img, e
+		}
+		if err = d.Validate(); err != nil {
+			return img, fmt.Errorf("invalid parent image ID: %s", err)
+		}
+		parentImageId = &d
+	}
 	// TODO: add proper comment
-	img, err = b.images.CommitImage(rootfs, name, b.container.Image(), b.author, "comment")
-	//img, err := b.container.Commit(b.images, "", b.author, "comment")
+	img, err = b.images.CommitImage(rootfs, name, parentImageId, b.author, "comment")
 	if err != nil {
-		return img, fmt.Errorf("commit layer: %s", err)
+		return
 	}
 	c, err := img.Config()
 	if err != nil {
-		return img, fmt.Errorf("commit layer: %s", err)
+		return
 	}
 	if err = b.container.SetParentImageId(img.ID()); err != nil {
-		return img, fmt.Errorf("commit layer: %s", err)
+		return
 	}
 	b.config = c
 	b.manifest = img.Manifest

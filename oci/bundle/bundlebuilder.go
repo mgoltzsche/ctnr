@@ -6,10 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/mgoltzsche/cntnr/generate"
-	gen "github.com/opencontainers/runtime-tools/generate"
 	"github.com/satori/go.uuid"
 )
 
@@ -36,7 +34,6 @@ func BuilderFromImage(id string, image BundleImage) (*BundleBuilder, error) {
 		return nil, fmt.Errorf("bundle build from image: %s", err)
 	}
 	spec.ApplyImage(conf)
-	spec.AddAnnotation(ANNOTATION_BUNDLE_IMAGE, image.ID())
 	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
 	r := FromSpec(&spec)
 	r.image = image
@@ -69,38 +66,22 @@ func (b *BundleBuilder) GetID() string {
 	return b.id
 }
 
-func (b *BundleBuilder) Build(dir string) (r Bundle, err error) {
-	r.id = b.id
-	r.dir = dir
-	r.created = time.Now()
-	rootfs := filepath.Join(dir, b.Spec().Root.Path)
+func (b *BundleBuilder) Build(dir string) (bundle *LockedBundle, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("build bundle: %s", err)
+		}
+	}()
 
 	// Create bundle directory
-	if err = os.Mkdir(dir, 0770); err != nil {
-		err = fmt.Errorf("build bundle: %s", err)
+	if bundle, err = CreateLockedBundle(dir, &b.Generator, b.image); err != nil {
 		return
 	}
 	defer func() {
 		if err != nil {
-			os.RemoveAll(dir)
+			bundle.Close()
 		}
 	}()
-
-	// Prepare rootfs
-	if b.image != nil {
-		if err = b.image.Unpack(rootfs); err != nil {
-			return r, fmt.Errorf("build bundle: %s", err)
-		}
-	} else if err = os.Mkdir(rootfs, 0755); err != nil {
-		return r, fmt.Errorf("build bundle: %s", err)
-	}
-
-	// Write runtime config
-	confFile := filepath.Join(r.dir, "config.json")
-	err = b.SaveToFile(confFile, gen.ExportOptions{Seccomp: false})
-	if err != nil {
-		return r, fmt.Errorf("build bundle: write config.json: %s", err)
-	}
 
 	// Create volume directories
 	if mounts := b.Spec().Mounts; mounts != nil {
@@ -118,6 +99,7 @@ func (b *BundleBuilder) Build(dir string) (r Bundle, err error) {
 			}
 		}
 	}
+
 	return
 }
 

@@ -16,7 +16,7 @@ import (
 type ContainerBundle interface {
 	ID() string
 	Dir() string
-	Spec() rspecs.Spec
+	Spec() (*rspecs.Spec, error)
 	Close() error
 }
 
@@ -111,6 +111,11 @@ func (c *RuncContainer) Start() (err error) {
 		return fmt.Errorf("start %q: container already started", c.ID())
 	}
 
+	spec, err := c.bundle.Spec()
+	if err != nil {
+		return fmt.Errorf("start %q: could not load bundle's spec: %s", c.ID(), err)
+	}
+
 	c.err = nil
 	c.cmd = exec.Command("runc", "--root", c.rootDir, "run", c.ID())
 	c.cmd.Dir = c.bundle.Dir()
@@ -118,11 +123,11 @@ func (c *RuncContainer) Start() (err error) {
 	c.cmd.Stderr = c.Stderr
 	c.cmd.Stdin = c.Stdin
 
-	if c.bundle.Spec().Process.Terminal && c.cmd.Stdin == nil {
+	if spec.Process.Terminal && c.cmd.Stdin == nil {
 		c.cmd.Stdin = os.Stdin
 	}
 
-	if !c.bundle.Spec().Process.Terminal {
+	if !spec.Process.Terminal {
 		// Run in separate process group to be able to control orderly shutdown
 		c.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	}

@@ -32,7 +32,13 @@ func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 		return
 	}
 	tmpPath := tmpFile.Name()
-	defer tmpFile.Close()
+	tmpRemoved := false
+	defer func() {
+		tmpFile.Close()
+		if !tmpRemoved {
+			os.Remove(tmpPath)
+		}
+	}()
 
 	// Write temp file
 	if size, err = io.Copy(tmpFile, reader); err != nil {
@@ -43,8 +49,9 @@ func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 
 	// Rename temp file
 	if err = os.Rename(tmpPath, dest); err != nil {
-		err = fmt.Errorf("rename temp file: %s", err)
+		return 0, fmt.Errorf("rename temp file: %s", err)
 	}
+	tmpRemoved = true
 	return
 }
 

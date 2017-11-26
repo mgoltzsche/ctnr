@@ -144,14 +144,9 @@ func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
 
 func (s *BlobStore) unpackLayers(manifest *ispecs.Manifest, dest string) (err error) {
 	// Create destination directory
-	if err = os.Mkdir(dest, 0755); err != nil {
+	if _, err = os.Stat(dest); err != nil {
 		return fmt.Errorf("unpack layers: %s", err)
 	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(dest)
-		}
-	}()
 
 	// Unpack layers
 	for _, l := range manifest.Layers {

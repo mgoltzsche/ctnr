@@ -77,9 +77,9 @@ func runBundleList(cmd *cobra.Command, args []string) (err error) {
 	f := "%-26s  %-71s  %s\n"
 	fmt.Printf(f, "ID", "IMAGE", "CREATED")
 	for _, c := range l {
-		img := "<none>"
-		if c.Image() != nil {
-			img = (*c.Image()).String()
+		img := c.Image()
+		if img == "" {
+			img = "<none>"
 		}
 		fmt.Printf(f, c.ID(), img, humanize.Time(c.Created()))
 	}
@@ -97,6 +97,10 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 	defer istore.Close()
 	// TODO: Introduce --update flag to update existing bundle when flagBundleDir is set
 	c, err := createRuntimeBundle(istore, &model.Project{}, flagsBundle.last(), flagBundleDir)
+	if err != nil {
+		return
+	}
+	defer c.Close()
 	fmt.Println(c.Dir())
 	return
 }

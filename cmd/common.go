@@ -87,11 +87,7 @@ func runProject(project *model.Project, containerMngr *run.ContainerManager) err
 		if err != nil {
 			return err
 		}
-		lockedBundle, err := bundle.Lock()
-		if err != nil {
-			return err
-		}
-		c := containerMngr.NewContainer("", lockedBundle)
+		c := containerMngr.NewContainer("", bundle)
 		if s.StdinOpen {
 			c.Stdin = os.Stdin
 		}
@@ -105,7 +101,7 @@ func runProject(project *model.Project, containerMngr *run.ContainerManager) err
 	return containerMngr.Wait()
 }
 
-func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *model.Service, bundleIdOrDir string) (b bundle.Bundle, err error) {
+func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *model.Service, bundleIdOrDir string) (b *bundle.LockedBundle, err error) {
 	if service.Image == "" {
 		err = fmt.Errorf("service %q has no image", service.Name)
 		return
