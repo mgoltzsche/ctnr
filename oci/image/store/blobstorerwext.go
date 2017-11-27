@@ -17,8 +17,9 @@ import (
 
 type BlobStoreExt struct {
 	*BlobStore
-	mtree *MtreeStore
-	debug log.Logger
+	mtree    *MtreeStore
+	rootless bool
+	debug    log.Logger
 }
 
 type CommitResult struct {
@@ -27,8 +28,8 @@ type CommitResult struct {
 	Descriptor ispecs.Descriptor
 }
 
-func NewBlobStoreExt(blobStore *BlobStore, mtreeStore *MtreeStore, debug log.Logger) BlobStoreExt {
-	return BlobStoreExt{blobStore, mtreeStore, debug}
+func NewBlobStoreExt(blobStore *BlobStore, mtreeStore *MtreeStore, rootless bool, debug log.Logger) BlobStoreExt {
+	return BlobStoreExt{blobStore, mtreeStore, rootless, debug}
 }
 
 func (s *BlobStoreExt) MarkUsedBlob(id digest.Digest) (err error) {
@@ -162,11 +163,15 @@ func (s *BlobStoreExt) diff(from, to *mtree.DirectoryHierarchy, rootfs string) (
 	}
 
 	// Generate tar layer from mtree diff
-	reader, err := layer.GenerateLayer(rootfs, diffs, &layer.MapOptions{
-		UIDMappings: []rspecs.LinuxIDMapping{{HostID: uint32(os.Geteuid()), ContainerID: 0, Size: 1}},
-		GIDMappings: []rspecs.LinuxIDMapping{{HostID: uint32(os.Getegid()), ContainerID: 0, Size: 1}},
-		Rootless:    true,
-	})
+	var opts *layer.MapOptions
+	if s.rootless {
+		opts = &layer.MapOptions{
+			UIDMappings: []rspecs.LinuxIDMapping{{HostID: uint32(os.Geteuid()), ContainerID: 0, Size: 1}},
+			GIDMappings: []rspecs.LinuxIDMapping{{HostID: uint32(os.Getegid()), ContainerID: 0, Size: 1}},
+			Rootless:    s.rootless,
+		}
+	}
+	reader, err := layer.GenerateLayer(rootfs, diffs, opts)
 	if err != nil {
 		return nil, fmt.Errorf("diff: %s", err)
 	}

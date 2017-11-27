@@ -26,10 +26,10 @@ func NewBundle(dir string) (r Bundle, err error) {
 	r.id = filepath.Base(dir)
 	f, err := os.Stat(dir)
 	if err != nil {
-		return r, fmt.Errorf("new bundle: %s", err)
+		return r, fmt.Errorf("open bundle: %s", err)
 	}
 	if !f.IsDir() {
-		return r, fmt.Errorf("new bundle: no directory provided but %s", dir)
+		return r, fmt.Errorf("open bundle: no directory provided but %s", dir)
 	}
 	r.dir = dir
 	r.created = f.ModTime()
@@ -130,7 +130,7 @@ func OpenLockedBundle(bundle Bundle) (*LockedBundle, error) {
 	if err := bundle.resetExpiryTime(); err != nil {
 		return nil, fmt.Errorf("lock bundle: %s", err)
 	}
-	return &LockedBundle{bundle, nil, "", lck}, err
+	return &LockedBundle{bundle, nil, "", lck}, nil
 }
 
 func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *LockedBundle, err error) {
@@ -153,7 +153,6 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *
 
 	// Create bundle directory
 	if err = os.Mkdir(dir, 0770); err != nil {
-		err = fmt.Errorf("build bundle: %s", err)
 		return
 	}
 	defer func() {
@@ -167,8 +166,14 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *
 	if err != nil {
 		return nil, err
 	}
-
 	r = &LockedBundle{bundle, nil, "", lck}
+	defer func() {
+		if err != nil {
+			r.Close()
+		}
+	}()
+
+	// Update config.json and rootfs
 	if err = r.SetSpec(spec); err != nil {
 		return
 	}
@@ -246,6 +251,24 @@ func (b *LockedBundle) SetSpec(spec *gen.Generator) (err error) {
 		}
 	}()
 
+	// Create volume directories
+	if mounts := spec.Spec().Mounts; mounts != nil {
+		for _, mount := range mounts {
+			if mount.Type == "bind" {
+				src := mount.Source
+				if !filepath.IsAbs(src) {
+					src = filepath.Join(b.Dir(), src)
+				}
+				if _, err = os.Stat(src); os.IsNotExist(err) {
+					if err = os.MkdirAll(src, 0755); err != nil {
+						return
+					}
+				}
+			}
+		}
+	}
+
+	// Write config.json
 	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, b.ID())
 	tmpConfFile, err := ioutil.TempFile(b.Dir(), "tmp-conf-")
 	if err != nil {

@@ -80,6 +80,19 @@ func (b *ImageBuilder) init(baseImage *image.Image, author string) (err error) {
 	return
 }
 
+/*type FileEntry struct {
+	Source      string
+	Destination string
+}
+
+func (b *ImageBuilder) AddFiles(files []FileEntry) (img image.Image, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("add files: %s", err)
+		}
+	}()
+}*/
+
 func (b *ImageBuilder) CommitLayer(name string) (img image.Image, err error) {
 	defer func() {
 		if err != nil {

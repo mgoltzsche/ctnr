@@ -91,7 +91,7 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, err
 	if err != nil {
 		return
 	}
-	blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, debugLog)
+	blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, debugLog)
 	rostore, err := istore.NewImageStoreRO(imageDir, &blobStoreExt, errorLog)
 	if err != nil {
 		return

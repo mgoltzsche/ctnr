@@ -38,6 +38,7 @@ type ImageStoreRW interface {
 	PutImageManifest(m ispecs.Manifest) (ispecs.Descriptor, error)
 	PutImageConfig(m ispecs.Image) (ispecs.Descriptor, error)
 	CommitImage(rootfs, name string, parentManifest *digest.Digest, author, comment string) (Image, error)
+	//AddFiles(parentImage *digest.Digest, author, comment)
 	CreateImage(name string, manifestDigest digest.Digest) (Image, error)
 	DeleteImage(name string) error
 	Close() error

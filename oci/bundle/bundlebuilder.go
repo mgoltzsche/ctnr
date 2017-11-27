@@ -3,8 +3,6 @@ package bundle
 import (
 	"encoding/base32"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/mgoltzsche/cntnr/generate"
@@ -76,28 +74,6 @@ func (b *BundleBuilder) Build(dir string) (bundle *LockedBundle, err error) {
 	// Create bundle directory
 	if bundle, err = CreateLockedBundle(dir, &b.Generator, b.image); err != nil {
 		return
-	}
-	defer func() {
-		if err != nil {
-			bundle.Close()
-		}
-	}()
-
-	// Create volume directories
-	if mounts := b.Spec().Mounts; mounts != nil {
-		for _, mount := range mounts {
-			if mount.Type == "bind" {
-				src := mount.Source
-				if !filepath.IsAbs(src) {
-					src = filepath.Join(dir, src)
-				}
-				if _, err = os.Stat(src); os.IsNotExist(err) {
-					if err = os.MkdirAll(src, 0755); err != nil {
-						return
-					}
-				}
-			}
-		}
 	}
 
 	return
