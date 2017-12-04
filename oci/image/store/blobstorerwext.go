@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/openSUSE/umoci/oci/layer"
@@ -32,23 +31,12 @@ func NewBlobStoreExt(blobStore *BlobStore, mtreeStore *MtreeStore, rootless bool
 	return BlobStoreExt{blobStore, mtreeStore, rootless, debug}
 }
 
-func (s *BlobStoreExt) MarkUsedBlob(id digest.Digest) (err error) {
-	now := time.Now()
-	if err = os.Chtimes(s.blobFile(id), now, now); err != nil {
-		err = fmt.Errorf("mark used blob: %s", err)
-	}
-	return
-}
-
 func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("unpack image layers: %s", err)
 		}
 	}()
-	if err = s.MarkUsedBlob(manifestDigest); err != nil {
-		return
-	}
 	manifest, err := s.ImageManifest(manifestDigest)
 	if err != nil {
 		return
@@ -112,16 +100,8 @@ func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.D
 		Comment:    comment,
 		EmptyLayer: false,
 	}
-	if r.Config.History == nil {
-		r.Config.History = []ispecs.History{historyEntry}
-	} else {
-		r.Config.History = append(r.Config.History, historyEntry)
-	}
-	if r.Config.RootFS.DiffIDs == nil {
-		r.Config.RootFS.DiffIDs = []digest.Digest{diffIdDigest}
-	} else {
-		r.Config.RootFS.DiffIDs = append(r.Config.RootFS.DiffIDs, diffIdDigest)
-	}
+	r.Config.History = append(r.Config.History, historyEntry)
+	r.Config.RootFS.DiffIDs = append(r.Config.RootFS.DiffIDs, diffIdDigest)
 	configDescriptor, err := s.PutImageConfig(r.Config)
 	if err != nil {
 		return
@@ -129,11 +109,7 @@ func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.D
 
 	// Update manifest
 	manifest.Config = configDescriptor
-	if manifest.Layers == nil {
-		manifest.Layers = []ispecs.Descriptor{layer}
-	} else {
-		manifest.Layers = append(manifest.Layers, layer)
-	}
+	manifest.Layers = append(manifest.Layers, layer)
 	r.Manifest = manifest
 	if r.Descriptor, err = s.PutImageManifest(manifest); err != nil {
 		return r, fmt.Errorf("commit: %s", err)

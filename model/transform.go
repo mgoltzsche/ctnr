@@ -49,11 +49,13 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 
 	// Init network IDs or host mode
 	networks := service.Networks
+	useDefaultNetwork := len(networks) == 0
+	useNoNetwork := sliceutils.Contains(networks, "none")
 	useHostNetwork := sliceutils.Contains(networks, "host")
-	if useHostNetwork && len(networks) > 1 {
-		return fmt.Errorf("transform: multiple networks are not supported when host network is used")
+	if (useNoNetwork || useHostNetwork) && len(networks) > 1 {
+		return fmt.Errorf("transform: multiple networks are not supported when 'host' or 'none' network supplied")
 	}
-	if len(networks) == 0 {
+	if useDefaultNetwork {
 		if rootless {
 			networks = []string{}
 			useHostNetwork = true
@@ -62,8 +64,7 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		}
 	} else if rootless && !useHostNetwork {
 		return fmt.Errorf("transform: no networks supported in rootless mode")
-	}
-	if useHostNetwork && len(networks) > 0 {
+	} else if (useNoNetwork || useHostNetwork) && len(networks) > 0 {
 		networks = []string{}
 	}
 
@@ -81,7 +82,7 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 	}
 
 	// Add network hook
-	if !useHostNetwork && len(networks) > 0 {
+	if len(networks) > 0 {
 		hook, err := generate.NewHookBuilderFromSpec(spec.Spec())
 		if err != nil {
 			return err
@@ -112,12 +113,13 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 				IP:        p.IP,
 			})
 		}
-		hook.Build(&spec.Generator)
+		if err = hook.Build(&spec.Generator); err != nil {
+			return err
+		}
 	} else if len(service.Ports) > 0 {
 		return fmt.Errorf("transform: port mapping only supported with container network - add network or remove port mapping")
 	}
 	// TODO: register healthcheck (as Hook)
-
 	return nil
 }
 

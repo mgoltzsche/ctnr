@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/image"
@@ -18,23 +19,55 @@ var _ image.ImageStoreRO = &ImageStoreRO{}
 type ImageStoreRO struct {
 	blobs       *BlobStoreExt
 	imageReader image.ImageReader
-	imageDir    string
+	imageIds    ImageIdStore
+	repoDir     string
 	warn        log.Logger
 }
 
-func NewImageStoreRO(dir string, blobStore *BlobStoreExt, warn log.Logger) (r *ImageStoreRO, err error) {
+func NewImageStoreRO(dir string, blobStore *BlobStoreExt, imageIds ImageIdStore, warn log.Logger) (r *ImageStoreRO, err error) {
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		err = fmt.Errorf("init image store: %s", err)
 		return
 	}
-	return &ImageStoreRO{blobStore, nil, dir, warn}, err
+	return &ImageStoreRO{blobStore, nil, imageIds, dir, warn}, err
 }
 
 func (s *ImageStoreRO) WithNonAtomicAccess() *ImageStoreRO {
-	return &ImageStoreRO{s.blobs, s.blobs, s.imageDir, s.warn}
+	return &ImageStoreRO{s.blobs, s, s.imageIds, s.repoDir, s.warn}
+}
+
+func (s *ImageStoreRO) ImageConfig(id digest.Digest) (ispecs.Image, error) {
+	return s.blobs.ImageConfig(id)
+}
+
+func (s *ImageStoreRO) UnpackImageLayers(imageId digest.Digest, rootfs string) error {
+	img, err := s.imageIds.ImageID(imageId)
+	if err != nil {
+		return fmt.Errorf("unpack image layers: %s", err)
+	}
+	if err = s.imageIds.MarkUsed(imageId); err != nil {
+		return fmt.Errorf("unpack image layers: %s", err)
+	}
+	return s.blobs.UnpackLayers(img.ManifestDigest, rootfs)
 }
 
 func (s *ImageStoreRO) Image(id digest.Digest) (r image.Image, err error) {
+	imgId, err := s.imageIds.ImageID(id)
+	if err != nil {
+		return r, fmt.Errorf("image: %s", err)
+	}
+	manifest, err := s.blobs.ImageManifest(imgId.ManifestDigest)
+	if err != nil {
+		return r, fmt.Errorf("image: %s", err)
+	}
+	mf, err := s.blobs.BlobFileInfo(imgId.ManifestDigest)
+	if err != nil {
+		return r, fmt.Errorf("image: %s", err)
+	}
+	return image.NewImage(id, "", "", mf.ModTime(), imgId.LastUsed, manifest, nil, s), err
+}
+
+func (s *ImageStoreRO) imageFromManifestDigest(id digest.Digest) (r image.Image, err error) {
 	manifest, err := s.blobs.ImageManifest(id)
 	if err != nil {
 		return r, fmt.Errorf("image: %s", err)
@@ -43,7 +76,7 @@ func (s *ImageStoreRO) Image(id digest.Digest) (r image.Image, err error) {
 	if err != nil {
 		return r, fmt.Errorf("image: %s", err)
 	}
-	return image.NewImage(id, "", "", f.ModTime(), manifest, nil, s.blobs), err
+	return image.NewImage(id, "", "", f.ModTime(), time.Now(), manifest, nil, s), err
 }
 
 func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
@@ -64,7 +97,7 @@ func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
 	if err != nil {
 		return
 	}
-	return s.Image(d.Digest)
+	return s.imageFromManifestDigest(d.Digest)
 }
 
 func (s *ImageStoreRO) Images() (r []image.Image, err error) {
@@ -73,7 +106,25 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 			err = fmt.Errorf("images: %s", err)
 		}
 	}()
-	fl, err := ioutil.ReadDir(s.imageDir)
+
+	// Read all image IDs
+	imgIDs, err := s.imageIds.ImageIDs()
+	if err != nil {
+		return
+	}
+	imgMap := map[digest.Digest]*image.Image{}
+	for _, imgId := range imgIDs {
+		img, e := s.imageFromManifestDigest(imgId.ManifestDigest)
+		if e == nil {
+			img.LastUsed = imgId.LastUsed
+			imgMap[img.ID()] = &img
+		} else {
+			err = e
+		}
+	}
+
+	// Read image repos
+	fl, err := ioutil.ReadDir(s.repoDir)
 	if err != nil {
 		return
 	}
@@ -93,7 +144,11 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 						} else {
 							manifest, e = s.blobs.ImageManifest(d.Digest)
 							if e == nil {
-								r = append(r, image.NewImage(d.Digest, name, ref, f.ModTime(), manifest, nil, s.imageReader))
+								if img := imgMap[manifest.Config.Digest]; img != nil {
+									r = append(r, image.NewImage(d.Digest, name, ref, f.ModTime(), img.LastUsed, manifest, nil, s.imageReader))
+								} else {
+									e = fmt.Errorf("image %s ID file is missing", manifest.Config.Digest)
+								}
 							}
 						}
 					}
@@ -101,15 +156,26 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 			}
 			if e != nil {
 				s.warn.Printf("image %q: %s", name, e)
+				if err == nil {
+					err = e
+				}
 			}
 		}
+	}
+
+	// Add untagged images
+	for _, img := range r {
+		delete(imgMap, img.ID())
+	}
+	for _, img := range imgMap {
+		r = append(r, *img)
 	}
 	return
 }
 
 func (s *ImageStoreRO) name2dir(name string) string {
 	name = base64.RawStdEncoding.EncodeToString([]byte(name))
-	return filepath.Join(s.imageDir, name)
+	return filepath.Join(s.repoDir, name)
 }
 
 func (s *ImageStoreRO) dir2name(fileName string) (name string, err error) {

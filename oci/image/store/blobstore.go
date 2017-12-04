@@ -37,7 +37,10 @@ func (s *BlobStore) ImageManifest(manifestDigest digest.Digest) (r ispecs.Manife
 		return r, fmt.Errorf("image manifest: %s", err)
 	}
 	if err = json.Unmarshal(b, &r); err != nil {
-		err = fmt.Errorf("unmarshal image manifest %q: %s", manifestDigest.String(), err)
+		return r, fmt.Errorf("unmarshal image manifest %q: %s", manifestDigest.String(), err)
+	}
+	if r.Config.Digest.String() == "" {
+		return r, fmt.Errorf("image manifest: loaded JSON blob %q is not an OCI image manifest", manifestDigest)
 	}
 	return
 }

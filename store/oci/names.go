@@ -2,7 +2,7 @@ package oci
 
 import (
 	"bytes"
-	"encoding/base64"
+	"encoding/base32"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	BASE64ENCODER = Base64Encoder("base64-encoder")
+	BASE32ENCODER = Base32Encoder("base32-encoder")
 	PLAINENCODER  = PlainEncoder("plain-encoder")
 )
 
@@ -74,7 +74,7 @@ func (s *KVStore) Entries() ([]KVEntry, error) {
 	}
 	l := make([]KVEntry, 0, len(fl))
 	for _, f := range fl {
-		if f.IsDir() {
+		if !f.IsDir() {
 			key, err := s.enc.Decode(f.Name())
 			if err == nil {
 				value, err := s.Get(key)
@@ -96,14 +96,14 @@ type KVEntry struct {
 	Value digest.Digest
 }
 
-type Base64Encoder string
+type Base32Encoder string
 
-func (_ Base64Encoder) Encode(key string) string {
-	return base64.RawStdEncoding.EncodeToString([]byte(key))
+func (_ Base32Encoder) Encode(key string) string {
+	return base32.StdEncoding.EncodeToString([]byte(key))
 }
 
-func (_ Base64Encoder) Decode(enc string) (string, error) {
-	b, err := base64.RawStdEncoding.DecodeString(enc)
+func (_ Base32Encoder) Decode(enc string) (string, error) {
+	b, err := base32.StdEncoding.DecodeString(enc)
 	return string(b), err
 }
 

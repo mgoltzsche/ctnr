@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
+	"time"
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
@@ -31,25 +33,25 @@ var (
 	}
 	imageListCmd = &cobra.Command{
 		Use:   "list",
-		Short: "Lists all images available in the local store",
+		Short: "Lists all images",
 		Long:  `Lists all images available in the local store.`,
 		Run:   handleError(runImageList),
 	}
-	imageDeleteCmd = &cobra.Command{
-		Use:   "delete IMAGE...",
-		Short: "Deletes one or many image references from the local store",
-		Long:  `Deletes one or many image references from the local store.`,
-		Run:   handleError(runImageDelete),
+	imageUntagCmd = &cobra.Command{
+		Use:   "untag IMAGE...",
+		Short: "Untags one or many images",
+		Long:  `Untags one or many images in the local store.`,
+		Run:   handleError(runImageUntag),
 	}
 	imageGcCmd = &cobra.Command{
-		Use:   "gc IMAGE...",
+		Use:   "gc",
 		Short: "Garbage collects image blobs",
 		Long:  `Garbage collects all image blobs in the local store that are not referenced.`,
 		Run:   handleError(runImageGc),
 	}
 	imageImportCmd = &cobra.Command{
 		Use:   "import IMAGE",
-		Short: "Imports an image into the local store",
+		Short: "Imports an image",
 		Long: `Fetches an image either from a local or remote source and 
 imports it into the local store.`,
 		Run: handleError(runImageImport),
@@ -69,16 +71,18 @@ to a local or remote destination.`,
 		Long:  `Prints an image's configuration.`,
 		Run:   handleError(runImageCatConfig),
 	}
+	flagImageTTL time.Duration
 )
 
 func init() {
 	imageCmd.AddCommand(imageListCmd)
-	imageCmd.AddCommand(imageDeleteCmd)
+	imageCmd.AddCommand(imageUntagCmd)
 	imageCmd.AddCommand(imageGcCmd)
 	imageCmd.AddCommand(imageImportCmd)
 	imageCmd.AddCommand(imageExportCmd)
 	imageCmd.AddCommand(imageCatConfigCmd)
 	// TODO: image build
+	imageGcCmd.Flags().DurationVarP(&flagImageTTL, "ttl", "t", time.Duration(1000*1000*1000*60*60*24*7 /*7 days*/), "image lifetime before it gets garbage collected")
 }
 
 func runImageList(cmd *cobra.Command, args []string) (err error) {
@@ -86,10 +90,13 @@ func runImageList(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
+	sort.Slice(imgs, func(i, j int) bool {
+		return imgs[i].LastUsed.Before(imgs[j].LastUsed)
+	})
 	f := "%-35s %-15s  %-71s  %-15s  %8s\n"
-	fmt.Printf(f, "NAME", "REF", "ID", "CREATED", "SIZE")
+	fmt.Printf(f, "REPO", "REF", "ID", "CREATED", "SIZE")
 	for _, img := range imgs {
-		fmt.Printf(f, img.Name, img.Ref, img.ID(), humanize.Time(img.Created), humanize.Bytes(img.Size))
+		fmt.Printf(f, img.Repo, img.Ref, img.ID(), humanize.Time(img.Created), humanize.Bytes(img.Size))
 	}
 	return
 }
@@ -98,7 +105,7 @@ func runImageGc(cmd *cobra.Command, args []string) error {
 	if len(args) != 0 {
 		return usageError("No argument expected: " + args[0])
 	}
-	return store.ImageGC()
+	return store.ImageGC(time.Now().Add(-flagImageTTL))
 }
 
 func runImageImport(cmd *cobra.Command, args []string) (err error) {
@@ -118,9 +125,9 @@ func runImageImport(cmd *cobra.Command, args []string) (err error) {
 	return
 }
 
-func runImageDelete(cmd *cobra.Command, args []string) (err error) {
+func runImageUntag(cmd *cobra.Command, args []string) (err error) {
 	if len(args) == 0 {
-		return usageError("No image argument provided")
+		return usageError("No image tag argument provided")
 	}
 	lockedStore, err := store.OpenLockedImageStore()
 	if err != nil {
@@ -128,12 +135,15 @@ func runImageDelete(cmd *cobra.Command, args []string) (err error) {
 	}
 	defer lockedStore.Close()
 
-	for _, img := range args {
-		e := lockedStore.DeleteImage(img)
+	for _, tag := range args {
+		e := lockedStore.UntagImage(tag)
 		if e != nil {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", e)
 			err = e
 		}
+	}
+	if err != nil {
+		err = fmt.Errorf("Failed to untag all images")
 	}
 	return
 }

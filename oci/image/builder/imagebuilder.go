@@ -8,7 +8,6 @@ import (
 
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/oci/image"
-	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -49,14 +48,12 @@ func NewImageBuilderFromBundle(images image.ImageStoreRW, container bundle.Bundl
 
 	// Get base image from container
 	var baseImage *image.Image
-	if baseImageId := b.container.Image(); baseImageId != "" {
-		if imgId, e := digest.Parse(baseImageId); e == nil {
-			img, e := images.Image(imgId)
-			if e != nil {
-				return b, fmt.Errorf("image builder: bundle's base image %q: %s", baseImageId, err)
-			}
-			baseImage = &img
+	if baseImageId := b.container.Image(); baseImageId != nil {
+		img, e := images.Image(*baseImageId)
+		if e != nil {
+			return b, fmt.Errorf("image builder: bundle's base image %q: %s", baseImageId, e)
 		}
+		baseImage = &img
 	}
 
 	return b, b.init(baseImage, author)
@@ -101,18 +98,7 @@ func (b *ImageBuilder) CommitLayer(name string) (img image.Image, err error) {
 	}()
 
 	rootfs := filepath.Join(b.container.Dir(), "rootfs")
-	containerImage := b.container.Image()
-	var parentImageId *digest.Digest
-	if containerImage != "" {
-		d, e := digest.Parse(containerImage)
-		if e != nil {
-			return img, e
-		}
-		if err = d.Validate(); err != nil {
-			return img, fmt.Errorf("invalid parent image ID: %s", err)
-		}
-		parentImageId = &d
-	}
+	parentImageId := b.container.Image()
 	// TODO: add proper comment
 	img, err = b.images.CommitImage(rootfs, name, parentImageId, b.author, "comment")
 	if err != nil {
@@ -122,7 +108,8 @@ func (b *ImageBuilder) CommitLayer(name string) (img image.Image, err error) {
 	if err != nil {
 		return
 	}
-	if err = b.container.SetParentImageId(img.ID()); err != nil {
+	newParentImageId := img.ID()
+	if err = b.container.SetParentImageId(&newParentImageId); err != nil {
 		return
 	}
 	b.config = c
@@ -136,11 +123,14 @@ func (b *ImageBuilder) Build(name string) (img image.Image, err error) {
 		return
 	}
 	b.manifest.Config = config
-	manifest, err := b.images.PutImageManifest(b.manifest)
-	if err != nil {
+	if _, err = b.images.PutImageManifest(b.manifest); err != nil {
 		return
 	}
-	return b.images.CreateImage(name, manifest.Digest)
+	// TODO: map image ID - move into image store to put config, manifest, imageid
+	/*if err = s.imageIds.ImageId(s.config.Digest); err != nil {
+		return
+	}*/
+	return b.images.TagImage(b.manifest.Config.Digest, name)
 }
 
 func (b *ImageBuilder) Close() error {

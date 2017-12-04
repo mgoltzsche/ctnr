@@ -12,6 +12,7 @@ import (
 
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	lock "github.com/mgoltzsche/cntnr/pkg/lock"
+	digest "github.com/opencontainers/go-digest"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	gen "github.com/opencontainers/runtime-tools/generate"
 )
@@ -60,11 +61,14 @@ func (b *Bundle) loadSpec() (r rspecs.Spec, err error) {
 	return
 }
 
-func (b *Bundle) Image() string {
+func (b *Bundle) Image() *digest.Digest {
 	if imgIdb, err := ioutil.ReadFile(b.imageFile()); err == nil {
-		return strings.Trim(string(imgIdb), " \n")
+		d, err := digest.Parse(strings.Trim(string(imgIdb), " \n"))
+		if err == nil {
+			return &d
+		}
 	}
-	return ""
+	return nil
 }
 
 func (b *Bundle) imageFile() string {
@@ -118,7 +122,7 @@ func (b *Bundle) GC(before time.Time) (bool, error) {
 type LockedBundle struct {
 	bundle Bundle
 	spec   *rspecs.Spec
-	image  string
+	image  *digest.Digest
 	lock   *lock.Lockfile
 }
 
@@ -130,7 +134,7 @@ func OpenLockedBundle(bundle Bundle) (*LockedBundle, error) {
 	if err := bundle.resetExpiryTime(); err != nil {
 		return nil, fmt.Errorf("lock bundle: %s", err)
 	}
-	return &LockedBundle{bundle, nil, "", lck}, nil
+	return &LockedBundle{bundle, nil, nil, lck}, nil
 }
 
 func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *LockedBundle, err error) {
@@ -166,7 +170,7 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *
 	if err != nil {
 		return nil, err
 	}
-	r = &LockedBundle{bundle, nil, "", lck}
+	r = &LockedBundle{bundle, nil, nil, lck}
 	defer func() {
 		if err != nil {
 			r.Close()
@@ -229,16 +233,17 @@ func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
 		return
 	}
 	if image == nil {
-		err = b.SetParentImageId("")
+		err = b.SetParentImageId(nil)
 	} else {
 		// Unpack image
 		oldImageId := b.Image()
-		if oldImageId != image.ID() {
+		if oldImageId == nil || *oldImageId != image.ID() {
 			// Update rootfs when image changed only
 			if err = image.Unpack(rootfs); err != nil {
 				return
 			}
-			err = b.SetParentImageId(image.ID())
+			imageId := image.ID()
+			err = b.SetParentImageId(&imageId)
 		}
 	}
 	return
@@ -296,19 +301,19 @@ func (b *LockedBundle) SetSpec(spec *gen.Generator) (err error) {
 }
 
 // Reads image ID from cached spec
-func (b *LockedBundle) Image() string {
-	if b.image == "" {
+func (b *LockedBundle) Image() *digest.Digest {
+	if b.image == nil {
 		b.image = b.bundle.Image()
 	}
 	return b.image
 }
 
-func (b *LockedBundle) SetParentImageId(imageID string) error {
-	if imageID == "" {
+func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) error {
+	if imageID == nil {
 		if e := os.Remove(b.bundle.imageFile()); e != nil && !os.IsNotExist(e) {
 			return fmt.Errorf("set bundle's parent image id: %s", e)
 		}
-	} else if _, err := atomic.WriteFile(b.bundle.imageFile(), bytes.NewBufferString(imageID)); err != nil {
+	} else if _, err := atomic.WriteFile(b.bundle.imageFile(), bytes.NewBufferString((*imageID).String())); err != nil {
 		return fmt.Errorf("set bundle's parent image id: %s", err)
 	}
 	b.image = imageID

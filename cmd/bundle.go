@@ -17,6 +17,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/mgoltzsche/cntnr/model"
@@ -55,6 +56,8 @@ var (
 		Long:  `Runs an existing OCI runtime bundle`,
 		Run:   handleError(runBundleRun),
 	}
+	// TODO: reset rootfs after failed image build operation - override: create --override
+	// TODO: update (command): to update filesystem only (by resolving image name to id and comparing if fs is from imageid)
 	flagBundleDir string
 	flagBundleId  string
 )
@@ -74,12 +77,16 @@ func runBundleList(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
+	sort.Slice(l, func(i, j int) bool {
+		return l[i].Created().Before(l[j].Created())
+	})
 	f := "%-26s  %-71s  %s\n"
 	fmt.Printf(f, "ID", "IMAGE", "CREATED")
 	for _, c := range l {
-		img := c.Image()
-		if img == "" {
-			img = "<none>"
+		imageId := c.Image()
+		img := "<none>"
+		if imageId != nil {
+			img = imageId.String()
 		}
 		fmt.Printf(f, c.ID(), img, humanize.Time(c.Created()))
 	}

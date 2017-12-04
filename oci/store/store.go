@@ -77,7 +77,8 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, err
 	}
 	blobDir := filepath.Join(dir, "blobs")
 	mtreeDir := filepath.Join(dir, "mtree")
-	imageDir := filepath.Join(dir, "images")
+	imageRepoDir := filepath.Join(dir, "image-repos")
+	imageIdDir := filepath.Join(dir, "image-ids")
 	bundleDir := filepath.Join(dir, "bundles")
 	blobStore, err := istore.NewBlobStore(blobDir, debugLog)
 	if err != nil {
@@ -92,7 +93,8 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, err
 		return
 	}
 	blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, debugLog)
-	rostore, err := istore.NewImageStoreRO(imageDir, &blobStoreExt, errorLog)
+
+	rostore, err := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), errorLog)
 	if err != nil {
 		return
 	}

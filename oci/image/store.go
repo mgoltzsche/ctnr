@@ -1,6 +1,8 @@
 package image
 
 import (
+	"time"
+
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -22,7 +24,7 @@ import (
 type ImageStore interface {
 	ImageStoreRO
 	OpenLockedImageStore() (ImageStoreRW, error)
-	ImageGC() error
+	ImageGC(before time.Time) error
 }
 
 type ImageStoreRO interface {
@@ -31,15 +33,22 @@ type ImageStoreRO interface {
 	ImageByName(name string) (Image, error)
 }
 
+type ImageTagStore interface {
+	AddTag(name string, imageID digest.Digest) error
+	DelTag(name string) error
+	Tag(name string) (Tag, error)
+	Tags() ([]Tag, error)
+}
+
 type ImageStoreRW interface {
 	ImageStoreRO
-	MarkUsedImage(id digest.Digest) error
+	MarkUsedImage(imageId digest.Digest) error
 	ImportImage(name string) (Image, error)
 	PutImageManifest(m ispecs.Manifest) (ispecs.Descriptor, error)
 	PutImageConfig(m ispecs.Image) (ispecs.Descriptor, error)
-	CommitImage(rootfs, name string, parentManifest *digest.Digest, author, comment string) (Image, error)
-	//AddFiles(parentImage *digest.Digest, author, comment)
-	CreateImage(name string, manifestDigest digest.Digest) (Image, error)
-	DeleteImage(name string) error
+	CommitImage(rootfs, name string, parentImageId *digest.Digest, author, comment string) (Image, error)
+	//AddFiles(parentImageId *digest.Digest, author, comment)
+	TagImage(imageId digest.Digest, tag string) (Image, error)
+	UntagImage(tag string) error
 	Close() error
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/log"
@@ -34,32 +35,56 @@ func NewImageStore(store *ImageStoreRO, systemContext *types.SystemContext, warn
 }
 
 func (s *ImageStore) OpenLockedImageStore() (image.ImageStoreRW, error) {
-	return NewImageStoreRW(s.lock.NewSharedLocker(), s.ImageStoreRO, s.systemContext, s.warn)
+	return s.openLockedImageStore(s.lock.NewSharedLocker())
 }
 
-func (s *ImageStore) ImageGC() (err error) {
+func (s *ImageStore) openLockedImageStore(locker lock.Locker) (image.ImageStoreRW, error) {
+	return NewImageStoreRW(locker, s.ImageStoreRO, s.systemContext, s.warn)
+}
+
+func (s *ImageStore) ImageGC(before time.Time) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("image gc: %s", err)
 		}
 	}()
 
-	if err = s.lock.Lock(); err != nil {
+	lockedStore, err := s.openLockedImageStore(s.lock)
+	if err != nil {
 		return
 	}
-	defer unlock(s.lock, &err)
+	// TODO: close safely
+	defer lockedStore.Close()
 
-	// Collect named transitive blobs to leave them untouched
+	// Collect all image IDs and delete
 	keep := map[digest.Digest]bool{}
+	delIDs := map[digest.Digest]bool{}
 	imgs, err := s.Images()
 	if err != nil {
-		return err
+		return
 	}
 	for _, img := range imgs {
-		keep[img.Digest] = true
-		keep[img.Manifest.Config.Digest] = true
-		for _, l := range img.Manifest.Layers {
-			keep[l.Digest] = true
+		if img.LastUsed.Before(before) {
+			if img.Repo != "" {
+				// TODO: single delete batch per repository
+				if err = lockedStore.UntagImage(img.Repo + ":" + img.Ref); err != nil {
+					return
+				}
+			}
+			delIDs[img.ID()] = true
+		} else {
+			keep[img.ManifestDigest] = true
+			keep[img.Manifest.Config.Digest] = true
+			for _, l := range img.Manifest.Layers {
+				keep[l.Digest] = true
+			}
+		}
+	}
+
+	// Delete image IDs
+	for delID, _ := range delIDs {
+		if err = s.imageIds.Del(delID); err != nil {
+			return
 		}
 	}
 
