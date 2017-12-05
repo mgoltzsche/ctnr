@@ -100,7 +100,7 @@ func (b *ImageBuilder) CommitLayer(name string) (img image.Image, err error) {
 	rootfs := filepath.Join(b.container.Dir(), "rootfs")
 	parentImageId := b.container.Image()
 	// TODO: add proper comment
-	img, err = b.images.CommitImage(rootfs, name, parentImageId, b.author, "comment")
+	img, err = b.images.AddImageLayer(rootfs, name, parentImageId, b.author, "comment")
 	if err != nil {
 		return
 	}
@@ -117,20 +117,15 @@ func (b *ImageBuilder) CommitLayer(name string) (img image.Image, err error) {
 	return
 }
 
+// TODO: make sequential
 func (b *ImageBuilder) Build(name string) (img image.Image, err error) {
-	config, err := b.images.PutImageConfig(b.config)
-	if err != nil {
+	if img, err = b.images.AddImageConfig(b.config, b.container.Image()); err != nil {
 		return
 	}
-	b.manifest.Config = config
-	if _, err = b.images.PutImageManifest(b.manifest); err != nil {
-		return
+	if name != "" {
+		img, err = b.images.TagImage(img.ID(), name)
 	}
-	// TODO: map image ID - move into image store to put config, manifest, imageid
-	/*if err = s.imageIds.ImageId(s.config.Digest); err != nil {
-		return
-	}*/
-	return b.images.TagImage(b.manifest.Config.Digest, name)
+	return
 }
 
 func (b *ImageBuilder) Close() error {

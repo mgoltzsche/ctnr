@@ -21,6 +21,8 @@ import (
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+const AnnotationParentImage = "com.github.mgoltzsche.cntnr.image.parent"
+
 var _ image.ImageStoreRW = &ImageStoreRW{}
 
 type ImageStoreRW struct {
@@ -131,7 +133,7 @@ func (s *ImageStoreRW) UntagImage(tag string) (err error) {
 	return err
 }
 
-func (s *ImageStoreRW) CommitImage(rootfs, tag string, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
+func (s *ImageStoreRW) AddImageLayer(rootfs, tag string, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("commit image: %s", err)
@@ -225,15 +227,53 @@ func (s *ImageStoreRW) MarkUsedImage(id digest.Digest) error {
 	return s.imageIds.MarkUsed(id)
 }
 
-func (s *ImageStoreRW) PutImageConfig(config ispecs.Image) (ispecs.Descriptor, error) {
-	return s.blobs.PutImageConfig(config)
+func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.Digest) (img image.Image, err error) {
+	var manifest ispecs.Manifest
+	if parentImageId == nil {
+		manifest = ispecs.Manifest{}
+		manifest.Versioned.SchemaVersion = 2
+
+		if conf.Config.Labels != nil {
+			delete(conf.Config.Labels, AnnotationParentImage)
+		}
+	} else {
+		parent, err := s.Image(*parentImageId)
+		if err != nil {
+			return img, fmt.Errorf("parent image: %s", err)
+		}
+		manifest = parent.Manifest
+
+		if conf.Config.Labels == nil {
+			conf.Config.Labels = map[string]string{AnnotationParentImage: (*parentImageId).String()}
+		} else {
+			conf.Config.Labels[AnnotationParentImage] = (*parentImageId).String()
+		}
+	}
+
+	//now := time.Now()
+	//conf.Created = &now
+	conf.Architecture = runtime.GOARCH
+	conf.OS = runtime.GOOS
+	confRef, err := s.blobs.PutImageConfig(conf)
+	if err != nil {
+		return
+	}
+	manifest.Config = confRef
+	return s.putImageManifest(manifest)
 }
 
-func (s *ImageStoreRW) PutImageManifest(manifest ispecs.Manifest) (ispecs.Descriptor, error) {
-	return s.blobs.PutImageManifest(manifest)
+func (s *ImageStoreRW) putImageManifest(manifest ispecs.Manifest) (r image.Image, err error) {
+	d, err := s.blobs.PutImageManifest(manifest)
+	if err != nil {
+		return
+	}
+	if err = s.imageIds.Add(manifest.Config.Digest, d.Digest); err != nil {
+		return
+	}
+	return s.Image(manifest.Config.Digest)
 }
 
-// Adds manifests to an image using a file lock
+// Adds manifests to an image repo. This is an atomic operation
 func (s *ImageStoreRW) addImages(name string, manifestDescriptors []ispecs.Descriptor) (err error) {
 	if len(manifestDescriptors) == 0 {
 		return nil
