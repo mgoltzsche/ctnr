@@ -22,6 +22,7 @@ import (
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
+	"github.com/mgoltzsche/cntnr/oci/image/builder"
 	"github.com/spf13/cobra"
 )
 
@@ -71,18 +72,35 @@ to a local or remote destination.`,
 		Long:  `Prints an image's configuration.`,
 		Run:   handleError(runImageCatConfig),
 	}
+	imageBuildCmd = &cobra.Command{
+		Use:   "new",
+		Short: "Builds a new image from the provided options",
+		Long:  `Builds a new image from the provided options.`,
+		Run:   handleError(runImageBuildRun),
+	}
 	flagImageTTL time.Duration
+	flagImage    string
+	imageBuilder *builder.ImageBuilder
 )
 
 func init() {
+	imageBuilder = builder.NewImageBuilder()
 	imageCmd.AddCommand(imageListCmd)
 	imageCmd.AddCommand(imageUntagCmd)
 	imageCmd.AddCommand(imageGcCmd)
 	imageCmd.AddCommand(imageImportCmd)
 	imageCmd.AddCommand(imageExportCmd)
 	imageCmd.AddCommand(imageCatConfigCmd)
-	// TODO: image build
+	imageCmd.AddCommand(imageBuildCmd)
+	//imageBuildCmd.AddCommand(imageAddFileCmd)
+	//imageBuildCmd.AddCommand(imageRunCmd)
 	imageGcCmd.Flags().DurationVarP(&flagImageTTL, "ttl", "t", time.Duration(1000*1000*1000*60*60*24*7 /*7 days*/), "image lifetime before it gets garbage collected")
+	imageBuildCmd.Flags().Var((*bFromImage)(imageBuilder), "from", "parent image the new image is based on (must come first)")
+	imageBuildCmd.Flags().Var((*bAuthor)(imageBuilder), "author", "Sets the new image's author")
+	imageBuildCmd.Flags().Var((*bRun)(imageBuilder), "run", "Runs the provided command in the base image")
+	imageBuildCmd.Flags().Var((*bEntrypoint)(imageBuilder), "entrypoint", "Sets the image's entrypoint")
+	imageBuildCmd.Flags().Var((*bCmd)(imageBuilder), "cmd", "Sets the image's command")
+	imageBuildCmd.Flags().Var((*bTag)(imageBuilder), "tag", "Tags the image")
 }
 
 func runImageList(cmd *cobra.Command, args []string) (err error) {
@@ -172,4 +190,135 @@ func runImageCatConfig(cmd *cobra.Command, args []string) (err error) {
 	}
 	fmt.Println(string(b))
 	return
+}
+
+/*func runImageAddFile(cmd *cobra.Command, args []string) (err error) {
+	if len(args) != 2 {
+		return usageError("one source and dest file required")
+	}
+	b, err := store.ImageBuilder(flagImage, flagAuthor)
+	if err != nil {
+		return
+	}
+	defer b.Close()
+	b.AddFile(args[0], args[1])
+	if err = b.Err(); err == nil {
+		fmt.Fprintln(os.Stdout, b.Image().ID())
+	}
+	return
+}*/
+
+func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
+	if len(args) != 0 {
+		return usageError(fmt.Sprintf("No arguments supported but %q provided", args[0]))
+	}
+	lockedStore, err := store.OpenLockedImageStore()
+	if err != nil {
+		return
+	}
+	defer lockedStore.Close()
+
+	img, err := imageBuilder.Build(lockedStore, store.BundleStore, flagRootless)
+	if err == nil {
+		fmt.Fprintln(os.Stdout, img.ID())
+	}
+	return
+}
+
+type bRun builder.ImageBuilder
+
+func (b *bRun) Set(cmd string) (err error) {
+	(*builder.ImageBuilder)(b).Run(cmd)
+	return
+}
+
+func (b *bRun) Type() string {
+	return "string..."
+}
+
+func (b *bRun) String() string {
+	return ""
+}
+
+type bFromImage builder.ImageBuilder
+
+func (b *bFromImage) Set(image string) (err error) {
+	(*builder.ImageBuilder)(b).FromImage(image)
+	return
+}
+
+func (b *bFromImage) Type() string {
+	return "string"
+}
+
+func (b *bFromImage) String() string {
+	return ""
+}
+
+type bAuthor builder.ImageBuilder
+
+func (b *bAuthor) Set(author string) (err error) {
+	(*builder.ImageBuilder)(b).SetAuthor(author)
+	return
+}
+
+func (b *bAuthor) Type() string {
+	return "string"
+}
+
+func (b *bAuthor) String() string {
+	return ""
+}
+
+type bEntrypoint builder.ImageBuilder
+
+func (b *bEntrypoint) Set(s string) (err error) {
+	entrypoint := make([]string, 0, 1)
+	if err = addStringEntries(s, &entrypoint); err != nil {
+		return
+	}
+	(*builder.ImageBuilder)(b).SetEntrypoint(entrypoint)
+	return
+}
+
+func (b *bEntrypoint) Type() string {
+	return "string"
+}
+
+func (b *bEntrypoint) String() string {
+	return ""
+}
+
+type bCmd builder.ImageBuilder
+
+func (b *bCmd) Set(s string) (err error) {
+	cmd := make([]string, 0, 1)
+	if err = addStringEntries(s, &cmd); err != nil {
+		return
+	}
+	(*builder.ImageBuilder)(b).SetCmd(cmd)
+	return
+}
+
+func (b *bCmd) Type() string {
+	return "string"
+}
+
+func (b *bCmd) String() string {
+	return ""
+}
+
+type bTag builder.ImageBuilder
+
+func (b *bTag) Set(tag string) (err error) {
+	(*builder.ImageBuilder)(b).Tag(tag)
+	return
+}
+
+func (b *bTag) Type() string {
+	return "string"
+}
+
+func (b *bTag) String() string {
+	return ""
 }

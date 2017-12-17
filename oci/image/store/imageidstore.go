@@ -74,10 +74,10 @@ func (s *ImageIdStore) ImageID(imageID digest.Digest) (r ImageID, err error) {
 }
 
 func (s *ImageIdStore) ImageIDs() (r []ImageID, err error) {
-	fl, err := ioutil.ReadDir(s.dir)
+	fl, e := ioutil.ReadDir(s.dir)
 	r = make([]ImageID, 0, len(fl))
-	if err != nil && !os.IsNotExist(err) {
-		return r, fmt.Errorf("image IDs: %s", err)
+	if e != nil && !os.IsNotExist(err) {
+		return r, fmt.Errorf("image IDs: %s", e)
 	}
 	if len(fl) > 0 {
 		for _, f := range fl {

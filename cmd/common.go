@@ -23,6 +23,7 @@ import (
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/mgoltzsche/cntnr/run"
+	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 )
 
@@ -121,12 +122,15 @@ func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *m
 	} else {
 		var img image.Image
 		img, err = istore.ImageByName(service.Image)
-		if err != nil {
-			img, err = istore.ImportImage(service.Image)
+		if imgId, e := digest.Parse(service.Image); e != nil || imgId.Validate() != nil {
 			if err != nil {
-				return
+				img, err = istore.ImportImage(service.Image)
 			}
 		}
+		if err != nil {
+			return
+		}
+
 		builder, err = bundle.BuilderFromImage(bundleId, &img)
 		if err != nil {
 			return

@@ -398,6 +398,8 @@ func addStringEntries(s string, r *[]string) error {
 		*r = nil
 		return nil
 	}
+	// TODO: fix parsing of cat asdf | sed ... > asd
+	// (currently parse ignores everything after the cat cmd silently)
 	e, err := shellwords.Parse(s)
 	if err != nil {
 		return err

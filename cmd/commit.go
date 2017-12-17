@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -40,26 +41,48 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 	if len(args) < 1 || len(args) > 2 {
 		return usageError("Invalid argument")
 	}
-	b, err := store.Bundle(args[0])
+	bundleId := args[0]
+	b, err := store.Bundle(bundleId)
 	if err != nil {
 		return
 	}
-	imgBuilder, err := store.ImageBuilderFromBundle(b, flagAuthor)
+	lockedBundle, err := b.Lock()
+	if err != nil {
+		return
+	}
+	defer lockedBundle.Close()
+	lockedStore, err := store.OpenLockedImageStore()
 	if err != nil {
 		return
 	}
 	defer func() {
-		if e := imgBuilder.Close(); e != nil && err == nil {
+		if e := lockedStore.Close(); e != nil && err == nil {
 			err = e
 		}
 	}()
-	name := ""
-	if len(args) > 1 {
-		name = args[1]
-	}
-	img, err := imgBuilder.CommitLayer(name)
+	// TODO: add proper comment
+	spec, err := lockedBundle.Spec()
 	if err != nil {
 		return
+	}
+	if spec.Root == nil {
+		return fmt.Errorf("bundle %q has no root path", bundleId)
+	}
+	img, err := lockedStore.AddImageLayer(filepath.Join(b.Dir(), spec.Root.Path), lockedBundle.Image(), flagAuthor, flagComment)
+	if err != nil {
+		// TODO: distinguish between nothing to commit and real failure
+		return
+	}
+	imgId := img.ID()
+	if err = lockedBundle.SetParentImageId(&imgId); err != nil {
+		return
+	}
+	if len(args) > 1 {
+		for _, tag := range args[1:] {
+			if _, err = lockedStore.TagImage(img.ID(), tag); err != nil {
+				return
+			}
+		}
 	}
 	fmt.Println(img.ID())
 	return

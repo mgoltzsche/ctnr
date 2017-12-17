@@ -10,11 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	lock "github.com/mgoltzsche/cntnr/pkg/lock"
 	digest "github.com/opencontainers/go-digest"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	gen "github.com/opencontainers/runtime-tools/generate"
+	"github.com/pkg/errors"
 )
 
 type Bundle struct {
@@ -187,17 +189,12 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *
 
 func (b *LockedBundle) Close() (err error) {
 	if b.lock != nil {
-		if err = b.bundle.resetExpiryTime(); err != nil {
-			fmt.Fprintf(os.Stderr, "unlock bundle: %s", err)
-			err = fmt.Errorf("unlock bundle: %s", err)
+		err = b.bundle.resetExpiryTime()
+		if e := b.lock.Unlock(); e != nil {
+			err = multierror.Append(err, e)
 		}
-		if e := b.lock.Unlock(); e != nil && err == nil {
-			if err == nil {
-				err = fmt.Errorf("unlock bundle: %s", e)
-			} else {
-				err = fmt.Errorf("unlock bundle: %s. %s", err, e)
-			}
-
+		if err != nil {
+			err = errors.Wrap(err, "unlock bundle")
 		}
 		b.lock = nil
 	}
@@ -323,11 +320,7 @@ func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) error {
 func (b *LockedBundle) Delete() (err error) {
 	err = deleteBundle(b.Dir())
 	if e := b.Close(); e != nil {
-		if err == nil {
-			err = fmt.Errorf("delete bundle: %s", e)
-		} else {
-			err = fmt.Errorf("delete bundle: %s. %s", err, e)
-		}
+		err = multierror.Append(err, e)
 	}
 	return
 }

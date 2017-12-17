@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/mgoltzsche/cntnr/generate"
-	"github.com/opencontainers/runc/libcontainer/specconv"
 	//"github.com/mgoltzsche/cntnr/pkg/atomic"
 	"path/filepath"
 	"sort"
@@ -26,7 +25,7 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 	vols := NewVolumeResolver(p)
 
 	if rootless {
-		specconv.ToRootless(spec.Spec())
+		spec.ToRootless()
 	}
 
 	if err := applyService(service, vols, spec); err != nil {
@@ -70,10 +69,7 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 
 	// Use host networks by removing 'network' namespace
 	if useHostNetwork {
-		spec.RemoveLinuxNamespace(specs.NetworkNamespace)
-		opts := []string{"bind", "mode=0444", "nosuid", "noexec", "nodev", "ro"}
-		spec.AddBindMount("/etc/hosts", "/etc/hosts", opts)
-		spec.AddBindMount("/etc/resolv.conf", "/etc/resolv.conf", opts)
+		spec.UseHostNetwork()
 	}
 
 	// Add hostname. Empty string results in host's hostname

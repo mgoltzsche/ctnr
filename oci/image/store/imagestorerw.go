@@ -133,7 +133,7 @@ func (s *ImageStoreRW) UntagImage(tag string) (err error) {
 	return err
 }
 
-func (s *ImageStoreRW) AddImageLayer(rootfs, tag string, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
+func (s *ImageStoreRW) AddImageLayer(rootfs string, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("commit image: %s", err)
@@ -155,13 +155,7 @@ func (s *ImageStoreRW) AddImageLayer(rootfs, tag string, parentImageId *digest.D
 	if err = s.imageIds.Add(c.Manifest.Config.Digest, c.Descriptor.Digest); err != nil {
 		return
 	}
-	if tag == "" {
-		r, err = s.Image(c.Manifest.Config.Digest)
-	} else {
-		r, err = s.TagImage(c.Manifest.Config.Digest, tag)
-	}
-	//r = image.NewImage(c.Descriptor.Digest, "", "", time.Now(), c.Manifest, &c.Config, s.blobs)
-	return
+	return s.Image(c.Manifest.Config.Digest)
 }
 
 func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {

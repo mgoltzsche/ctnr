@@ -30,13 +30,8 @@ type MtreeStore struct {
 	fsEval mtree.FsEval
 }
 
-func NewMtreeStore(dir string, fsEval mtree.FsEval) (r MtreeStore, err error) {
-	r.dir = dir
-	r.fsEval = fsEval
-	if err = os.MkdirAll(dir, 0755); err != nil {
-		err = fmt.Errorf("init mtree store: %s", err)
-	}
-	return
+func NewMtreeStore(dir string, fsEval mtree.FsEval) MtreeStore {
+	return MtreeStore{dir, fsEval}
 }
 
 func (s *MtreeStore) Get(manifestDigest digest.Digest) (*mtree.DirectoryHierarchy, error) {
@@ -61,7 +56,7 @@ func (s *MtreeStore) Put(manifestDigest digest.Digest, spec *mtree.DirectoryHier
 	}
 
 	// Create mtree dir
-	if err := os.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destFile), 0775); err != nil {
 		return fmt.Errorf("create mtree dir: %s", err)
 	}
 

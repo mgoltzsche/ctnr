@@ -19,6 +19,7 @@ import (
 	"time"
 
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/opencontainers/runc/libcontainer/specconv"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-tools/generate"
 )
@@ -35,6 +36,17 @@ func NewSpecBuilder() SpecBuilder {
 
 func FromSpec(spec *rspecs.Spec) SpecBuilder {
 	return SpecBuilder{Generator: generate.NewFromSpec(spec)}
+}
+
+func (b *SpecBuilder) ToRootless() {
+	specconv.ToRootless(b.Spec())
+}
+
+func (b *SpecBuilder) UseHostNetwork() {
+	b.RemoveLinuxNamespace(rspecs.NetworkNamespace)
+	opts := []string{"bind", "mode=0444", "nosuid", "noexec", "nodev", "ro"}
+	b.AddBindMount("/etc/hosts", "/etc/hosts", opts)
+	b.AddBindMount("/etc/resolv.conf", "/etc/resolv.conf", opts)
 }
 
 func (b *SpecBuilder) SetProcessEntrypoint(v []string) {

@@ -45,7 +45,7 @@ type ImageStoreRW interface {
 	MarkUsedImage(imageId digest.Digest) error
 	ImportImage(name string) (Image, error)
 	AddImageConfig(m ispecs.Image, parentImageId *digest.Digest) (Image, error)
-	AddImageLayer(rootfs, name string, parentImageId *digest.Digest, author, comment string) (Image, error)
+	AddImageLayer(rootfs string, parentImageId *digest.Digest, author, comment string) (Image, error)
 	//AddFiles(parentImageId *digest.Digest, author, comment)
 	TagImage(imageId digest.Digest, tag string) (Image, error)
 	UntagImage(tag string) error

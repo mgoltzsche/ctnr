@@ -15,8 +15,8 @@ type ImageReader interface {
 type Image struct {
 	ManifestDigest digest.Digest
 	Repo           string
-	Ref            string // TODO: decide, clean up
-	//Tag      TagName
+	Ref            string
+	//TODO: Tag      TagName
 	Manifest ispecs.Manifest
 	Size     uint64
 	Created  time.Time

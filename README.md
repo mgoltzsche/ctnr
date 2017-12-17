@@ -71,6 +71,21 @@ hello world
 / # firefox
 ```
 
+### Create and run Firefox image as unprivileged user
+```
+cntnr image new \
+	--from=docker://alpine:3.7 \
+	--author="John Doe" \
+	--run="echo \$(cat /proc/sys/kernel/random/uuid | sed s/-//g) > /etc/machine-id" \
+	--run="apk add --update --no-cache firefox-esr libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family" \
+	--cmd=firefox \
+	--tag=local/firefox:latest
+cntnr run \
+	--env DISPLAY=$DISPLAY \
+	--mount /tmp/.X11-unix:/tmp/.X11-unix \
+	local/firefox:latest
+```
+
 
 ## Roadmap
 

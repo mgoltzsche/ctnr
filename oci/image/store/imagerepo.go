@@ -52,7 +52,7 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 	// Create image directory if not exists
 	if _, e := os.Stat(dir); os.IsNotExist(e) {
 		if create {
-			if err = os.Mkdir(dir, 0755); err != nil {
+			if err = os.MkdirAll(dir, 0775); err != nil {
 				return
 			}
 		} else {

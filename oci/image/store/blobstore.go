@@ -22,12 +22,9 @@ type BlobStore struct {
 	debug   log.Logger
 }
 
-func NewBlobStore(dir string, debug log.Logger) (r BlobStore, err error) {
+func NewBlobStore(dir string, debug log.Logger) (r BlobStore) {
 	r.blobDir = dir
 	r.debug = debug
-	if err = os.MkdirAll(dir, 0755); err != nil {
-		err = fmt.Errorf("init blob store: %s", err)
-	}
 	return
 }
 
@@ -118,9 +115,12 @@ func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
 		}
 	}()
 	var al, dl []os.FileInfo
-	al, err = ioutil.ReadDir(s.blobDir)
-	if err != nil {
-		return
+	if al, err = ioutil.ReadDir(s.blobDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		} else {
+			return
+		}
 	}
 	for _, f := range al {
 		if f.IsDir() {
@@ -185,6 +185,10 @@ func (s *BlobStore) readBlob(id digest.Digest) (b []byte, err error) {
 }
 
 func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err error) {
+	// Create blob dir
+	if err = os.MkdirAll(s.blobDir, 0775); err != nil {
+		return
+	}
 	// Create temp file to write blob to
 	tmpBlob, err := ioutil.TempFile(s.blobDir, "blob-")
 	if err != nil {

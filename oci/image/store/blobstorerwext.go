@@ -95,12 +95,11 @@ func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.D
 	if comment == "" {
 		comment = "layer"
 	}
-	historyEntry := ispecs.History{
+	r.Config.History = append(r.Config.History, ispecs.History{
 		CreatedBy:  author,
 		Comment:    comment,
 		EmptyLayer: false,
-	}
-	r.Config.History = append(r.Config.History, historyEntry)
+	})
 	r.Config.RootFS.DiffIDs = append(r.Config.RootFS.DiffIDs, diffIdDigest)
 	configDescriptor, err := s.PutImageConfig(r.Config)
 	if err != nil {
