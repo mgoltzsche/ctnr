@@ -122,7 +122,7 @@ func (b *buildState) initBundle(cmd string) (err error) {
 		if cmd != "" {
 			bb.SetProcessCmd([]string{cmd})
 		}
-		bundle, err := b.bundles.CreateBundle(bb)
+		bundle, err := b.bundles.CreateBundle(bb, false)
 		if err != nil {
 			return errors.Wrap(err, "image builder")
 		}

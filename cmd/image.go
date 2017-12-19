@@ -73,7 +73,7 @@ to a local or remote destination.`,
 		Run:   handleError(runImageCatConfig),
 	}
 	imageBuildCmd = &cobra.Command{
-		Use:   "new",
+		Use:   "create",
 		Short: "Builds a new image from the provided options",
 		Long:  `Builds a new image from the provided options.`,
 		Run:   handleError(runImageBuildRun),

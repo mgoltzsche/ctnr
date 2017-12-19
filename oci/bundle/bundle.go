@@ -139,7 +139,7 @@ func OpenLockedBundle(bundle Bundle) (*LockedBundle, error) {
 	return &LockedBundle{bundle, nil, nil, lck}, nil
 }
 
-func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *LockedBundle, err error) {
+func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage, update bool) (r *LockedBundle, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("create bundle: %s", err)
@@ -157,16 +157,6 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *
 	}
 	bundle := Bundle{id, dir, time.Now()}
 
-	// Create bundle directory
-	if err = os.Mkdir(dir, 0770); err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(dir)
-		}
-	}()
-
 	// Lock bundle
 	lck, err := lockBundle(&bundle)
 	if err != nil {
@@ -179,11 +169,45 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage) (r *
 		}
 	}()
 
-	// Update config.json and rootfs
-	if err = r.SetSpec(spec); err != nil {
-		return
+	// Create or update bundle
+	_, e := os.Stat(dir)
+	exists := !os.IsNotExist(e)
+
+	if exists {
+		if !update {
+			return r, fmt.Errorf("bundle directory %s already exists", dir)
+		}
+		lastImageId := bundle.Image()
+		if !(lastImageId == nil && image == nil || lastImageId != nil && *lastImageId == image.ID()) {
+			// Update rootfs only if changed
+			if err = r.UpdateRootfs(image); err != nil {
+				return
+			}
+		}
+		if err = r.SetSpec(spec); err != nil {
+			return
+		}
+	} else {
+		// Create bundle directory
+		if err = os.Mkdir(dir, 0770); err != nil {
+			return
+		}
+
+		defer func() {
+			if err != nil {
+				err = multierror.Append(err, os.RemoveAll(dir))
+			}
+		}()
+
+		// Write config.json and rootfs
+		if err = r.UpdateRootfs(image); err != nil {
+			return
+		}
+		if err = r.SetSpec(spec); err != nil {
+			return
+		}
 	}
-	err = r.UpdateRootfs(image)
+
 	return
 }
 
@@ -221,26 +245,29 @@ func (b *LockedBundle) Spec() (*rspecs.Spec, error) {
 }
 
 func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
-	spec, err := b.Spec()
-	if err != nil {
+	rootfs := filepath.Join(b.Dir(), "rootfs")
+	var imgId *digest.Digest
+	if image != nil {
+		id := image.ID()
+		imgId = &id
+	}
+	if err = createRootfs(rootfs, image); err != nil {
 		return
 	}
-	rootfs := filepath.Join(b.Dir(), spec.Root.Path)
-	if err = os.MkdirAll(rootfs, 0755); err != nil {
+	return b.SetParentImageId(imgId)
+}
+
+func createRootfs(rootfs string, image BundleImage) (err error) {
+	if e := os.RemoveAll(rootfs); e != nil && os.IsNotExist(e) {
+		return e
+	}
+	if err = os.Mkdir(rootfs, 0755); err != nil {
 		return
 	}
-	if image == nil {
-		err = b.SetParentImageId(nil)
-	} else {
+	if image != nil {
 		// Unpack image
-		oldImageId := b.Image()
-		if oldImageId == nil || *oldImageId != image.ID() {
-			// Update rootfs when image changed only
-			if err = image.Unpack(rootfs); err != nil {
-				return
-			}
-			imageId := image.ID()
-			err = b.SetParentImageId(&imageId)
+		if err = image.Unpack(rootfs); err != nil {
+			return
 		}
 	}
 	return
@@ -253,24 +280,14 @@ func (b *LockedBundle) SetSpec(spec *gen.Generator) (err error) {
 		}
 	}()
 
-	// Create volume directories
-	if mounts := spec.Spec().Mounts; mounts != nil {
-		for _, mount := range mounts {
-			if mount.Type == "bind" {
-				src := mount.Source
-				if !filepath.IsAbs(src) {
-					src = filepath.Join(b.Dir(), src)
-				}
-				if _, err = os.Stat(src); os.IsNotExist(err) {
-					if err = os.MkdirAll(src, 0755); err != nil {
-						return
-					}
-				}
-			}
-		}
+	if err = createVolumeDirectories(spec.Spec(), b.Dir()); err != nil {
+		return
 	}
 
 	// Write config.json
+	if spec.Spec().Root != nil {
+		spec.Spec().Root.Path = "rootfs"
+	}
 	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, b.ID())
 	tmpConfFile, err := ioutil.TempFile(b.Dir(), "tmp-conf-")
 	if err != nil {
@@ -294,6 +311,28 @@ func (b *LockedBundle) SetSpec(spec *gen.Generator) (err error) {
 	}
 	tmpConfRemoved = true
 	b.spec = spec.Spec()
+	return
+}
+
+func createVolumeDirectories(spec *rspecs.Spec, dir string) (err error) {
+	if spec != nil && spec.Mounts != nil {
+		for _, mount := range spec.Mounts {
+			if mount.Type == "bind" {
+				src := mount.Source
+				if !filepath.IsAbs(src) {
+					src = filepath.Join(dir, src)
+				}
+				if _, err = os.Stat(src); os.IsNotExist(err) {
+					if err = os.MkdirAll(src, 0755); err != nil {
+						break
+					}
+				}
+			}
+		}
+	}
+	if err != nil {
+		err = fmt.Errorf("volume directories from spec: %s", err)
+	}
 	return
 }
 

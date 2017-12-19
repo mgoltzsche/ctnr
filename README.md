@@ -48,42 +48,35 @@ Build the binary dist/bin/cntnr
 
 ## Examples
 
-### Create and run OCI bundle from docker image
+### Create and run container from Docker image
 ```
 > cntnr run docker://alpine:3.6 echo hello world
 hello world
 ```
-or
-```
-> cntnr bundle create -b mybundle docker://alpine:3.6 echo hello world
-> cntnr bundle run mybundle
-hello world
-```
 
-### Install and run Firefox in an unprivileged user's container
+### Create and run Firefox as unprivileged user
+Build a Firefox container image tagged as `local/firefox:latest`:
 ```
-> cntnr run --tty=true \
-	--env DISPLAY=$DISPLAY \
-	--mount /tmp/.X11-unix:/tmp/.X11-unix \
-	docker://alpine:3.6
-/ # apk add --update --no-cache firefox-esr libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family
-/ # echo `cat /proc/sys/kernel/random/uuid | sed s/-//g` > /etc/machine-id
-/ # firefox
-```
-
-### Create and run Firefox image as unprivileged user
-```
-cntnr image new \
+cntnr image create \
 	--from=docker://alpine:3.7 \
-	--author="John Doe" \
-	--run="echo \$(cat /proc/sys/kernel/random/uuid | sed s/-//g) > /etc/machine-id" \
-	--run="apk add --update --no-cache firefox-esr libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family" \
+	--author='John Doe' \
+	--run='apk add --update --no-cache firefox-esr libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family' \
 	--cmd=firefox \
 	--tag=local/firefox:latest
-cntnr run \
+```  
+
+Create a bundle named `firefox` from the previously built image (the `--update` option makes this operation idempotent):
+```
+cntnr bundle create -b firefox --update=true \
 	--env DISPLAY=$DISPLAY \
 	--mount /tmp/.X11-unix:/tmp/.X11-unix \
+	--mount /etc/machine-id:/etc/machine-id:ro \
 	local/firefox:latest
+```  
+
+Run the previously prepared `firefox` bundle as container:
+```
+cntnr bundle run firefox
 ```
 
 

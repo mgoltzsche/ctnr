@@ -64,7 +64,7 @@ func (b *BundleBuilder) GetID() string {
 	return b.id
 }
 
-func (b *BundleBuilder) Build(dir string) (bundle *LockedBundle, err error) {
+func (b *BundleBuilder) Build(dir string, update bool) (bundle *LockedBundle, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("build bundle: %s", err)
@@ -72,7 +72,7 @@ func (b *BundleBuilder) Build(dir string) (bundle *LockedBundle, err error) {
 	}()
 
 	// Create bundle directory
-	if bundle, err = CreateLockedBundle(dir, &b.Generator, b.image); err != nil {
+	if bundle, err = CreateLockedBundle(dir, &b.Generator, b.image, update); err != nil {
 		return
 	}
 

@@ -57,8 +57,8 @@ func (s *BundleStore) Bundle(id string) (r bundle.Bundle, err error) {
 	return bundle.NewBundle(filepath.Join(s.dir, id))
 }
 
-func (s *BundleStore) CreateBundle(builder *bundle.BundleBuilder) (*bundle.LockedBundle, error) {
-	return builder.Build(filepath.Join(s.dir, builder.GetID()))
+func (s *BundleStore) CreateBundle(builder *bundle.BundleBuilder, update bool) (*bundle.LockedBundle, error) {
+	return builder.Build(filepath.Join(s.dir, builder.GetID()), update)
 }
 
 // Deletes all bundles older than the given time

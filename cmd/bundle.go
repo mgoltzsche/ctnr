@@ -56,10 +56,8 @@ var (
 		Long:  `Runs an existing OCI runtime bundle`,
 		Run:   handleError(runBundleRun),
 	}
-	// TODO: reset rootfs after failed image build operation - override: create --override
-	// TODO: update (command): to update filesystem only (by resolving image name to id and comparing if fs is from imageid)
-	flagBundleDir string
-	flagBundleId  string
+	flagBundleDir    string
+	flagBundleUpdate bool
 )
 
 func init() {
@@ -68,6 +66,7 @@ func init() {
 	bundleCmd.AddCommand(bundleCreateCmd)
 	bundleCmd.AddCommand(bundleRunCmd)
 	initBundleCreateFlags(bundleCreateCmd.Flags())
+	bundleCreateCmd.Flags().BoolVarP(&flagBundleUpdate, "update", "u", false, "Updates existing bundle's config as well as rootfs if provided image differs from base image")
 	bundleCreateCmd.Flags().StringVarP(&flagBundleDir, "bundle", "b", "", "bundle name or directory")
 	initBundleRunFlags(bundleRunCmd.Flags())
 }
@@ -103,7 +102,7 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 	}
 	defer istore.Close()
 	// TODO: Introduce --update flag to update existing bundle when flagBundleDir is set
-	c, err := createRuntimeBundle(istore, &model.Project{}, flagsBundle.last(), flagBundleDir)
+	c, err := createRuntimeBundle(istore, &model.Project{}, flagsBundle.last(), flagBundleDir, flagBundleUpdate)
 	if err != nil {
 		return
 	}

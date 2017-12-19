@@ -84,7 +84,7 @@ func runProject(project *model.Project, containerMngr *run.ContainerManager) err
 
 	for _, s := range project.Services {
 		fmt.Println(s.JSON())
-		bundle, err := createRuntimeBundle(istore, project, &s, "")
+		bundle, err := createRuntimeBundle(istore, project, &s, "", false)
 		if err != nil {
 			return err
 		}
@@ -102,7 +102,7 @@ func runProject(project *model.Project, containerMngr *run.ContainerManager) err
 	return containerMngr.Wait()
 }
 
-func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *model.Service, bundleIdOrDir string) (b *bundle.LockedBundle, err error) {
+func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *model.Service, bundleIdOrDir string, update bool) (b *bundle.LockedBundle, err error) {
 	if service.Image == "" {
 		err = fmt.Errorf("service %q has no image", service.Name)
 		return
@@ -144,9 +144,9 @@ func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *m
 
 	// Create bundle
 	if bundleDir != "" {
-		b, err = builder.Build(bundleDir)
+		b, err = builder.Build(bundleDir, update)
 	} else {
-		b, err = store.CreateBundle(builder)
+		b, err = store.CreateBundle(builder, update)
 	}
 	return
 }
