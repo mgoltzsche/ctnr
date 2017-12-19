@@ -23,6 +23,7 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/mgoltzsche/cntnr/oci/image/builder"
+	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 )
 
@@ -37,6 +38,12 @@ var (
 		Short: "Lists all images",
 		Long:  `Lists all images available in the local store.`,
 		Run:   handleError(runImageList),
+	}
+	imageTagCmd = &cobra.Command{
+		Use:   "tag IMAGE...",
+		Short: "Tags one or many images",
+		Long:  `Tags one or many images in the local store.`,
+		Run:   handleError(runImageTag),
 	}
 	imageUntagCmd = &cobra.Command{
 		Use:   "untag IMAGE...",
@@ -86,14 +93,13 @@ to a local or remote destination.`,
 func init() {
 	imageBuilder = builder.NewImageBuilder()
 	imageCmd.AddCommand(imageListCmd)
+	imageCmd.AddCommand(imageTagCmd)
 	imageCmd.AddCommand(imageUntagCmd)
 	imageCmd.AddCommand(imageGcCmd)
 	imageCmd.AddCommand(imageImportCmd)
 	imageCmd.AddCommand(imageExportCmd)
 	imageCmd.AddCommand(imageCatConfigCmd)
 	imageCmd.AddCommand(imageBuildCmd)
-	//imageBuildCmd.AddCommand(imageAddFileCmd)
-	//imageBuildCmd.AddCommand(imageRunCmd)
 	imageGcCmd.Flags().DurationVarP(&flagImageTTL, "ttl", "t", time.Duration(1000*1000*1000*60*60*24*7 /*7 days*/), "image lifetime before it gets garbage collected")
 	imageBuildCmd.Flags().Var((*bFromImage)(imageBuilder), "from", "parent image the new image is based on (must come first)")
 	imageBuildCmd.Flags().Var((*bAuthor)(imageBuilder), "author", "Sets the new image's author")
@@ -139,6 +145,28 @@ func runImageImport(cmd *cobra.Command, args []string) (err error) {
 	img, err := lockedStore.ImportImage(args[0])
 	if err == nil {
 		fmt.Fprintln(os.Stdout, img.ID())
+	}
+	return
+}
+
+func runImageTag(cmd *cobra.Command, args []string) (err error) {
+	if len(args) < 2 {
+		return usageError("ImageID and tag arguments required")
+	}
+	lockedStore, err := store.OpenLockedImageStore()
+	if err != nil {
+		return
+	}
+	defer lockedStore.Close()
+
+	imageId, err := digest.Parse(args[0])
+	if err != nil {
+		return
+	}
+	for _, tag := range args[1:] {
+		if _, err = lockedStore.TagImage(imageId, tag); err != nil {
+			return
+		}
 	}
 	return
 }
@@ -191,22 +219,6 @@ func runImageCatConfig(cmd *cobra.Command, args []string) (err error) {
 	fmt.Println(string(b))
 	return
 }
-
-/*func runImageAddFile(cmd *cobra.Command, args []string) (err error) {
-	if len(args) != 2 {
-		return usageError("one source and dest file required")
-	}
-	b, err := store.ImageBuilder(flagImage, flagAuthor)
-	if err != nil {
-		return
-	}
-	defer b.Close()
-	b.AddFile(args[0], args[1])
-	if err = b.Err(); err == nil {
-		fmt.Fprintln(os.Stdout, b.Image().ID())
-	}
-	return
-}*/
 
 func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 	if len(args) != 0 {
