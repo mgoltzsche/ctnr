@@ -45,6 +45,10 @@ func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 		err = fmt.Errorf("copy to temp file: %s", err)
 		return
 	}
+	if err = tmpFile.Sync(); err != nil {
+		err = fmt.Errorf("sync temp file: %s", err)
+		return
+	}
 	tmpFile.Close()
 
 	// Rename temp file

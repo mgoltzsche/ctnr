@@ -15,9 +15,13 @@ REPOPATH="$(cd "$REPOPATH" && pwd)"
 PKGNAME=github.com/mgoltzsche/cntnr
 MAIN=$PKGNAME/cmd/cntnr
 BINARY=cntnr
+LDFLAGS=
+[ ! "${BUILD_STATIC:-false}" = true ] || LDFLAGS='-extldflags "-static"'
 
-# Exclude ostree since not available on ubuntu 16.04
-export BUILDTAGS=containers_image_ostree_stub
+# Exclude github.com/containers/image dependencies (exclude ostree since not available on ubuntu 16.04)
+# github.com/containers/storage specific tags: btrfs_noversion, static_build, exclude_graphdriver_devicemapper
+BUILDTAGS=${BUILDTAGS:-'containers_image_ostree_stub containers_image_storage_stub containers_image_openpgp libdm_no_deferred_remove btrfs_noversion'}
+[ ! "${BUILD_STATIC:-false}" = true ] || BUILDTAGS="$BUILDTAGS linux static_build exclude_graphdriver_devicemapper"
 
 initWorkspace() {
 	# Create workspace
@@ -36,9 +40,9 @@ initWorkspace() {
 		# Fetch dependencies
 		(
 			cd "$GOPATH/src/$PKGNAME" &&
-			"$VNDR" -whitelist='.*' &&
+			"$VNDR" -whitelist='.*' #&&
 			# Replace 'Sirupsen' with 'sirupsen' since he renamed his profile which causes conflicts in mtree and image-tools
-			(find "$GOPATH/src/$PKGNAME/vendor" -type f -name '*.go' -print0 | xargs -0 -n 1 sed -i 's/"github.com\/Sirupsen\/logrus"/"github.com\/sirupsen\/logrus"/g')
+			#(find "$GOPATH/src/$PKGNAME/vendor" -type f -name '*.go' -print0 | xargs -0 -n 1 sed -i 's/"github.com\/Sirupsen\/logrus"/"github.com\/sirupsen\/logrus"/g')
 		) || return 1
 	fi
 }
@@ -56,7 +60,7 @@ case "$1" in
 		initWorkspace &&
 
 		# Build cntnr binary
-		go build -o dist/bin/$BINARY -tags "$BUILDTAGS" $PKGNAME &&
+		go build -o dist/bin/$BINARY -a -ldflags "$LDFLAGS" -tags "$BUILDTAGS" $PKGNAME &&
 
 		# Build and run tests
 		go test -tags "$BUILDTAGS" $PKGNAME/model
@@ -92,7 +96,7 @@ case "$1" in
 		rm -rf "$WORKSPACE/src/$PKGNAME" &&
 		mkdir -p "$WORKSPACE/src/$PKGNAME" &&
 		ln -s "$REPOPATH"/* "$WORKSPACE/src/$PKGNAME" &&
-		rm "$WORKSPACE/src/$PKGNAME/build" &&
+		rm "$WORKSPACE/src/$PKGNAME/build" "$WORKSPACE/src/$PKGNAME/vendor" &&
 		cat <<-EOF
 			################################################################
 			# Setup LiteIDE project using the main package's context menu: #

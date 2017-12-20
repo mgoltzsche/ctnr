@@ -67,6 +67,9 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 			return
 		}
 	} else if _, e := os.Lstat(blobDir); os.IsNotExist(e) {
+		if _, e = os.Stat(externalBlobDir); os.IsNotExist(e) {
+			return r, fmt.Errorf("blob dir: %s", err)
+		}
 		if err = os.Symlink(externalBlobDir, blobDir); err != nil {
 			return
 		}

@@ -174,12 +174,18 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 
 	// Create temp image directory
 	name, ref := nameAndRef(srcRef)
+	if err = os.MkdirAll(s.repoDir, 0775); err != nil {
+		return
+	}
 	imgDir, err := ioutil.TempDir(s.repoDir, "tmpimg-")
 	if err != nil {
 		return
 	}
 	defer os.RemoveAll(imgDir)
 	imgBlobDir := filepath.Join(imgDir, "blobs")
+	if err = os.MkdirAll(s.blobs.blobDir, 0775); err != nil {
+		return
+	}
 	if err = os.Symlink(s.blobs.blobDir, imgBlobDir); err != nil {
 		return
 	}

@@ -109,7 +109,13 @@ func (b *HookBuilder) AddPortMapEntry(entry PortMapEntry) {
 	b.hook.Ports = append(b.hook.Ports, entry)
 }
 
-func (b *HookBuilder) Build(spec *generate.Generator) error {
+func (b *HookBuilder) Build(spec *generate.Generator) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("generate hook call: %s", err)
+		}
+	}()
+
 	//hookBinary, err := exec.LookPath("cntnr-hooks")
 	executable, err := os.Executable()
 	if err != nil {
@@ -170,8 +176,8 @@ func (b *HookBuilder) Build(spec *generate.Generator) error {
 	// TODO: better parse hook args directly by using same code the hook uses
 	j, err := json.Marshal(b.hook)
 	if err != nil {
-		return fmt.Errorf("build hook args: %s", err)
+		return
 	}
 	spec.AddAnnotation(ANNOTATION_HOOK_ARGS, string(j))
-	return nil
+	return
 }

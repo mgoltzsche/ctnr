@@ -21,7 +21,13 @@ const (
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.cntnr.bundle.id"
 )
 
-func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBuilder) error {
+func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBuilder) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("generate OCI bundle spec: %s", err)
+		}
+	}()
+
 	vols := NewVolumeResolver(p)
 
 	if rootless {

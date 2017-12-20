@@ -40,9 +40,11 @@ Though this does not solve the whole problem since some applications may still n
 
 
 ## Build
-Build the binary dist/bin/cntnr
+Build the binary dist/bin/cntnr (requires docker)
 ```
-./build.sh
+git clone https://github.com/mgoltzsche/cntnr.git
+cd cntnr
+make
 ```
 
 
@@ -55,7 +57,7 @@ hello world
 ```
 
 ### Create and run Firefox as unprivileged user
-Build a Firefox ESR container image tagged as `local/firefox:alpine`:
+Build a Firefox ESR container image `local/firefox:alpine`:
 ```
 cntnr image create \
 	--from=docker://alpine:3.7 \
@@ -90,6 +92,6 @@ cntnr bundle run firefox
 - apply CLI/compose network configuration
 - health check
 - systemd integration (notify when startup complete)
-- service discovery integration (consul, etcd)
 - network manager daemon with ACL to be used by unprivileged users to configure their container networks
-- container annotation driven env var sync with distributed KV store (consul, etcd) to e.g. auto-configure webserver/loadbalancer or for basic master election
+- _service discovery integration (consul, etcd)_
+- _container annotation driven env var sync with distributed KV store (consul, etcd) to e.g. auto-configure webserver/loadbalancer or for basic master election_
