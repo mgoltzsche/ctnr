@@ -54,23 +54,22 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 
 	// Init network IDs or host mode
 	networks := service.Networks
-	useDefaultNetwork := len(networks) == 0
 	useNoNetwork := sliceutils.Contains(networks, "none")
 	useHostNetwork := sliceutils.Contains(networks, "host")
 	if (useNoNetwork || useHostNetwork) && len(networks) > 1 {
 		return fmt.Errorf("transform: multiple networks are not supported when 'host' or 'none' network supplied")
 	}
-	if useDefaultNetwork {
+	if len(networks) == 0 {
 		if rootless {
 			networks = []string{}
 			useHostNetwork = true
 		} else {
 			networks = []string{"default"}
 		}
-	} else if rootless && !useHostNetwork {
-		return fmt.Errorf("transform: no networks supported in rootless mode")
-	} else if (useNoNetwork || useHostNetwork) && len(networks) > 0 {
+	} else if useNoNetwork || useHostNetwork {
 		networks = []string{}
+	} else if rootless {
+		return fmt.Errorf("transform: no networks supported in rootless mode")
 	}
 
 	// Use host networks by removing 'network' namespace

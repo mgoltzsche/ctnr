@@ -1,5 +1,5 @@
 BUILDIMAGE=local/cntnr-build:latest
-DOCKERRUN=docker run -v "${REPODIR}:/work" -w /work -u `id -u`:`id -g`
+DOCKERRUN=docker run --name cntnr-build --rm -v "${REPODIR}:/work" -w /work -u `id -u`:`id -g`
 
 REPODIR=$(shell pwd)
 GOPATH=${REPODIR}/build
@@ -81,7 +81,7 @@ dependencies: .workspace
 		rm -f ${GOPATH}/src/${PKGNAME}/build
 
 install:
-	cp dist/bin/cntnr /bin/cntnr
+	cp dist/bin/cntnr /usr/local/bin/cntnr
 
 clean:
 	rm -rf ./build ./dist

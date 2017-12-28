@@ -18,10 +18,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
+	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/image/builder"
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
@@ -230,7 +232,8 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 	}
 	defer lockedStore.Close()
 
-	img, err := imageBuilder.Build(lockedStore, store.BundleStore, flagRootless)
+	cache := builder.NewImageBuildCache(filepath.Join(flagStoreDir, "image-build-cache"))
+	img, err := imageBuilder.Build(lockedStore, store.BundleStore, cache, flagRootless, log.NewStdLogger(os.Stderr))
 	if err == nil {
 		fmt.Fprintln(os.Stdout, img.ID())
 	}

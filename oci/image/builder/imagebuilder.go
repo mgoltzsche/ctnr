@@ -13,13 +13,14 @@ import (
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/mgoltzsche/cntnr/run"
+	"github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runtime-tools/generate"
 	"github.com/pkg/errors"
 )
 
 type ImageBuilder struct {
-	steps []func(*buildState) error
+	steps []func(*BuildState) error
 }
 
 func NewImageBuilder() *ImageBuilder {
@@ -27,49 +28,49 @@ func NewImageBuilder() *ImageBuilder {
 }
 
 func (b *ImageBuilder) FromImage(image string) {
-	b.steps = append(b.steps, func(state *buildState) error {
-		return state.FromImage(image)
+	b.steps = append(b.steps, func(builder *BuildState) error {
+		return builder.FromImage(image)
 	})
 }
 
 func (b *ImageBuilder) SetAuthor(image string) {
-	b.steps = append(b.steps, func(state *buildState) error {
-		state.SetAuthor(image)
+	b.steps = append(b.steps, func(builder *BuildState) error {
+		builder.SetAuthor(image)
 		return nil
 	})
 }
 
 func (b *ImageBuilder) SetEntrypoint(entrypoint []string) {
-	b.steps = append(b.steps, func(state *buildState) error {
-		return state.SetEntrypoint(entrypoint)
+	b.steps = append(b.steps, func(builder *BuildState) error {
+		return builder.SetEntrypoint(entrypoint)
 	})
 }
 
 func (b *ImageBuilder) SetCmd(cmd []string) {
-	b.steps = append(b.steps, func(state *buildState) error {
-		return state.SetCmd(cmd)
+	b.steps = append(b.steps, func(builder *BuildState) error {
+		return builder.SetCmd(cmd)
 	})
 }
 
 func (b *ImageBuilder) Run(cmd string) {
-	b.steps = append(b.steps, func(state *buildState) error {
-		return state.Run(cmd)
+	b.steps = append(b.steps, func(builder *BuildState) error {
+		return builder.Run(cmd)
 	})
 }
 
 func (b *ImageBuilder) Tag(tag string) {
-	b.steps = append(b.steps, func(state *buildState) error {
-		return state.Tag(tag)
+	b.steps = append(b.steps, func(builder *BuildState) error {
+		return builder.Tag(tag)
 	})
 }
 
-func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, rootless bool) (img image.Image, err error) {
+func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, info log.Logger) (img image.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("build image: %s", err)
 		}
 	}()
-	state := buildState{images: images, bundles: bundles, rootless: rootless}
+	state := NewBuildState(images, bundles, cache, rootless, info)
 	defer func() {
 		if e := state.Close(); e != nil {
 			err = multierror.Append(err, e)
@@ -95,17 +96,28 @@ func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleSto
 	return *state.image, nil
 }
 
-type buildState struct {
+type BuildState struct {
 	images   image.ImageStoreRW
 	bundles  bundle.BundleStore
 	config   ispecs.Image
 	image    *image.Image
+	cache    ImageBuildCache
 	bundle   *bundle.LockedBundle
 	author   string
 	rootless bool
+	info     log.Logger
 }
 
-func (b *buildState) initBundle(cmd string) (err error) {
+func NewBuildState(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, info log.Logger) (r BuildState) {
+	r.images = images
+	r.bundles = bundles
+	r.cache = cache
+	r.rootless = rootless
+	r.info = info
+	return
+}
+
+func (b *BuildState) initBundle(cmd string) (err error) {
 	entrypoint := []string{"/bin/sh", "-c"}
 	if b.bundle == nil {
 		var bb *bundle.BundleBuilder
@@ -141,30 +153,30 @@ func (b *buildState) initBundle(cmd string) (err error) {
 	return
 }
 
-func (b *buildState) SetAuthor(author string) {
+func (b *BuildState) SetAuthor(author string) {
 	b.author = author
 	b.config.Author = author
 }
 
-func (b *buildState) SetEntrypoint(entrypoint []string) (err error) {
+func (b *BuildState) SetEntrypoint(entrypoint []string) (err error) {
 	entrypointJson, err := json.Marshal(entrypoint)
 	if err != nil {
 		return
 	}
 	b.config.Config.Entrypoint = entrypoint
-	return b.commitConfig("ENTRYPOINT " + string(entrypointJson))
+	return b.cached("ENTRYPOINT "+string(entrypointJson), b.commitConfig)
 }
 
-func (b *buildState) SetCmd(cmd []string) (err error) {
+func (b *BuildState) SetCmd(cmd []string) (err error) {
 	cmdJson, err := json.Marshal(cmd)
 	if err != nil {
 		return
 	}
 	b.config.Config.Cmd = cmd
-	return b.commitConfig("CMD " + string(cmdJson))
+	return b.cached("CMD "+string(cmdJson), b.commitConfig)
 }
 
-func (b *buildState) FromImage(image string) (err error) {
+func (b *BuildState) FromImage(image string) (err error) {
 	if b.image != nil {
 		return fmt.Errorf("base image must be defined as first build step")
 	}
@@ -172,53 +184,45 @@ func (b *buildState) FromImage(image string) (err error) {
 	if e != nil {
 		return e
 	}
-	b.image = &img
+	return b.setImage(&img)
+}
+
+func (b *BuildState) setImage(img *image.Image) (err error) {
+	b.image = img
 	b.config, err = img.Config()
 	b.config.Author = b.author
 	return
 }
 
-func (b *buildState) Run(cmd string) (err error) {
+func (b *BuildState) Run(cmd string) (err error) {
 	if b.image == nil {
 		err = fmt.Errorf("cannot run a command in an empty image")
 		return
 	}
 
-	if err = b.initBundle(cmd); err != nil {
-		return
-	}
-
-	defer func() {
-		if err != nil {
-			// Release bundle when operation failed
-			if b.bundle != nil {
-				err = multierror.Append(err, b.bundle.Close())
-				b.bundle = nil
-			}
-			err = fmt.Errorf("run: %s", err)
+	comment := fmt.Sprintf("RUN /bin/sh -c %q", cmd)
+	return b.cached(comment, func(comment string) (err error) {
+		if err = b.initBundle(cmd); err != nil {
+			return
 		}
-	}()
 
-	// Run bundle and create new image layer from the result
-	spec, err := b.bundle.Spec()
-	if err != nil {
-		return
-	}
-	container := run.NewRuncContainer(b.bundle.ID(), b.bundle, filepath.Join(b.bundle.Dir(), spec.Root.Path), log.NewStdLogger(os.Stderr))
-	if err = container.Start(); err != nil {
-		return
-	}
-	if err = container.Wait(); err != nil {
-		return
-	}
-	cmdJson, err := json.Marshal(spec.Process.Args)
-	if err != nil {
-		return
-	}
-	return b.commitLayer("RUN " + string(cmdJson))
+		// Run bundle and create new image layer from the result
+		spec, err := b.bundle.Spec()
+		if err != nil {
+			return
+		}
+		container := run.NewRuncContainer(b.bundle.ID(), b.bundle, filepath.Join(b.bundle.Dir(), spec.Root.Path), log.NewStdLogger(os.Stderr))
+		if err = container.Start(); err != nil {
+			return
+		}
+		if err = container.Wait(); err != nil {
+			return
+		}
+		return b.commitLayer(comment)
+	})
 }
 
-func (b *buildState) Tag(tag string) (err error) {
+func (b *BuildState) Tag(tag string) (err error) {
 	if b.image == nil {
 		return fmt.Errorf("no image to tag")
 	}
@@ -285,7 +289,7 @@ func (b *ImageBuilder) AddFile(src, dest string) {
 	b.CommitLayer("add file to image")
 }*/
 
-func (b *buildState) commitLayer(comment string) (err error) {
+func (b *BuildState) commitLayer(comment string) (err error) {
 	defer func() {
 		if err != nil {
 			err = errors.Wrap(err, "commit layer")
@@ -298,20 +302,14 @@ func (b *buildState) commitLayer(comment string) (err error) {
 	if err != nil {
 		return
 	}
-	c, err := img.Config()
-	if err != nil {
+	if err = b.setImage(&img); err != nil {
 		return
 	}
-	b.image = &img
 	newImageId := img.ID()
-	if err = b.bundle.SetParentImageId(&newImageId); err != nil {
-		return
-	}
-	b.config = c
-	return
+	return b.bundle.SetParentImageId(&newImageId)
 }
 
-func (b *buildState) commitConfig(comment string) (err error) {
+func (b *BuildState) commitConfig(comment string) (err error) {
 	defer func() {
 		if err != nil {
 			err = errors.Wrap(err, "commit config")
@@ -324,20 +322,19 @@ func (b *buildState) commitConfig(comment string) (err error) {
 		Comment:    comment,
 		EmptyLayer: false,
 	})
-	img, err := b.images.AddImageConfig(b.config, b.bundle.Image())
+	var parentImgId *digest.Digest
+	if b.image != nil {
+		imgId := b.image.ID()
+		parentImgId = &imgId
+	}
+	img, err := b.images.AddImageConfig(b.config, parentImgId)
 	if err != nil {
 		return
 	}
-	c, err := img.Config()
-	if err != nil {
-		return
-	}
-	b.image = &img
-	b.config = c
-	return
+	return b.setImage(&img)
 }
 
-func (b *buildState) AddTag(name string) (err error) {
+func (b *BuildState) AddTag(name string) (err error) {
 	img, err := b.images.TagImage(b.image.ID(), name)
 	if err == nil {
 		b.image = &img
@@ -345,7 +342,57 @@ func (b *buildState) AddTag(name string) (err error) {
 	return
 }
 
-func (b *buildState) Close() (err error) {
+func (b *BuildState) cached(uniqComment string, call func(comment string) error) (err error) {
+	b.info.Println(uniqComment)
+	var parentImgId digest.Digest
+	if b.image != nil {
+		parentImgId = (*b.image).ID()
+		var cachedImgId digest.Digest
+		cachedImgId, err = b.cache.Get(parentImgId, uniqComment)
+		if err == nil {
+			var cachedImg image.Image
+			if cachedImg, err = b.images.Image(cachedImgId); err == nil {
+				// TODO: distiguish between image not found and serious error
+				if err = b.setImage(&cachedImg); err != nil {
+					return fmt.Errorf("cached image: %s", err)
+				}
+				b.info.Printf("  -> using cached image %s", cachedImg.ID())
+				return
+			}
+		} else if e, ok := err.(CacheError); !ok || !e.Temporary() {
+			// if no entry not found error
+			return err
+		} else {
+			err = nil
+		}
+	}
+
+	b.info.Println("  -> building ...")
+
+	defer func() {
+		if err != nil {
+			// Release bundle when operation failed
+			if b.bundle != nil {
+				err = multierror.Append(err, b.bundle.Close())
+				b.bundle = nil
+			}
+		}
+	}()
+
+	if err = call(uniqComment); err != nil {
+		return
+	}
+
+	if string(parentImgId) != "" {
+		err = b.cache.Put(parentImgId, uniqComment, (*b.image).ID())
+	}
+
+	b.info.Printf("  -> built image %s", (*b.image).ID())
+
+	return
+}
+
+func (b *BuildState) Close() (err error) {
 	if b.bundle != nil {
 		if e := b.bundle.Close(); e != nil {
 			err = multierror.Append(err, e)
