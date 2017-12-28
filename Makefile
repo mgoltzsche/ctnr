@@ -3,7 +3,9 @@ DOCKERRUN=docker run --name cntnr-build --rm -v "${REPODIR}:/work" -w /work -u `
 
 REPODIR=$(shell pwd)
 GOPATH=${REPODIR}/build
+LITEIDE_WORKSPACE=${GOPATH}/liteide-workspace
 PKGNAME=github.com/mgoltzsche/cntnr
+PKGRELATIVEROOT=$(shell echo /build/src/${PKGNAME} | sed -E 's/\/+[^\/]*/..\//g')
 VENDORLOCK=${REPODIR}/vendor/ready
 BINARY=cntnr
 
@@ -14,14 +16,16 @@ LDFLAGS_STATIC=${LDFLAGS} -extldflags '-static'
 CNI_VERSION=0.6.0
 CNIGOPATH=${GOPATH}/cni
 
+COBRA=${GOPATH}/bin/cobra
 
-all: build-static cni-plugins-static
 
-build-static: buildimage
-	${DOCKERRUN} ${BUILDIMAGE} make build BUILDTAGS="${BUILDTAGS_STATIC}" LDFLAGS="${LDFLAGS_STATIC}"
+all: binary-static cni-plugins-static
 
-build: dependencies
-	# Build application
+binary-static: .buildimage
+	${DOCKERRUN} ${BUILDIMAGE} make binary BUILDTAGS="${BUILDTAGS_STATIC}" LDFLAGS="${LDFLAGS_STATIC}"
+
+binary: dependencies
+	# Building application:
 	GOPATH="${GOPATH}" \
 	go build -o dist/bin/${BINARY} -a -ldflags "${LDFLAGS}" -tags "${BUILDTAGS}" "${PKGNAME}"
 
@@ -29,18 +33,22 @@ test: dependencies
 	# Run tests. TODO: more tests
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/model"
 
+format:
+	# Format the go code
+	(find . -mindepth 1 -maxdepth 1 -type d; ls *.go) | grep -Ev '^(./vendor|./dist|./build|./.git)(/.*)?$$' | xargs -n1 gofmt -w
+
 runc: dependencies
 	rm -rf "${GOPATH}/src/github.com/opencontainers/runc"
 	mkdir -p "${GOPATH}/src/github.com/opencontainers"
 	cp -r "${GOPATH}/src/${PKGNAME}/vendor/github.com/opencontainers/runc" "${GOPATH}/src/github.com/opencontainers/runc"
-	ln -s "${REPODIR}/vendor" "${GOPATH}/src/github.com/opencontainers/runc/vendor"
+	ln -sr "${REPODIR}/vendor" "${GOPATH}/src/github.com/opencontainers/runc/vendor"
 	cd "${GOPATH}/src/github.com/opencontainers/runc" && \
 	export GOPATH="${GOPATH}" && \
 	make clean && \
 	make BUILDTAGS='seccomp selinux ambient' && \
 	cp runc "${REPODIR}/dist/bin/runc"
 
-cni-plugins-static: buildimage
+cni-plugins-static: .buildimage
 	${DOCKERRUN} ${BUILDIMAGE} make cni-plugins LDFLAGS="${LDFLAGS_STATIC}"
 
 cni-plugins:
@@ -61,24 +69,68 @@ cni-plugins:
 		done \
 	done
 
-buildimage:
+.buildimage:
+	# Building build image:
 	docker build -t ${BUILDIMAGE} .
 
-build-sh: buildimage
+build-sh: .buildimage
+	# Running dockerized interactive build shell
 	${DOCKERRUN} -ti ${BUILDIMAGE} /bin/sh
 
 dependencies: .workspace
-	# Fetch dependencies
-	[ "`ls vendor`" ] || \
-		(GOPATH="${GOPATH}" go get github.com/LK4D4/vndr && \
-		cd "${GOPATH}/src/${PKGNAME}" && "${GOPATH}/bin/vndr" -whitelist='.*')
+ifeq ($(shell [ ! -d vendor -o "${UPDATE_DEPENDENCIES}" = TRUE ] && echo 0),0)
+	# Fetching dependencies:
+	GOPATH="${GOPATH}" go get github.com/LK4D4/vndr
+	rm -rf "${GOPATH}/vndrtmp"
+	mkdir "${GOPATH}/vndrtmp"
+	ln -sf "${REPODIR}/vendor.conf" "${GOPATH}/vndrtmp/vendor.conf"
+	(cd build/vndrtmp && "${GOPATH}/bin/vndr" -whitelist='.*')
+	rm -rf vendor
+	mv "${GOPATH}/vndrtmp/vendor" vendor
+else
+	# Skipping dependency update since ./vendor dir exists and UPDATE_DEPENDENCIES!=TRUE
+endif
+
+update-dependencies:
+	# Update dependencies
+	@make dependencies UPDATE_DEPENDENCIES=TRUE
+	# In case LiteIDE is running it must be restarted to apply the changes
 
 .workspace:
-	# Prepare workspace directory
-	[ -d "${GOPATH}" ] || mkdir -p vendor ${GOPATH}/src/${PKGNAME} && \
-		ln -sf ${REPODIR}/* ${GOPATH}/src/${PKGNAME} && \
-		ln -sf ${REPODIR}/vendor.conf ${GOPATH}/vendor.conf && \
-		rm -f ${GOPATH}/src/${PKGNAME}/build
+ifeq ($(shell [ -d "${GOPATH}" ] || echo 1), 1)
+	# Preparing build directory:
+	mkdir -p vendor "${GOPATH}/src/${PKGNAME}"
+	cd "${GOPATH}/src/${PKGNAME}" && ln -sf ${PKGRELATIVEROOT}* .
+	rm -f "${GOPATH}/src/${PKGNAME}/build"
+else
+	# Skipping build directory preparation since it already exists
+endif
+
+cobra: .workspace
+	# Build cobra CLI to manage the application's CLI
+	GOPATH="${GOPATH}" go get github.com/spf13/cobra/cobra
+	"${GOPATH}/bin/cobra"
+
+liteide: dependencies
+	rm -rf "${LITEIDE_WORKSPACE}"
+	mkdir "${LITEIDE_WORKSPACE}"
+	cp -r "${REPODIR}/vendor" "${LITEIDE_WORKSPACE}/src"
+	mkdir -p "${LITEIDE_WORKSPACE}/src/${PKGNAME}"
+	ln -sr "${REPODIR}"/* "${LITEIDE_WORKSPACE}/src/${PKGNAME}"
+	(cd "${LITEIDE_WORKSPACE}/src/${PKGNAME}" && rm build vendor dist)
+	GOPATH="${LITEIDE_WORKSPACE}" \
+	liteide "${LITEIDE_WORKSPACE}/src/${PKGNAME}" &
+	################################################################
+	# Setup LiteIDE project using the main package's context menu: #
+	#  - 'Build Path Configuration':                               #
+	#    - Make sure 'Inherit System GOPATH' is checked!           #
+	#    - To exclude ostree (required on ubuntu 16.04) set:       #
+	#        BUILDFLAGS=-tags containers_image_ostree_stub         #
+	#  - 'Lock Build Path' to the top-level directory              #
+	#                                                              #
+	# CREATE NEW TOP LEVEL PACKAGES IN THE REPOSITORY DIRECTORY    #
+	# EXTERNALLY AND RESTART LiteIDE WITH THIS COMMAND!            #
+	################################################################
 
 install:
 	cp dist/bin/cntnr /usr/local/bin/cntnr
