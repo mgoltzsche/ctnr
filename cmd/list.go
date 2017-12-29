@@ -17,7 +17,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/mgoltzsche/cntnr/run"
+	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -33,11 +33,10 @@ func runList(cmd *cobra.Command, args []string) error {
 		return usageError("No args expected")
 	}
 
-	containers, err := run.NewContainerManager(flagStateDir, debugLog)
+	containers, err := factory.NewContainerManager(flagStateDir, flagRootless, debugLog)
 	if err != nil {
 		return err
 	}
-	defer containers.Close()
 
 	l, err := containers.List()
 	if err != nil {

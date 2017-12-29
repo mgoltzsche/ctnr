@@ -13,6 +13,7 @@ import (
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/mgoltzsche/cntnr/run"
+	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runtime-tools/generate"
@@ -211,7 +212,15 @@ func (b *BuildState) Run(cmd string) (err error) {
 		if err != nil {
 			return
 		}
-		container := run.NewRuncContainer(b.bundle.ID(), b.bundle, filepath.Join(b.bundle.Dir(), spec.Root.Path), log.NewStdLogger(os.Stderr))
+		rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
+		manager, err := factory.NewContainerManager(rootfs, b.rootless, log.NewStdLogger(os.Stderr))
+		if err != nil {
+			return
+		}
+		container, err := manager.NewContainer(b.bundle.ID(), b.bundle, run.NewStdContainerIO())
+		if err != nil {
+			return
+		}
 		if err = container.Start(); err != nil {
 			return
 		}

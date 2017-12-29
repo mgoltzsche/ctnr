@@ -1,8 +1,7 @@
-package run
+package runcrunner
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"sync"
@@ -10,69 +9,13 @@ import (
 	"time"
 
 	"github.com/mgoltzsche/cntnr/log"
-	rspecs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/mgoltzsche/cntnr/run"
 )
 
-type ContainerBundle interface {
-	ID() string
-	Dir() string
-	Spec() (*rspecs.Spec, error)
-	Close() error
-}
-
-type Container interface {
-	ID() string
-	Start() error
-	Stop()
-	Wait() error
-	Close() error
-}
-
-type ExitError struct {
-	status int
-	cause  error
-}
-
-func (e *ExitError) Status() int {
-	return e.status
-}
-
-func (e *ExitError) Error() string {
-	if e.cause == nil {
-		return fmt.Sprintf("container terminated: exit status %d", e.status)
-	} else {
-		return fmt.Sprintf("container terminated: exit status %d. error: %s", e.status, e.cause)
-	}
-}
-
-func exitError(err error) error {
-	if exiterr, ok := err.(*exec.ExitError); ok {
-		if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-			return &ExitError{status.ExitStatus(), nil}
-		}
-	}
-	return err
-}
-
-func multiError(ex, err error) error {
-	if err == nil {
-		err = ex
-	} else if ex != nil {
-		if exiterr, ok := ex.(*ExitError); ok {
-			err = &ExitError{exiterr.status, err}
-		} else {
-			err = fmt.Errorf("%s, await container termination: %s", err, ex)
-		}
-	}
-	return err
-}
-
 type RuncContainer struct {
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
+	io      run.ContainerIO
 	id      string
-	bundle  ContainerBundle
+	bundle  run.ContainerBundle
 	rootDir string
 	cmd     *exec.Cmd
 	mutex   *sync.Mutex
@@ -81,15 +24,14 @@ type RuncContainer struct {
 	err     error
 }
 
-func NewRuncContainer(id string, bundle ContainerBundle, rootDir string, debug log.Logger) *RuncContainer {
+func NewRuncContainer(id string, bundle run.ContainerBundle, rootDir string, ioe run.ContainerIO, debug log.Logger) *RuncContainer {
 	if id == "" {
 		if id = bundle.ID(); id == "" {
 			panic("no container ID provided and bundle ID is empty")
 		}
 	}
 	return &RuncContainer{
-		Stdout:  os.Stdout,
-		Stderr:  os.Stderr,
+		io:      ioe,
 		id:      id,
 		bundle:  bundle,
 		rootDir: rootDir,
@@ -119,9 +61,9 @@ func (c *RuncContainer) Start() (err error) {
 	c.err = nil
 	c.cmd = exec.Command("runc", "--root", c.rootDir, "run", c.ID())
 	c.cmd.Dir = c.bundle.Dir()
-	c.cmd.Stdout = c.Stdout
-	c.cmd.Stderr = c.Stderr
-	c.cmd.Stdin = c.Stdin
+	c.cmd.Stdout = c.io.Stdout
+	c.cmd.Stderr = c.io.Stderr
+	c.cmd.Stdin = c.io.Stdin
 
 	if spec.Process.Terminal && c.cmd.Stdin == nil {
 		c.cmd.Stdin = os.Stdin
@@ -144,7 +86,7 @@ func (c *RuncContainer) Start() (err error) {
 
 func (c *RuncContainer) cmdWait() {
 	defer c.wait.Done()
-	c.err = exitError(c.cmd.Wait())
+	c.err = run.NewExitError(c.cmd.Wait())
 	c.debug.Printf("Container %q terminated", c.ID())
 }
 
@@ -187,7 +129,7 @@ func (c *RuncContainer) stop() {
 	}
 	close(quit)
 	c.cmd = nil
-	c.err = multiError(ex, err)
+	c.err = run.WrapExitError(ex, err)
 	return
 }
 
@@ -200,7 +142,7 @@ func (c *RuncContainer) Close() error {
 	c.Stop()
 	err := c.Wait()
 	if e := c.bundle.Close(); e != nil {
-		err = multiError(err, e)
+		err = run.WrapExitError(err, e)
 	}
 	return err
 }

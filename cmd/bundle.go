@@ -23,6 +23,7 @@ import (
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/run"
+	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -143,11 +144,10 @@ func runBundleRun(cmd *cobra.Command, args []string) (err error) {
 		return usageError("Exactly one argument required")
 	}
 
-	containers, err := run.NewContainerManager(flagStateDir, debugLog)
+	containers, err := factory.NewContainerManager(flagStateDir, flagRootless, debugLog)
 	if err != nil {
 		return err
 	}
-	defer containers.Close()
 
 	b, err := bundleByIdOrDir(args[0])
 	if err != nil {
@@ -158,10 +158,15 @@ func runBundleRun(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	c := run.NewRuncContainer("", lockedBundle, flagStateDir, debugLog)
+	ioe := run.NewStdContainerIO()
 	if flagsBundle.last().StdinOpen {
-		c.Stdin = os.Stdin
+		ioe.Stdin = os.Stdin
 	}
+	c, err := containers.NewContainer("", lockedBundle, ioe)
+	if err != nil {
+		return
+	}
+
 	defer c.Close()
 
 	if err = c.Start(); err != nil {

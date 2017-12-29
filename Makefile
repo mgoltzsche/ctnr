@@ -9,8 +9,9 @@ PKGRELATIVEROOT=$(shell echo /build/src/${PKGNAME} | sed -E 's/\/+[^\/]*/..\//g'
 VENDORLOCK=${REPODIR}/vendor/ready
 BINARY=cntnr
 
-BUILDTAGS?=containers_image_ostree_stub containers_image_storage_stub containers_image_openpgp libdm_no_deferred_remove btrfs_noversion
-BUILDTAGS_STATIC=${BUILDTAGS} linux static_build exclude_graphdriver_devicemapper
+BUILDTAGS_RUNC=seccomp selinux ambient
+BUILDTAGS?=containers_image_ostree_stub containers_image_storage_stub containers_image_openpgp libdm_no_deferred_remove btrfs_noversion ${BUILDTAGS_RUNC}
+BUILDTAGS_STATIC=${BUILDTAGS} linux static_build exclude_graphdriver_devicemapper mgoltzsche_cntnr_libcontainer
 LDFLAGS_STATIC=${LDFLAGS} -extldflags '-static'
 
 CNI_VERSION=0.6.0
@@ -45,7 +46,7 @@ runc: dependencies
 	cd "${GOPATH}/src/github.com/opencontainers/runc" && \
 	export GOPATH="${GOPATH}" && \
 	make clean && \
-	make BUILDTAGS='seccomp selinux ambient' && \
+	make BUILDTAGS="${BUILDTAGS_RUNC}" && \
 	cp runc "${REPODIR}/dist/bin/runc"
 
 cni-plugins-static: .buildimage
@@ -88,7 +89,7 @@ ifeq ($(shell [ ! -d vendor -o "${UPDATE_DEPENDENCIES}" = TRUE ] && echo 0),0)
 	rm -rf vendor
 	mv "${GOPATH}/vndrtmp/vendor" vendor
 else
-	# Skipping dependency update since ./vendor dir exists and UPDATE_DEPENDENCIES!=TRUE
+	# Skipping dependency update
 endif
 
 update-dependencies:
@@ -114,7 +115,7 @@ cobra: .workspace
 liteide: dependencies
 	rm -rf "${LITEIDE_WORKSPACE}"
 	mkdir "${LITEIDE_WORKSPACE}"
-	cp -r "${REPODIR}/vendor" "${LITEIDE_WORKSPACE}/src"
+	cp -r vendor "${LITEIDE_WORKSPACE}/src"
 	mkdir -p "${LITEIDE_WORKSPACE}/src/${PKGNAME}"
 	ln -sr "${REPODIR}"/* "${LITEIDE_WORKSPACE}/src/${PKGNAME}"
 	(cd "${LITEIDE_WORKSPACE}/src/${PKGNAME}" && rm build vendor dist)

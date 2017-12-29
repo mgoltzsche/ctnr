@@ -81,6 +81,29 @@ Run the previously prepared `firefox` bundle as container:
 cntnr bundle run firefox
 ```
 
+## Permission problems when running a container in a container
+```
+sudo dist/bin/cntnr bundle create -b runc --update --tty=true \
+	--mount=./dist/bin/cntnr:/bin/cntnr:exec:ro \
+	--mount=/etc/containers/policy.json:/etc/containers/policy.json \
+	--mount=dist/cni-plugins:/cni \
+	--mount=/boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic \
+	docker://ubuntu:16.04
+apt-get update
+apt-get install wget
+wget -O /bin/checkconfig https://raw.githubusercontent.com/moby/moby/master/contrib/check-config.sh && chmod +x /bin/checkconfig
+checkconfig # docker host check script
+wget -O /bin/runc https://github.com/opencontainers/runc/releases/download/v1.0.0-rc4/runc.amd64 && chmod +x /bin/runc
+apt-get install apparmor cgroup-lite lxc?
+# cgroupfs-mount -> mount: permission denied
+cntnr run --rootless --tty=true docker://alpine:3.7
+strace echo # -> strace: ptrace(PTRACE_TRACEME, ...) operation not permitted
+
+# Works in privileged docker container
+# => Tried to add capabilities:
+#  "CAP_SYS_PTRACE",
+#  "CAP_SYS_ADMIN"
+```
 
 ## Roadmap
 

@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
 )
 
@@ -59,13 +58,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		project.Services[s.Name] = *s
 	}
 
-	containers, err := run.NewContainerManager(flagStateDir, debugLog)
-	if err != nil {
-		return err
-	}
-	defer containers.Close()
-
-	return runProject(project, containers)
+	return runProject(project)
 }
 
 func split(args []string, sep string) [][]string {

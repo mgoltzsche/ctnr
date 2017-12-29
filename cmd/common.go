@@ -19,10 +19,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/mgoltzsche/cntnr/run"
+	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 )
@@ -75,31 +77,50 @@ func exitError(exitCode int, frmt string, values ...interface{}) {
 	os.Exit(exitCode)
 }
 
-func runProject(project *model.Project, containerMngr *run.ContainerManager) error {
+func runProject(project *model.Project) (err error) {
+	manager, err := factory.NewContainerManager(flagStateDir, flagRootless, debugLog)
+	if err != nil {
+		return
+	}
+
 	istore, err := store.OpenLockedImageStore()
 	if err != nil {
-		return err
+		return
 	}
 	defer istore.Close()
 
+	containers := run.NewContainerGroup(debugLog)
+	defer func() {
+		if e := containers.Close(); e != nil {
+			err = multierror.Append(err, e)
+		}
+	}()
+	containers.HandleSignals()
+
 	for _, s := range project.Services {
 		fmt.Println(s.JSON())
-		bundle, err := createRuntimeBundle(istore, project, &s, "", false)
-		if err != nil {
+		var bundle *bundle.LockedBundle
+		if bundle, err = createRuntimeBundle(istore, project, &s, "", false); err != nil {
 			return err
 		}
-		c := containerMngr.NewContainer("", bundle)
+
+		ioe := run.NewStdContainerIO()
 		if s.StdinOpen {
-			c.Stdin = os.Stdin
+			ioe.Stdin = os.Stdin
 		}
-		if err = containerMngr.Deploy(c); err != nil {
-			containerMngr.Stop()
+
+		var container run.Container
+		if container, err = manager.NewContainer("", bundle, ioe); err != nil {
+			return err
+		}
+
+		if err = containers.Deploy(container); err != nil {
 			return err
 		}
 	}
-	containerMngr.HandleSignals()
+
 	istore.Close()
-	return containerMngr.Wait()
+	return containers.Wait()
 }
 
 func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *model.Service, bundleIdOrDir string, update bool) (b *bundle.LockedBundle, err error) {
