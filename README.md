@@ -82,25 +82,49 @@ cntnr bundle run firefox
 ```
 
 ## Permission problems when running a container in a container
+Tests on an ubuntu 16.04 host
 ```
-sudo dist/bin/cntnr bundle create -b runc --update --tty=true \
+# Working example (privileged docker host container):
+docker run -ti --privileged --name cnestedpriv --rm \
+	-v $(pwd)/dist/bin/cntnr:/bin/cntnr \
+	ubuntu:16.04
+> cntnr run --tty=true --net=none docker://alpine:3.7
+
+# Not working (unprivileged docker host container):
+docker run -ti --name cnested --rm \
+	-v $(pwd)/dist/bin/cntnr:/bin/cntnr \
+	-v /boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic \
+	ubuntu:16.04
+> cntnr run --tty=true --net=none docker://alpine:3.7
+=> doesn't work
+> apt-get update
+> apt-get install -y wget apparmor
+> wget -O /bin/checkconfig https://raw.githubusercontent.com/moby/moby/master/contrib/check-config.sh && chmod +x /bin/checkconfig
+> checkconfig # docker host check script
+=> all general features are fine
+> cntnr run --tty=true --net=none docker://alpine:3.7
+=> still doesn't work: "WARN[0000] os: process already finished" and then terminates silently with exit code 34 => need to debug
+
+# Not working (cntnr host container):
+sudo dist/bin/cntnr bundle create -b nested --update --tty=true \
 	--mount=./dist/bin/cntnr:/bin/cntnr:exec:ro \
-	--mount=/etc/containers/policy.json:/etc/containers/policy.json \
-	--mount=dist/cni-plugins:/cni \
+	--mount=./dist/cni-plugins:/cni \
 	--mount=/boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic \
 	docker://ubuntu:16.04
-apt-get update
-apt-get install wget
-wget -O /bin/checkconfig https://raw.githubusercontent.com/moby/moby/master/contrib/check-config.sh && chmod +x /bin/checkconfig
-checkconfig # docker host check script
-wget -O /bin/runc https://github.com/opencontainers/runc/releases/download/v1.0.0-rc4/runc.amd64 && chmod +x /bin/runc
-apt-get install apparmor cgroup-lite lxc?
-# cgroupfs-mount -> mount: permission denied
-cntnr run --rootless --tty=true docker://alpine:3.7
-strace echo # -> strace: ptrace(PTRACE_TRACEME, ...) operation not permitted
+sudo dist/bin/cntnr bundle run nested
+> apt-get update
+> apt-get install -y wget apparmor # apparmor to satisfy check in checkconfig
+> wget -O /bin/checkconfig https://raw.githubusercontent.com/moby/moby/master/contrib/check-config.sh && chmod +x /bin/checkconfig
+> checkconfig # docker host check script
+=> cgroup hierarchy: nonexistent?? (see https://github.com/tianon/cgroupfs-mount)
+cntnr run --tty=true --net=none docker://alpine:3.7
+=> as in the unprivileged docker container
+strace echo
+=> strace: ptrace(PTRACE_TRACEME, ...) operation not permitted
 
-# Works in privileged docker container
-# => Tried to add capabilities:
+# Works in privileged docker container but not in unprivileged
+# => Debug and improve cntnr exit error message
+# => Look for forbidden capabilities/syscalls that can be avoided or must be added to the outer container. E.e.:
 #  "CAP_SYS_PTRACE",
 #  "CAP_SYS_ADMIN"
 ```

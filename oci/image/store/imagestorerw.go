@@ -11,7 +11,6 @@ import (
 
 	"github.com/containers/image/copy"
 	ocitransport "github.com/containers/image/oci/layout"
-	"github.com/containers/image/signature"
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/log"
@@ -28,16 +27,13 @@ var _ image.ImageStoreRW = &ImageStoreRW{}
 type ImageStoreRW struct {
 	*ImageStoreRO
 	systemContext *types.SystemContext
-	trustPolicy   *signature.PolicyContext
-	lock          lock.Locker
-	warn          log.Logger
+	//trustPolicy        *signature.PolicyContext
+	trustPolicy TrustPolicyContext
+	lock        lock.Locker
+	warn        log.Logger
 }
 
-func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, systemContext *types.SystemContext, warn log.Logger) (r *ImageStoreRW, err error) {
-	trustPolicy, err := createTrustPolicyContext()
-	if err != nil {
-		return
-	}
+func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, warn log.Logger) (r *ImageStoreRW, err error) {
 	if err = locker.Lock(); err != nil {
 		err = fmt.Errorf("open image store: %s", err)
 	}
@@ -198,7 +194,11 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	}
 
 	// Copy image
-	err = copy.Image(s.trustPolicy, destRef, srcRef, &copy.Options{
+	trustPolicy, err := s.trustPolicy.Policy()
+	if err != nil {
+		return
+	}
+	err = copy.Image(trustPolicy, destRef, srcRef, &copy.Options{
 		RemoveSignatures: false,
 		SignBy:           "",
 		ReportWriter:     os.Stdout,

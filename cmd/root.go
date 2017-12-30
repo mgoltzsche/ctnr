@@ -26,15 +26,17 @@ import (
 	"path/filepath"
 
 	"github.com/containers/image/types"
+	istore "github.com/mgoltzsche/cntnr/oci/image/store"
 	storepkg "github.com/mgoltzsche/cntnr/oci/store"
 )
 
 var (
-	flagVerbose  bool
-	flagRootless bool
-	flagCfgFile  string
-	flagStoreDir string
-	flagStateDir string
+	flagVerbose     bool
+	flagRootless    bool
+	flagCfgFile     string
+	flagStoreDir    string
+	flagStateDir    string
+	flagImagePolicy string
 
 	store    storepkg.Store
 	errorLog = log.NewStdLogger(os.Stderr)
@@ -79,18 +81,24 @@ func init() {
 
 	currUser, err := user.Current()
 	if err != nil {
-		exitError(2, "Cannot get current user: %s", err)
+		exitError(2, "cannot get current user: %s", err)
 	}
 	flagStoreDir = filepath.Join(currUser.HomeDir, ".cntnr")
 	flagStateDir = "/run/cntnr"
 	if currUser.Uid != "0" {
 		flagStateDir = "/run/user/" + currUser.Uid + "/cntnr"
 	}
+	flagImagePolicy = "insecure"
+	policyFile := "/etc/containers/policy.json"
+	if _, err = os.Stat(policyFile); err == nil {
+		flagImagePolicy = policyFile
+	}
 	f := RootCmd.PersistentFlags()
 	f.BoolVar(&flagVerbose, "verbose", false, "enables verbose log output")
 	f.BoolVar(&flagRootless, "rootless", currUser.Uid != "0", "enables image and container management as unprivileged user")
 	f.StringVar(&flagStoreDir, "store-dir", flagStoreDir, "directory to store images and containers")
 	f.StringVar(&flagStateDir, "state-dir", flagStateDir, "directory to store OCI container states (should be tmpfs)")
+	f.StringVar(&flagImagePolicy, "image-policy", flagImagePolicy, "image trust policy configuration file or 'insecure'")
 }
 
 func preRun(cmd *cobra.Command, args []string) {
@@ -112,7 +120,16 @@ func preRun(cmd *cobra.Command, args []string) {
 	if flagRootless && ctx.DockerCertPath == "" {
 		ctx.DockerCertPath = "./docker-certs"
 	}
-	store, err = storepkg.NewStore(flagStoreDir, flagRootless, ctx, errorLog, debugLog)
+
+	var imagePolicy istore.TrustPolicyContext
+	if flagImagePolicy == "" {
+		exitError(2, "empty value for --image-policy option")
+	} else if flagImagePolicy == "insecure" {
+		imagePolicy = istore.TrustPolicyInsecure()
+	} else {
+		imagePolicy = istore.TrustPolicyFromFile(flagImagePolicy)
+	}
+	store, err = storepkg.NewStore(flagStoreDir, flagRootless, ctx, imagePolicy, errorLog, debugLog)
 	exitOnError(cmd, err)
 }
 

@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/containers/image/signature"
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
@@ -53,23 +52,6 @@ func parseImageName(nameAndRef string) (name, ref string) {
 		ref = "latest"
 	}
 	return
-}
-
-func createTrustPolicyContext() (*signature.PolicyContext, error) {
-	policyFile := ""
-	var policy *signature.Policy // This could be cached across calls, if we had an application context.
-	var err error
-	//if insecurePolicy {
-	//	policy = &signature.Policy{Default: []signature.PolicyRequirement{signature.NewPRInsecureAcceptAnything()}}
-	if policyFile == "" {
-		policy, err = signature.DefaultPolicy(nil)
-	} else {
-		policy, err = signature.NewPolicyFromFile(policyFile)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return signature.NewPolicyContext(policy)
 }
 
 // TODO: Move into imagerepo

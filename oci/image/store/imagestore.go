@@ -23,15 +23,16 @@ type ImageStore struct {
 	lock lock.ExclusiveLocker
 	*ImageStoreRO
 	systemContext *types.SystemContext
+	trustPolicy   TrustPolicyContext
 	warn          log.Logger
 }
 
-func NewImageStore(store *ImageStoreRO, systemContext *types.SystemContext, warn log.Logger) (*ImageStore, error) {
+func NewImageStore(store *ImageStoreRO, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, warn log.Logger) (*ImageStore, error) {
 	lck, err := lock.NewExclusiveDirLocker(filepath.Join(os.TempDir(), "cntnr", "lock"))
 	if err != nil {
 		err = fmt.Errorf("NewImageStore: %s", err)
 	}
-	return &ImageStore{lck, store, systemContext, warn}, err
+	return &ImageStore{lck, store, systemContext, trustPolicy, warn}, err
 }
 
 func (s *ImageStore) OpenLockedImageStore() (image.ImageStoreRW, error) {
@@ -39,7 +40,7 @@ func (s *ImageStore) OpenLockedImageStore() (image.ImageStoreRW, error) {
 }
 
 func (s *ImageStore) openLockedImageStore(locker lock.Locker) (image.ImageStoreRW, error) {
-	return NewImageStoreRW(locker, s.ImageStoreRO, s.systemContext, s.warn)
+	return NewImageStoreRW(locker, s.ImageStoreRO, s.systemContext, s.trustPolicy, s.warn)
 }
 
 func (s *ImageStore) ImageGC(before time.Time) (err error) {

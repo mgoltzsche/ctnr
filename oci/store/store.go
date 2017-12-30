@@ -41,7 +41,7 @@ type LockedStore struct {
 	return
 }*/
 
-func NewStore(dir string, rootless bool, systemContext *types.SystemContext, errorLog log.Logger, debugLog log.Logger) (r Store, err error) {
+func NewStore(dir string, rootless bool, systemContext *types.SystemContext, trustPolicy istore.TrustPolicyContext, errorLog log.Logger, debugLog log.Logger) (r Store, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("init store: %s", err)
@@ -67,7 +67,7 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, err
 	blobStore := istore.NewBlobStore(blobDir, debugLog)
 	blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, debugLog)
 	rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), errorLog)
-	r.ImageStore, err = istore.NewImageStore(rostore, systemContext, errorLog)
+	r.ImageStore, err = istore.NewImageStore(rostore, systemContext, trustPolicy, errorLog)
 	if err != nil {
 		return
 	}

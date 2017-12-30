@@ -31,7 +31,6 @@ func NewStdContainerIO() ContainerIO {
 }
 
 type ContainerManager interface {
-	// TODO: clean up interface
 	NewContainer(id string, bundle ContainerBundle, ioe ContainerIO) (Container, error)
 	List() ([]ContainerInfo, error)
 	Kill(id, signal string, all bool) error
