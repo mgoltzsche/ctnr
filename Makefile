@@ -120,13 +120,13 @@ liteide: dependencies
 	ln -sr "${REPODIR}"/* "${LITEIDE_WORKSPACE}/src/${PKGNAME}"
 	(cd "${LITEIDE_WORKSPACE}/src/${PKGNAME}" && rm build vendor dist)
 	GOPATH="${LITEIDE_WORKSPACE}" \
+	BUILDFLAGS="-tags ${BUILDTAGS}" \
 	liteide "${LITEIDE_WORKSPACE}/src/${PKGNAME}" &
 	################################################################
 	# Setup LiteIDE project using the main package's context menu: #
 	#  - 'Build Path Configuration':                               #
 	#    - Make sure 'Inherit System GOPATH' is checked!           #
-	#    - To exclude ostree (required on ubuntu 16.04) set:       #
-	#        BUILDFLAGS=-tags containers_image_ostree_stub         #
+	#    - Configure BUILDFLAGS variable printed above             #
 	#  - 'Lock Build Path' to the top-level directory              #
 	#                                                              #
 	# CREATE NEW TOP LEVEL PACKAGES IN THE REPOSITORY DIRECTORY    #

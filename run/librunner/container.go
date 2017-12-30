@@ -10,14 +10,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coreos/go-systemd/activation"
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/opencontainers/runc/libcontainer"
+	"github.com/opencontainers/runc/libcontainer/configs"
 	_ "github.com/opencontainers/runc/libcontainer/nsenter"
 	"github.com/opencontainers/runc/libcontainer/specconv"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
-	"golang.org/x/crypto/ssh/terminal"
 )
 
 func init() {
@@ -36,6 +37,7 @@ func init() {
 type Container struct {
 	container libcontainer.Container
 	process   *libcontainer.Process
+	tty       *tty
 	io        run.ContainerIO
 	id        string
 	bundle    run.ContainerBundle
@@ -119,50 +121,111 @@ func (c *Container) ID() string {
 	return c.id
 }
 
+// Prepare and start the container process from spec and with stdio
 func (c *Container) Start() (err error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("start %q: %s", c.container.ID(), err)
+		}
+	}()
+
 	if c.process != nil {
-		return fmt.Errorf("start %q: container already started", c.ID())
+		return fmt.Errorf("container already started")
 	}
 
-	// Create container process
-	c.process = &libcontainer.Process{
-		Args:             c.spec.Process.Args,
-		Env:              c.spec.Process.Env,
-		User:             strconv.Itoa(int(c.spec.Process.User.UID)),
-		AdditionalGroups: ints2strings(c.spec.Process.User.AdditionalGids),
-		Cwd:              c.spec.Process.Cwd,
-		Stdout:           c.io.Stdout,
-		Stderr:           c.io.Stderr,
-		Stdin:            c.io.Stdin,
+	p := c.spec.Process
+	// Create container process (see https://github.com/opencontainers/runc/blob/v1.0.0-rc4/utils_linux.go: startContainer->runner.run->newProcess)
+	lp := &libcontainer.Process{
+		Args:   p.Args,
+		Env:    p.Env,
+		User:   fmt.Sprintf("%d:%d", p.User.UID, p.User.GID),
+		Cwd:    p.Cwd,
+		Stdout: c.io.Stdout,
+		Stderr: c.io.Stderr,
+		Stdin:  c.io.Stdin,
 	}
-	if c.spec.Process.Terminal {
-		if c.process.Stdin == nil {
-			c.process.Stdin = os.Stdin
+
+	for _, gid := range p.User.AdditionalGids {
+		lp.AdditionalGroups = append(lp.AdditionalGroups, strconv.FormatUint(uint64(gid), 10))
+	}
+	if p.Capabilities != nil {
+		lp.Capabilities = &configs.Capabilities{}
+		lp.Capabilities.Bounding = p.Capabilities.Bounding
+		lp.Capabilities.Effective = p.Capabilities.Effective
+		lp.Capabilities.Inheritable = p.Capabilities.Inheritable
+		lp.Capabilities.Permitted = p.Capabilities.Permitted
+		lp.Capabilities.Ambient = p.Capabilities.Ambient
+	}
+	if p.Rlimits != nil {
+		for _, rlimit := range p.Rlimits {
+			rl, err := createLibContainerRlimit(rlimit)
+			if err != nil {
+				return err
+			}
+			lp.Rlimits = append(lp.Rlimits, rl)
 		}
-		if !terminal.IsTerminal(int(os.Stdin.Fd())) || !terminal.IsTerminal(int(os.Stdout.Fd())) {
-			return fmt.Errorf("terminal enabled but stdin/out is not a terminal")
+	}
+	// Add systemd file descriptors
+	if os.Getenv("LISTEN_FDS") != "" {
+		lp.ExtraFiles = activation.Files(false)
+	}
+	// Configure terminal
+	if c.tty, err = setupIO(lp, c.container, p.Terminal, false, ""); err != nil {
+		return
+	}
+
+	/*if p.Terminal {
+	if !terminal.IsTerminal(int(os.Stdin.Fd())) || !terminal.IsTerminal(int(os.Stdout.Fd())) || !terminal.IsTerminal(int(os.Stderr.Fd())) {
+		return fmt.Errorf("terminal enabled but stdio is not a terminal")
+	}
+	lp.Stdin = os.Stdin
+	lp.Stdout = os.Stdout
+	lp.Stderr = os.Stderr
+
+	fd := console.Current().Fd()
+	consoleFile, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd))
+	if err != nil {
+		return fmt.Errorf("read console file: %s", err)
+	}
+	c.process.ConsoleSocket = os.NewFile(fd, "/dev/ptmx")*/
+
+	/* console = console.Current()
+		console.Fd()
+		if err := console.SetRaw(); err != nil {
+			return fmt.Errorf("failed to set the terminal from the stdin: %v", err)
 		}
+		go handleInterrupt(console)
+
 		// TODO: set pty
-	}
+	}*/
 
 	// Run container process
-	if err = c.container.Run(c.process); err != nil {
-		return fmt.Errorf("start %q: spawn main process: %s", c.ID(), err)
+	if err = c.container.Run(lp); err != nil {
+		return fmt.Errorf("spawn main process: %s", err)
 	}
+	c.process = lp
 
 	c.wait.Add(1)
-	go c.processWait()
+	go c.handleProcessTermination()
 
 	return
 }
 
-func (c *Container) processWait() {
+func (c *Container) handleProcessTermination() {
 	defer c.wait.Done()
+
+	// Wait for process
 	_, err := c.process.Wait()
 	c.err = run.NewExitError(err)
+
+	// Release TTY
+	err = c.tty.Close()
+	c.err = run.WrapExitError(c.err, err)
+	c.tty = nil
+
 	c.debug.Printf("Container %q terminated", c.ID())
 }
 
@@ -174,42 +237,40 @@ func (c *Container) Stop() {
 	go c.stop()
 }
 
-func (c *Container) stop() {
+func (c *Container) stop() bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	if c.process == nil {
-		return
+		return false
 	}
 
 	// Terminate container orderly
 	c.debug.Printf("Terminating container %q...", c.ID())
-	if err := c.container.Signal(syscall.SIGINT, false); err != nil {
-		c.debug.Printf("Failed to send SIGINT to container %q: %s", c.ID(), err)
+	if err := c.process.Signal(syscall.SIGINT); err != nil {
+		c.debug.Printf("Failed to send SIGINT to container %q process: %s", c.ID(), err)
 	}
 
 	quit := make(chan error, 1)
 	go func() {
 		quit <- c.Wait()
 	}()
-	var err, ex error
 	select {
 	case <-time.After(time.Duration(10000000)): // TODO: read value from OCI runtime configuration
 		// Kill container after timeout
 		if c.process != nil {
-			c.debug.Printf("Killing container %q since stop timeout exceeded", c.ID())
-			if err = c.container.Signal(syscall.SIGKILL, true); err != nil {
+			c.debug.Printf("Killing container %q process since stop timeout exceeded", c.ID())
+			if err := c.process.Signal(syscall.SIGKILL); err != nil {
 				err = fmt.Errorf("stop: killing container %q: %s", c.ID(), err)
 			}
 			c.Wait()
 		}
-		ex = <-quit
-	case ex = <-quit:
+		<-quit
+	case <-quit:
 	}
 	close(quit)
 	c.process = nil
-	c.err = run.WrapExitError(ex, err)
-	return
+	return true
 }
 
 func (c *Container) Wait() error {
@@ -217,23 +278,16 @@ func (c *Container) Wait() error {
 	return c.err
 }
 
-func (c *Container) Close() error {
-	c.Stop()
-	err := c.Wait()
+func (c *Container) Close() (err error) {
+	if c.stop() {
+		err = c.err
+	}
+	if e := c.container.Destroy(); e != nil {
+		err = run.WrapExitError(err, e)
+	}
 	if e := c.bundle.Close(); e != nil {
 		err = run.WrapExitError(err, e)
 	}
-	if derr := c.container.Destroy(); derr != nil {
-		err = run.WrapExitError(err, derr)
-	}
 	c.container = nil
 	return err
-}
-
-func ints2strings(a []uint32) (r []string) {
-	r = make([]string, len(a))
-	for i, e := range a {
-		r[i] = strconv.Itoa(int(e))
-	}
-	return
 }

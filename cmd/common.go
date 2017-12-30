@@ -19,7 +19,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/oci/image"
@@ -90,12 +89,10 @@ func runProject(project *model.Project) (err error) {
 	defer istore.Close()
 
 	containers := run.NewContainerGroup(debugLog)
-	defer func() {
-		if e := containers.Close(); e != nil {
-			err = multierror.Append(err, e)
-		}
-	}()
 	containers.HandleSignals()
+	defer func() {
+		err = run.WrapExitError(err, containers.Close())
+	}()
 
 	for _, s := range project.Services {
 		fmt.Println(s.JSON())

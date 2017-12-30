@@ -31,6 +31,7 @@ func (m *ContainerGroup) Close() (err error) {
 			}
 		}
 	}
+	m.runners = map[string]Container{}
 	return err
 }
 
@@ -52,6 +53,7 @@ func (m *ContainerGroup) Wait() (err error) {
 			}
 		}
 	}
+	m.runners = map[string]Container{}
 	return err
 }
 
