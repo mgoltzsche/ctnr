@@ -1,16 +1,15 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
-
-	"github.com/mgoltzsche/cntnr/generate"
-	//"github.com/mgoltzsche/cntnr/pkg/atomic"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/mgoltzsche/cntnr/generate"
 	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -34,8 +33,28 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		spec.ToRootless()
 	}
 
-	if err := applyService(service, vols, spec); err != nil {
-		return err
+	if err = applyService(service, vols, spec); err != nil {
+		return
+	}
+
+	// Seccomp
+	if service.Seccomp == "" || service.Seccomp == "default" {
+		// Derive seccomp configuration (must be called as last)
+		spec.SetLinuxSeccompDefault()
+	} else if service.Seccomp == "unconfined" {
+		// Do not restrict operations with seccomp
+		spec.SetLinuxSeccompUnconfined()
+	} else {
+		// Use seccomp configuration from file
+		var j []byte
+		if j, err = ioutil.ReadFile(resolveFile(service.Seccomp, p.Dir)); err != nil {
+			return
+		}
+		seccomp := &specs.LinuxSeccomp{}
+		if err = json.Unmarshal(j, seccomp); err != nil {
+			return
+		}
+		spec.SetLinuxSeccomp(seccomp)
 	}
 
 	if !rootless {
@@ -183,23 +202,6 @@ func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuil
 		spec.SetProcessCwd(service.Cwd)
 	}
 
-	// Capabilities
-	if service.CapAdd != nil {
-		for _, addCap := range service.CapAdd {
-			if strings.ToUpper(addCap) == "ALL" {
-				spec.AddAllProcessCapabilities()
-				break
-			} else if err = spec.AddProcessCapability("CAP_" + addCap); err != nil {
-				return
-			}
-		}
-		for _, dropCap := range service.CapDrop {
-			if err = spec.DropProcessCapability("CAP_" + dropCap); err != nil {
-				return
-			}
-		}
-	}
-
 	// Terminal
 	spec.SetProcessTerminal(service.Tty)
 
@@ -246,6 +248,23 @@ func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuil
 			return err
 		}
 		spec.Spec().Mounts = append(spec.Spec().Mounts, mount)
+	}
+
+	// Capabilities
+	if service.CapAdd != nil {
+		for _, addCap := range service.CapAdd {
+			if strings.ToUpper(addCap) == "ALL" {
+				spec.AddAllProcessCapabilities()
+				break
+			} else if err = spec.AddProcessCapability("CAP_" + addCap); err != nil {
+				return
+			}
+		}
+		for _, dropCap := range service.CapDrop {
+			if err = spec.DropProcessCapability("CAP_" + dropCap); err != nil {
+				return
+			}
+		}
 	}
 
 	return nil

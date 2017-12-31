@@ -74,9 +74,13 @@ func (self *volumeResolver) anonymous(id string) string {
 }
 
 func (self *volumeResolver) path(file string) string {
+	return resolveFile(file, self.baseDir)
+}
+
+func resolveFile(file, baseDir string) string {
 	file = filepath.Clean(file)
 	if !filepath.IsAbs(file) && !(file == "~" || len(file) > 1 && file[0:2] == "~/") {
-		file = filepath.Join(self.baseDir, file)
+		file = filepath.Join(baseDir, file)
 	}
 	return file
 }

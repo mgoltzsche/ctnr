@@ -33,6 +33,7 @@ type Service struct {
 	Cwd         string            `json:"working_dir,omitempty"`
 	CapAdd      []string          `json:"cap_add,omitempty"`
 	CapDrop     []string          `json:"cap_drop,omitempty"`
+	Seccomp     string            `json:"seccomp,omitempty"`
 	NetConf
 	StdinOpen bool          `json:"stdin_open,omitempty"`
 	Tty       bool          `json:"tty,omitempty"`
@@ -128,7 +129,7 @@ type Check struct {
 }
 
 func NewService(name string) *Service {
-	return &Service{Name: name, StopGracePeriod: time.Duration(10000000000)}
+	return &Service{Name: name, Seccomp: "default", StopGracePeriod: time.Duration(10000000000)}
 }
 
 func (c *Project) JSON() string {

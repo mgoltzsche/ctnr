@@ -37,6 +37,7 @@ func initBundleCreateFlags(f *pflag.FlagSet) {
 	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
 	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
 	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
+	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default'or 'unconfined'")
 	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.Var((*cReadOnly)(c), "readonly", "mounts the root file system in read only mode")
@@ -210,6 +211,21 @@ func (c *cCapDrop) Type() string {
 
 func (c *cCapDrop) String() string {
 	return entriesToString((*apps)(c).last().CapDrop)
+}
+
+type cSeccomp apps
+
+func (c *cSeccomp) Set(s string) error {
+	(*apps)(c).last().Seccomp = s
+	return nil
+}
+
+func (c *cSeccomp) Type() string {
+	return "string"
+}
+
+func (c *cSeccomp) String() string {
+	return (*apps)(c).last().Seccomp
 }
 
 type cExpose apps

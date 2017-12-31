@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/mgoltzsche/cntnr/generate"
-	"github.com/opencontainers/runtime-tools/generate/seccomp"
 	"github.com/satori/go.uuid"
 )
 
@@ -71,9 +70,6 @@ func (b *BundleBuilder) Build(dir string, update bool) (bundle *LockedBundle, er
 			err = fmt.Errorf("build bundle: %s", err)
 		}
 	}()
-
-	spec := b.Spec()
-	spec.Linux.Seccomp = seccomp.DefaultProfile(spec)
 
 	// Create bundle directory
 	if bundle, err = CreateLockedBundle(dir, &b.Generator, b.image, update); err != nil {

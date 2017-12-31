@@ -22,6 +22,7 @@ import (
 	"github.com/opencontainers/runc/libcontainer/specconv"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-tools/generate"
+	"github.com/opencontainers/runtime-tools/generate/seccomp"
 	"github.com/syndtr/gocapability/capability"
 )
 
@@ -29,6 +30,7 @@ type SpecBuilder struct {
 	generate.Generator
 	entrypoint []string
 	cmd        []string
+	seccompSet bool
 }
 
 func NewSpecBuilder() SpecBuilder {
@@ -51,10 +53,6 @@ func (b *SpecBuilder) UseHostNetwork() {
 }
 
 func (b *SpecBuilder) AddAllProcessCapabilities() {
-	// Make sure spec is initialized
-	if err := b.AddProcessCapability("CAP_SYS_ADMIN"); err != nil {
-		panic(err)
-	}
 	// Add all capabilities
 	all := capability.List()
 	caps := make([]string, len(all))
@@ -77,6 +75,28 @@ func (b *SpecBuilder) DropAllProcessCapabilities() {
 	c.Bounding = caps
 	c.Ambient = caps
 	c.Inheritable = caps
+}
+
+// Derives a reasonable default seccomp from the current spec
+func (b *SpecBuilder) SetLinuxSeccompDefault() {
+	spec := b.Spec()
+	spec.Linux.Seccomp = seccomp.DefaultProfile(spec)
+}
+
+func (b *SpecBuilder) SetLinuxSeccompUnconfined() {
+	spec := b.Spec()
+	profile := seccomp.DefaultProfile(spec)
+	profile.DefaultAction = rspecs.ActAllow
+	profile.Syscalls = nil
+	spec.Linux.Seccomp = profile
+}
+
+func (b *SpecBuilder) SetLinuxSeccomp(profile *rspecs.LinuxSeccomp) {
+	spec := b.Spec()
+	if spec.Linux == nil {
+		spec.Linux = &rspecs.Linux{}
+	}
+	spec.Linux.Seccomp = profile
 }
 
 func (b *SpecBuilder) SetProcessEntrypoint(v []string) {

@@ -126,7 +126,7 @@ cntnr run --tty=true --net=host docker://alpine:3.7
 # => Look for forbidden capabilities/syscalls that can be avoided or must be added to the outer container
 # => support low isolation without namespaces to at least be able to build an image everywhere
 # Cgroup error in cntnr container with all capabilities and proper seccomp profile:
-# => still missing privileges
+# => still missing privilege or mount
 ```
 
 ## Roadmap
