@@ -136,8 +136,8 @@ func (c *Container) Start() (err error) {
 		return fmt.Errorf("container already started")
 	}
 
-	p := c.spec.Process
 	// Create container process (see https://github.com/opencontainers/runc/blob/v1.0.0-rc4/utils_linux.go: startContainer->runner.run->newProcess)
+	p := c.spec.Process
 	lp := &libcontainer.Process{
 		Args:   p.Args,
 		Env:    p.Env,
@@ -147,7 +147,6 @@ func (c *Container) Start() (err error) {
 		Stderr: c.io.Stderr,
 		Stdin:  c.io.Stdin,
 	}
-
 	for _, gid := range p.User.AdditionalGids {
 		lp.AdditionalGroups = append(lp.AdditionalGroups, strconv.FormatUint(uint64(gid), 10))
 	}
@@ -168,45 +167,23 @@ func (c *Container) Start() (err error) {
 			lp.Rlimits = append(lp.Rlimits, rl)
 		}
 	}
-	// Add systemd file descriptors
 	if os.Getenv("LISTEN_FDS") != "" {
+		// Add systemd file descriptors
 		lp.ExtraFiles = activation.Files(false)
 	}
-	// Configure terminal
-	if c.tty, err = setupIO(lp, c.container, p.Terminal, false, ""); err != nil {
+
+	// Configure stdIO/terminal
+	tty, err := setupIO(lp, c.container, p.Terminal, false, "")
+	if err != nil {
 		return
 	}
-
-	/*if p.Terminal {
-	if !terminal.IsTerminal(int(os.Stdin.Fd())) || !terminal.IsTerminal(int(os.Stdout.Fd())) || !terminal.IsTerminal(int(os.Stderr.Fd())) {
-		return fmt.Errorf("terminal enabled but stdio is not a terminal")
-	}
-	lp.Stdin = os.Stdin
-	lp.Stdout = os.Stdout
-	lp.Stderr = os.Stderr
-
-	fd := console.Current().Fd()
-	consoleFile, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd))
-	if err != nil {
-		return fmt.Errorf("read console file: %s", err)
-	}
-	c.process.ConsoleSocket = os.NewFile(fd, "/dev/ptmx")*/
-
-	/* console = console.Current()
-		console.Fd()
-		if err := console.SetRaw(); err != nil {
-			return fmt.Errorf("failed to set the terminal from the stdin: %v", err)
-		}
-		go handleInterrupt(console)
-
-		// TODO: set pty
-	}*/
 
 	// Run container process
 	if err = c.container.Run(lp); err != nil {
 		return fmt.Errorf("spawn main process: %s", err)
 	}
 	c.process = lp
+	c.tty = tty
 
 	c.wait.Add(1)
 	go c.handleProcessTermination()

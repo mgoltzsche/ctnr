@@ -22,6 +22,7 @@ import (
 	"github.com/opencontainers/runc/libcontainer/specconv"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-tools/generate"
+	"github.com/syndtr/gocapability/capability"
 )
 
 type SpecBuilder struct {
@@ -47,6 +48,35 @@ func (b *SpecBuilder) UseHostNetwork() {
 	opts := []string{"bind", "mode=0444", "nosuid", "noexec", "nodev", "ro"}
 	b.AddBindMount("/etc/hosts", "/etc/hosts", opts)
 	b.AddBindMount("/etc/resolv.conf", "/etc/resolv.conf", opts)
+}
+
+func (b *SpecBuilder) AddAllProcessCapabilities() {
+	// Make sure spec is initialized
+	if err := b.AddProcessCapability("CAP_SYS_ADMIN"); err != nil {
+		panic(err)
+	}
+	// Add all capabilities
+	all := capability.List()
+	caps := make([]string, len(all))
+	for i, c := range all {
+		caps[i] = "CAP_" + strings.ToUpper(c.String())
+	}
+	c := b.Spec().Process.Capabilities
+	c.Effective = caps
+	c.Permitted = caps
+	c.Bounding = caps
+	c.Ambient = caps
+	c.Inheritable = caps
+}
+
+func (b *SpecBuilder) DropAllProcessCapabilities() {
+	caps := []string{}
+	c := b.Spec().Process.Capabilities
+	c.Effective = caps
+	c.Permitted = caps
+	c.Bounding = caps
+	c.Ambient = caps
+	c.Inheritable = caps
 }
 
 func (b *SpecBuilder) SetProcessEntrypoint(v []string) {

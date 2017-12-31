@@ -13,6 +13,7 @@ import (
 
 	shellwords "github.com/mattn/go-shellwords"
 	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
 	"gopkg.in/yaml.v2"
 )
 
@@ -165,6 +166,15 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, p *
 	}
 	if s.WorkingDir != "" {
 		d.Cwd = toString(s.WorkingDir, sub, l+".working_dir")
+	}
+	if s.CapAdd != nil {
+		d.CapAdd = append(d.CapAdd, s.CapAdd...)
+	}
+	if s.CapDrop != nil {
+		for _, dropCap := range d.CapDrop {
+			sliceutils.RemoveFromSet(&d.CapAdd, dropCap)
+		}
+		d.CapDrop = append(d.CapDrop, s.CapDrop...)
 	}
 	if s.ReadOnly != "" {
 		d.ReadOnly, err = toBool(s.ReadOnly, sub, l+".read_only")
@@ -695,6 +705,8 @@ type dcService struct {
 	Entrypoint      interface{}    `yaml:"entrypoint"` // string or array
 	Command         interface{}    `yaml:"command"`    // string or array
 	WorkingDir      string         `yaml:"working_dir"`
+	CapAdd          []string       `yaml:"cap_add"`
+	CapDrop         []string       `yaml:"cap_drop"`
 	StdinOpen       string         `yaml:"stdin_open"`
 	Tty             string         `yaml:"tty"`
 	ReadOnly        string         `yaml:"read_only"`

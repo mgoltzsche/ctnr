@@ -94,6 +94,7 @@ to a local or remote destination.`,
 
 func init() {
 	imageBuilder = builder.NewImageBuilder()
+	initImageBuildFlags(imageBuildCmd.Flags(), imageBuilder)
 	imageCmd.AddCommand(imageListCmd)
 	imageCmd.AddCommand(imageTagCmd)
 	imageCmd.AddCommand(imageUntagCmd)
@@ -103,12 +104,6 @@ func init() {
 	imageCmd.AddCommand(imageCatConfigCmd)
 	imageCmd.AddCommand(imageBuildCmd)
 	imageGcCmd.Flags().DurationVarP(&flagImageTTL, "ttl", "t", time.Duration(1000*1000*1000*60*60*24*7 /*7 days*/), "image lifetime before it gets garbage collected")
-	imageBuildCmd.Flags().Var((*bFromImage)(imageBuilder), "from", "parent image the new image is based on (must come first)")
-	imageBuildCmd.Flags().Var((*bAuthor)(imageBuilder), "author", "Sets the new image's author")
-	imageBuildCmd.Flags().Var((*bRun)(imageBuilder), "run", "Runs the provided command in the base image")
-	imageBuildCmd.Flags().Var((*bEntrypoint)(imageBuilder), "entrypoint", "Sets the image's entrypoint")
-	imageBuildCmd.Flags().Var((*bCmd)(imageBuilder), "cmd", "Sets the image's command")
-	imageBuildCmd.Flags().Var((*bTag)(imageBuilder), "tag", "Tags the image")
 }
 
 func runImageList(cmd *cobra.Command, args []string) (err error) {
@@ -238,102 +233,4 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 		fmt.Fprintln(os.Stdout, img.ID())
 	}
 	return
-}
-
-type bRun builder.ImageBuilder
-
-func (b *bRun) Set(cmd string) (err error) {
-	(*builder.ImageBuilder)(b).Run(cmd)
-	return
-}
-
-func (b *bRun) Type() string {
-	return "string..."
-}
-
-func (b *bRun) String() string {
-	return ""
-}
-
-type bFromImage builder.ImageBuilder
-
-func (b *bFromImage) Set(image string) (err error) {
-	(*builder.ImageBuilder)(b).FromImage(image)
-	return
-}
-
-func (b *bFromImage) Type() string {
-	return "string"
-}
-
-func (b *bFromImage) String() string {
-	return ""
-}
-
-type bAuthor builder.ImageBuilder
-
-func (b *bAuthor) Set(author string) (err error) {
-	(*builder.ImageBuilder)(b).SetAuthor(author)
-	return
-}
-
-func (b *bAuthor) Type() string {
-	return "string"
-}
-
-func (b *bAuthor) String() string {
-	return ""
-}
-
-type bEntrypoint builder.ImageBuilder
-
-func (b *bEntrypoint) Set(s string) (err error) {
-	entrypoint := make([]string, 0, 1)
-	if err = addStringEntries(s, &entrypoint); err != nil {
-		return
-	}
-	(*builder.ImageBuilder)(b).SetEntrypoint(entrypoint)
-	return
-}
-
-func (b *bEntrypoint) Type() string {
-	return "string"
-}
-
-func (b *bEntrypoint) String() string {
-	return ""
-}
-
-type bCmd builder.ImageBuilder
-
-func (b *bCmd) Set(s string) (err error) {
-	cmd := make([]string, 0, 1)
-	if err = addStringEntries(s, &cmd); err != nil {
-		return
-	}
-	(*builder.ImageBuilder)(b).SetCmd(cmd)
-	return
-}
-
-func (b *bCmd) Type() string {
-	return "string"
-}
-
-func (b *bCmd) String() string {
-	return ""
-}
-
-type bTag builder.ImageBuilder
-
-func (b *bTag) Set(tag string) (err error) {
-	(*builder.ImageBuilder)(b).Tag(tag)
-	return
-}
-
-func (b *bTag) Type() string {
-	return "string"
-}
-
-func (b *bTag) String() string {
-	return ""
 }

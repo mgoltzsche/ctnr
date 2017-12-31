@@ -20,8 +20,6 @@ import (
 	"strconv"
 	"strings"
 
-	shellwords "github.com/mattn/go-shellwords"
-	//"github.com/mgoltzsche/cntnr/generate"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/spf13/pflag"
 )
@@ -37,6 +35,8 @@ func initBundleCreateFlags(f *pflag.FlagSet) {
 	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
 	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
 	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
+	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
+	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
 	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.Var((*cReadOnly)(c), "readonly", "mounts the root file system in read only mode")
@@ -62,36 +62,6 @@ func newApps() *apps {
 	f.add()
 	return f
 }
-
-/*type bundleFlags struct {
-	flags []bundleFlag
-}
-
-func (f *bundleFlags) reset() {
-	for _, e := range flags {
-		e.reset()
-	}
-}
-
-func (f *bundleFlags) apply(spec *generate.SpecBuilder) {
-	for _, e := range flags {
-		e.apply(spec)
-	}
-}
-
-type bundleFlag interface {
-	resetValue()
-	apply(*generate.SpecBuilder)
-}
-
-type stringFlag struct {
-	value  string
-	setter func(string)
-}
-
-func (f *stringFlag) resetValue() {
-	f.value = ""
-}*/
 
 type apps struct {
 	netCfg
@@ -182,12 +152,13 @@ func (c *cReadOnly) String() string {
 
 type cEntrypoint apps
 
-func (c *cEntrypoint) Set(s string) (err error) {
+func (c *cEntrypoint) Set(s string) error {
+	(*apps)(c).last().Entrypoint = nil
 	return addStringEntries(s, &(*apps)(c).last().Entrypoint)
 }
 
 func (c *cEntrypoint) Type() string {
-	return "string..."
+	return "cmd"
 }
 
 func (c *cEntrypoint) String() string {
@@ -196,7 +167,7 @@ func (c *cEntrypoint) String() string {
 
 type cEnvironment apps
 
-func (c *cEnvironment) Set(s string) (err error) {
+func (c *cEnvironment) Set(s string) error {
 	return addMapEntries(s, &(*apps)(c).last().Environment)
 }
 
@@ -206,6 +177,39 @@ func (c *cEnvironment) Type() string {
 
 func (c *cEnvironment) String() string {
 	return mapToString((*apps)(c).last().Environment)
+}
+
+type cCapAdd apps
+
+func (c *cCapAdd) Set(s string) error {
+	return addStringEntries(s, &(*apps)(c).last().CapAdd)
+}
+
+func (c *cCapAdd) Type() string {
+	return "string..."
+}
+
+func (c *cCapAdd) String() string {
+	return entriesToString((*apps)(c).last().CapAdd)
+}
+
+type cCapDrop apps
+
+func (c *cCapDrop) Set(s string) error {
+	if strings.ToUpper(s) == "ALL" {
+		(*apps)(c).last().CapAdd = nil
+		return nil
+	} else {
+		return addStringEntries(s, &(*apps)(c).last().CapDrop)
+	}
+}
+
+func (c *cCapDrop) Type() string {
+	return "string..."
+}
+
+func (c *cCapDrop) String() string {
+	return entriesToString((*apps)(c).last().CapDrop)
 }
 
 type cExpose apps
@@ -383,66 +387,4 @@ func (c *cNetworks) Type() string {
 
 func (c *cNetworks) String() string {
 	return entriesToString((*netCfg)(c).curr.Networks)
-}
-
-func parseBool(s string) (bool, error) {
-	b, err := strconv.ParseBool(s)
-	if err != nil {
-		err = fmt.Errorf("Only 'true' or 'false' are accepted values")
-	}
-	return b, err
-}
-
-func addStringEntries(s string, r *[]string) error {
-	if s == "" {
-		*r = nil
-		return nil
-	}
-	// TODO: fix parsing of cat asdf | sed ... > asd
-	// (currently parse ignores everything after the cat cmd silently)
-	e, err := shellwords.Parse(s)
-	if err != nil {
-		return err
-	}
-	*r = append(*r, e...)
-	return nil
-}
-
-func entriesToString(l []string) string {
-	s := ""
-	if len(l) > 0 {
-		for _, e := range l {
-			s += fmt.Sprintf(" %q", e)
-		}
-	}
-	return strings.Trim(s, " ")
-}
-
-func addMapEntries(s string, r *map[string]string) error {
-	entries, err := shellwords.Parse(s)
-	if err != nil {
-		return err
-	}
-	if *r == nil {
-		*r = map[string]string{}
-	}
-	for _, e := range entries {
-		sp := strings.SplitN(e, "=", 2)
-		k := strings.Trim(sp[0], " ")
-		if len(sp) != 2 || k == "" || strings.Trim(sp[1], " ") == "" {
-			return fmt.Errorf("Expected option value format: NAME=VALUE")
-		}
-		(*r)[k] = strings.Trim(sp[1], " ")
-	}
-	return nil
-}
-
-func mapToString(m map[string]string) string {
-	s := ""
-	if len(m) > 0 {
-		for k, v := range m {
-			s += strings.Trim(fmt.Sprintf(" %q", k+"="+v), " ")
-		}
-	}
-	return s
 }

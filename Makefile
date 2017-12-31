@@ -9,6 +9,7 @@ PKGRELATIVEROOT=$(shell echo /build/src/${PKGNAME} | sed -E 's/\/+[^\/]*/..\//g'
 VENDORLOCK=${REPODIR}/vendor/ready
 BINARY=cntnr
 
+# 'apparmor' tag cannot be used for runc yet since package is not yet available in alpine:3.7
 BUILDTAGS_RUNC=seccomp selinux ambient
 BUILDTAGS?=containers_image_ostree_stub containers_image_storage_stub containers_image_openpgp libdm_no_deferred_remove btrfs_noversion ${BUILDTAGS_RUNC}
 BUILDTAGS_STATIC=${BUILDTAGS} linux static_build exclude_graphdriver_devicemapper mgoltzsche_cntnr_libcontainer

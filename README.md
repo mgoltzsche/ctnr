@@ -82,13 +82,13 @@ cntnr bundle run firefox
 ```
 
 ## Permission problems when running a container in a container
-Tests on an ubuntu 16.04 host
+Experiments on an ubuntu 16.04 host
 ```
 # Working example (privileged docker host container):
 docker run -ti --privileged --name cnestedpriv --rm \
 	-v $(pwd)/dist/bin/cntnr:/bin/cntnr \
 	ubuntu:16.04
-> cntnr run --tty=true --net=none docker://alpine:3.7
+> cntnr run --tty=true --net=host docker://alpine:3.7
 
 # Not working (unprivileged docker host container):
 docker run -ti --name cnested --rm \
@@ -102,11 +102,12 @@ docker run -ti --name cnested --rm \
 > wget -O /bin/checkconfig https://raw.githubusercontent.com/moby/moby/master/contrib/check-config.sh && chmod +x /bin/checkconfig
 > checkconfig # docker host check script
 => all general features are fine
-> cntnr run --tty=true --net=none docker://alpine:3.7
-=> still doesn't work: "WARN[0000] os: process already finished" and then terminates silently with exit code 34 => need to debug
+> cntnr run --tty=true --net=host docker://alpine:3.7
+=> error: "WARN[0000] os: process already finished" and then terminates with "running exec setns process for init caused \"exit status 34\""
+=> capability (or syscall in seccomp) missing
 
-# Not working (cntnr host container):
-sudo dist/bin/cntnr bundle create -b nested --update --tty=true \
+# Not working (privileged cntnr host container):
+sudo dist/bin/cntnr bundle create -b nested --update --cap-add=all --tty=true \
 	--mount=./dist/bin/cntnr:/bin/cntnr:exec:ro \
 	--mount=./dist/cni-plugins:/cni \
 	--mount=/boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic \
@@ -117,16 +118,15 @@ sudo dist/bin/cntnr bundle run nested
 > wget -O /bin/checkconfig https://raw.githubusercontent.com/moby/moby/master/contrib/check-config.sh && chmod +x /bin/checkconfig
 > checkconfig # docker host check script
 => cgroup hierarchy: nonexistent?? (see https://github.com/tianon/cgroupfs-mount)
-cntnr run --tty=true --net=none docker://alpine:3.7
-=> as in the unprivileged docker container
-strace echo
-=> strace: ptrace(PTRACE_TRACEME, ...) operation not permitted
+cntnr run --tty=true --net=host docker://alpine:3.7
+=> setns works now (due to --cap-add=all and updated seccomp profile)
+=> error: "applying cgroup configuration for process caused \"mountpoint for cgroup not found\""
 
-# Works in privileged docker container but not in unprivileged
-# => Debug and improve cntnr exit error message
-# => Look for forbidden capabilities/syscalls that can be avoided or must be added to the outer container. E.e.:
-#  "CAP_SYS_PTRACE",
-#  "CAP_SYS_ADMIN"
+# Works in privileged docker container but not in unprivileged:
+# => Look for forbidden capabilities/syscalls that can be avoided or must be added to the outer container
+# => support low isolation without namespaces to at least be able to build an image everywhere
+# Cgroup error in cntnr container with all capabilities and proper seccomp profile:
+# => still missing privileges
 ```
 
 ## Roadmap

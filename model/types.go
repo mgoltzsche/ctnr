@@ -31,6 +31,8 @@ type Service struct {
 	Command     []string          `json:"command,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
 	Cwd         string            `json:"working_dir,omitempty"`
+	CapAdd      []string          `json:"cap_add,omitempty"`
+	CapDrop     []string          `json:"cap_drop,omitempty"`
 	NetConf
 	StdinOpen bool          `json:"stdin_open,omitempty"`
 	Tty       bool          `json:"tty,omitempty"`

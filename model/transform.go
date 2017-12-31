@@ -163,7 +163,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuilder) error {
+func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuilder) (err error) {
 	// Entrypoint & command
 	if service.Entrypoint != nil {
 		spec.SetProcessEntrypoint(service.Entrypoint)
@@ -181,6 +181,23 @@ func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuil
 	// Working dir
 	if service.Cwd != "" {
 		spec.SetProcessCwd(service.Cwd)
+	}
+
+	// Capabilities
+	if service.CapAdd != nil {
+		for _, addCap := range service.CapAdd {
+			if strings.ToUpper(addCap) == "ALL" {
+				spec.AddAllProcessCapabilities()
+				break
+			} else if err = spec.AddProcessCapability("CAP_" + addCap); err != nil {
+				return
+			}
+		}
+		for _, dropCap := range service.CapDrop {
+			if err = spec.DropProcessCapability("CAP_" + dropCap); err != nil {
+				return
+			}
+		}
 	}
 
 	// Terminal
@@ -218,8 +235,8 @@ func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuil
 	}
 
 	// TODO: apply user (username must be parsed from rootfs/etc/passwd and mapped to uid/gid)
+	//       which is not possible here since filesystem is not yet populated. => Resolve in bundle builder
 
-	// TODO: mount separate paths in /proc/self/fd to apply service.StdinOpen
 	spec.SetRootReadonly(service.ReadOnly)
 
 	// Add mounts
