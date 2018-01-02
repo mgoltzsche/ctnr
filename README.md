@@ -45,6 +45,10 @@ Build the binary dist/bin/cntnr (requires docker)
 git clone https://github.com/mgoltzsche/cntnr.git
 cd cntnr
 make
+```  
+Optionally you can now open the project with LiteIDE running in a cntnr container
+```
+make ide
 ```
 
 
@@ -126,7 +130,18 @@ cntnr run --tty=true --net=host docker://alpine:3.7
 # => Look for forbidden capabilities/syscalls that can be avoided or must be added to the outer container
 # => support low isolation without namespaces to at least be able to build an image everywhere
 # Cgroup error in cntnr container with all capabilities and proper seccomp profile:
-# => still missing privilege or mount
+# => cgroups not mounted properly (/sys/fs/cgroup is empty)
+
+# Different error in rootless container:
+cntnr bundle create -b nested-alpine --update --tty=true --cap-add=all --seccomp=unconfined --mount=./dist/bin/cntnr:/bin/cntnr:exec:ro --mount=./dist/cni-plugins:/cni --mount=/boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic docker://alpine:3.7
+=> /sys/fs/cgroup is there (of type 'none' and with option 'rbind' in opposite to the root container mount of type 'sysfs')
+> cntnr run --tty=true --net=host docker://alpine:3.7
+=> error: "mkdir /sys/fs/cgroup/cpuset/pqf3hvfjl5cnlpk4hvdbsievki: permission denied"
+=> problem: other cgroups should stay untouched but only child cgroups required for rw access:
+    https://github.com/opencontainers/runtime-spec/issues/66
+    https://github.com/opencontainers/runtime-spec/pull/397
+   => seems not to be completely solvable as long as one has to deal with kernel <4.6
+    https://github.com/opencontainers/runc/issues/225
 ```
 
 ## Roadmap

@@ -193,10 +193,13 @@ func (c *Container) Start() (err error) {
 
 func (c *Container) handleProcessTermination() {
 	defer c.wait.Done()
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 
 	// Wait for process
 	_, err := c.process.Wait()
 	c.err = run.NewExitError(err)
+	c.process = nil
 
 	// Release TTY
 	err = c.tty.Close()
@@ -215,18 +218,16 @@ func (c *Container) Stop() {
 }
 
 func (c *Container) stop() bool {
+	// Terminate container orderly
 	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
 	if c.process == nil {
 		return false
 	}
-
-	// Terminate container orderly
 	c.debug.Printf("Terminating container %q...", c.ID())
 	if err := c.process.Signal(syscall.SIGINT); err != nil {
 		c.debug.Printf("Failed to send SIGINT to container %q process: %s", c.ID(), err)
 	}
+	c.mutex.Unlock()
 
 	quit := make(chan error, 1)
 	go func() {
@@ -235,6 +236,7 @@ func (c *Container) stop() bool {
 	select {
 	case <-time.After(time.Duration(10000000)): // TODO: read value from OCI runtime configuration
 		// Kill container after timeout
+		c.mutex.Lock()
 		if c.process != nil {
 			c.debug.Printf("Killing container %q process since stop timeout exceeded", c.ID())
 			if err := c.process.Signal(syscall.SIGKILL); err != nil {
@@ -242,11 +244,11 @@ func (c *Container) stop() bool {
 			}
 			c.Wait()
 		}
+		c.mutex.Unlock()
 		<-quit
 	case <-quit:
 	}
 	close(quit)
-	c.process = nil
 	return true
 }
 

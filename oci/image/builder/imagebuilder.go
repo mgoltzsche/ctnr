@@ -182,9 +182,13 @@ func (b *BuildState) FromImage(image string) (err error) {
 		return fmt.Errorf("base image must be defined as first build step")
 	}
 	img, e := b.images.ImageByName(image)
+	// TODO: distiguish between 'image not found' and serious error
 	if e != nil {
-		return e
+		if img, err = b.images.ImportImage(image); err != nil {
+			return
+		}
 	}
+
 	return b.setImage(&img)
 }
 
@@ -217,17 +221,25 @@ func (b *BuildState) Run(cmd string) (err error) {
 		if err != nil {
 			return
 		}
+		// TODO: move container creation into bundle init method and update the process here only
 		container, err := manager.NewContainer(b.bundle.ID(), b.bundle, run.NewStdContainerIO())
 		if err != nil {
 			return
 		}
+		defer func() {
+			if e := container.Close(); e != nil {
+				err = multierror.Append(err, e)
+			}
+		}()
+
 		if err = container.Start(); err != nil {
 			return
 		}
 		if err = container.Wait(); err != nil {
 			return
 		}
-		return b.commitLayer(comment)
+		b.commitLayer(comment)
+		return
 	})
 }
 

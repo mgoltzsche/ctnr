@@ -34,10 +34,11 @@ func initBundleCreateFlags(f *pflag.FlagSet) {
 	c := flagsBundle
 	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
 	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
+	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
 	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
 	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
 	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
-	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default'or 'unconfined'")
+	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default' or 'unconfined'")
 	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.Var((*cReadOnly)(c), "readonly", "mounts the root file system in read only mode")
@@ -164,6 +165,21 @@ func (c *cEntrypoint) Type() string {
 
 func (c *cEntrypoint) String() string {
 	return entriesToString((*apps)(c).last().Entrypoint)
+}
+
+type cWorkingDir apps
+
+func (c *cWorkingDir) Set(s string) error {
+	(*apps)(c).last().Cwd = s
+	return nil
+}
+
+func (c *cWorkingDir) Type() string {
+	return "dir"
+}
+
+func (c *cWorkingDir) String() string {
+	return (*apps)(c).last().Cwd
 }
 
 type cEnvironment apps
