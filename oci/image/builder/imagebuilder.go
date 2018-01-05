@@ -41,6 +41,12 @@ func (b *ImageBuilder) SetAuthor(image string) {
 	})
 }
 
+func (b *ImageBuilder) SetWorkingDir(dir string) {
+	b.steps = append(b.steps, func(builder *BuildState) error {
+		return builder.SetWorkingDir(dir)
+	})
+}
+
 func (b *ImageBuilder) SetEntrypoint(entrypoint []string) {
 	b.steps = append(b.steps, func(builder *BuildState) error {
 		return builder.SetEntrypoint(entrypoint)
@@ -157,6 +163,21 @@ func (b *BuildState) initBundle(cmd string) (err error) {
 func (b *BuildState) SetAuthor(author string) {
 	b.author = author
 	b.config.Author = author
+}
+
+func (b *BuildState) SetWorkingDir(dir string) (err error) {
+	dir = absFile(dir, b.config.Config.WorkingDir)
+	b.config.Config.WorkingDir = dir
+	return b.cached("WORK "+dir, b.commitConfig)
+}
+
+// TODO: move into some shared package since this is a duplicate
+func absFile(p, base string) string {
+	if filepath.IsAbs(p) {
+		return p
+	} else {
+		return filepath.Join(base, p)
+	}
 }
 
 func (b *BuildState) SetEntrypoint(entrypoint []string) (err error) {

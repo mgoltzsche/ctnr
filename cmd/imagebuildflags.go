@@ -21,11 +21,12 @@ import (
 )
 
 func initImageBuildFlags(f *pflag.FlagSet, imageBuilder *builder.ImageBuilder) {
-	f.Var((*bFromImage)(imageBuilder), "from", "parent image the new image is based on (must come first)")
+	f.Var((*bFromImage)(imageBuilder), "from", "Extends the provided parent image (must come first)")
 	f.Var((*bAuthor)(imageBuilder), "author", "Sets the new image's author")
-	f.Var((*bRun)(imageBuilder), "run", "Runs the provided command in the base image")
-	f.Var((*bEntrypoint)(imageBuilder), "entrypoint", "Sets the image's entrypoint")
-	f.Var((*bCmd)(imageBuilder), "cmd", "Sets the image's command")
+	f.Var((*bWorkingDir)(imageBuilder), "work", "Sets the new image's working directory")
+	f.Var((*bEntrypoint)(imageBuilder), "entrypoint", "Sets the new image's entrypoint")
+	f.Var((*bCmd)(imageBuilder), "cmd", "Sets the new image's command")
+	f.Var((*bRun)(imageBuilder), "run", "Creates a new image by running the provided command in the current image")
 	f.Var((*bTag)(imageBuilder), "tag", "Tags the image")
 }
 
@@ -37,7 +38,7 @@ func (b *bRun) Set(cmd string) (err error) {
 }
 
 func (b *bRun) Type() string {
-	return "string..."
+	return "string"
 }
 
 func (b *bRun) String() string {
@@ -71,6 +72,21 @@ func (b *bAuthor) Type() string {
 }
 
 func (b *bAuthor) String() string {
+	return ""
+}
+
+type bWorkingDir builder.ImageBuilder
+
+func (b *bWorkingDir) Set(s string) (err error) {
+	(*builder.ImageBuilder)(b).SetWorkingDir(s)
+	return
+}
+
+func (b *bWorkingDir) Type() string {
+	return "string"
+}
+
+func (b *bWorkingDir) String() string {
 	return ""
 }
 

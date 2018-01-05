@@ -146,7 +146,7 @@ ide: .liteideimage
 		--env GOPATH=/work \
 		${LITEIDEIMAGE} \
 		liteide /work/src/github.com/mgoltzsche/cntnr
-	cntnr bundle run cntnr-liteide
+	cntnr bundle run cntnr-liteide &
 
 .liteideimage: .buildimage
 	# TODO: clean this up when --workdir and --env options are supported
