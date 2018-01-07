@@ -19,7 +19,11 @@ import (
 	"os"
 	"sort"
 
+	"os/signal"
+	"syscall"
+
 	humanize "github.com/dustin/go-humanize"
+	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/run"
@@ -167,13 +171,25 @@ func runBundleRun(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
-	defer c.Close()
+	defer func() {
+		if e := c.Close(); e != nil {
+			err = multierror.Append(err, e)
+		}
+	}()
 
 	if err = c.Start(); err != nil {
 		return
 	}
 
-	// TODO: handle signals
+	// Handle signals
+	// TODO: reuse from central location with occurence in run package
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+	go func() {
+		<-sigs
+		c.Stop()
+	}()
+
 	return c.Wait()
 }
 

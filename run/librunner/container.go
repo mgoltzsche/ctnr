@@ -64,6 +64,8 @@ func NewContainer(id string, bundle run.ContainerBundle, ioe run.ContainerIO, ro
 		}
 	}()
 
+	debug.Printf("Creating container %q", id)
+
 	spec, err := bundle.Spec()
 	if err != nil {
 		return
@@ -123,6 +125,8 @@ func (c *Container) ID() string {
 
 // Prepare and start the container process from spec and with stdio
 func (c *Container) Start() (err error) {
+	c.debug.Printf("Starting container %q process", c.id)
+
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -193,20 +197,24 @@ func (c *Container) Start() (err error) {
 
 func (c *Container) handleProcessTermination() {
 	defer c.wait.Done()
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
 
 	// Wait for process
 	_, err := c.process.Wait()
+
+	c.debug.Printf("Container %q process terminated", c.ID())
+
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	// Register process error
 	c.err = run.NewExitError(err)
 	c.process = nil
 
 	// Release TTY
-	err = c.tty.Close()
+	// TODO: reject tty CLI option when process is detached
+	err = c.tty.Close() // ATTENTION: call hangs when detached process and tty enabled
 	c.err = run.WrapExitError(c.err, err)
 	c.tty = nil
-
-	c.debug.Printf("Container %q terminated", c.ID())
 }
 
 func (c *Container) Stop() {
@@ -220,10 +228,14 @@ func (c *Container) Stop() {
 func (c *Container) stop() bool {
 	// Terminate container orderly
 	c.mutex.Lock()
+
 	if c.process == nil {
+		c.mutex.Unlock()
 		return false
 	}
-	c.debug.Printf("Terminating container %q...", c.ID())
+
+	c.debug.Printf("Stopping container %q process", c.ID())
+
 	if err := c.process.Signal(syscall.SIGINT); err != nil {
 		c.debug.Printf("Failed to send SIGINT to container %q process: %s", c.ID(), err)
 	}
@@ -236,15 +248,14 @@ func (c *Container) stop() bool {
 	select {
 	case <-time.After(time.Duration(10000000)): // TODO: read value from OCI runtime configuration
 		// Kill container after timeout
-		c.mutex.Lock()
-		if c.process != nil {
+		process := c.process
+		if process != nil {
 			c.debug.Printf("Killing container %q process since stop timeout exceeded", c.ID())
 			if err := c.process.Signal(syscall.SIGKILL); err != nil {
-				err = fmt.Errorf("stop: killing container %q: %s", c.ID(), err)
+				fmt.Fprintf(os.Stderr, "Error: stop: killing container %q: %s\n", c.ID(), err)
 			}
 			c.Wait()
 		}
-		c.mutex.Unlock()
 		<-quit
 	case <-quit:
 	}
