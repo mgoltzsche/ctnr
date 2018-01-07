@@ -23,7 +23,6 @@ import (
 	"strconv"
 
 	"github.com/containernetworking/cni/libcni"
-	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/net"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/spf13/cobra"
@@ -53,14 +52,14 @@ The OCI container state JSON is expected on stdin.
 See OCI state spec at https://github.com/opencontainers/runtime-spec/blob/master/runtime.md`,
 		Run: handleError(runNetRemove),
 	}
-	flagsNetInit = &netCfg{&model.NetConf{}}
 )
 
 func init() {
 	netCmd.AddCommand(netInitCmd)
 	netCmd.AddCommand(netRemoveCmd)
 
-	initNetConfFlags(netInitCmd.Flags(), flagsNetInit)
+	initNetFlags(netInitCmd.Flags())
+	initPortBindFlags(netRemoveCmd.Flags())
 }
 
 func runNetInit(cmd *cobra.Command, args []string) (err error) {
@@ -138,19 +137,18 @@ func runNetRemove(cmd *cobra.Command, args []string) (err error) {
 }
 
 func applyArgs(cfg *net.ConfigFileGenerator) {
-	c := flagsNetInit.curr
-	if c.Hostname != "" {
-		cfg.SetHostname(c.Hostname)
+	if flagHostname != "" {
+		cfg.SetHostname(flagHostname)
 	}
-	if c.Domainname != "" {
-		cfg.SetDnsDomain(c.Domainname)
+	if flagDomainname != "" {
+		cfg.SetDnsDomain(flagDomainname)
 	}
-	for _, e := range c.ExtraHosts {
-		cfg.AddHostsEntry(e.Name, e.Ip)
+	for _, e := range flagHostsEntries {
+		cfg.AddHostsEntry(e.name, e.ip)
 	}
-	cfg.AddDnsNameserver(c.Dns)
-	cfg.AddDnsSearch(c.DnsSearch)
-	cfg.AddDnsOptions(c.DnsOptions)
+	cfg.AddDnsNameserver(flagDns)
+	cfg.AddDnsSearch(flagDnsSearch)
+	cfg.AddDnsOptions(flagDnsOptions)
 }
 
 func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {
@@ -158,7 +156,7 @@ func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {
 	if err != nil {
 		return
 	}
-	if len(args) == 0 && len(flagsNetInit.curr.Ports) > 0 {
+	if len(args) == 0 && len(flagPorts) > 0 {
 		return nil, fmt.Errorf("Cannot publish a port without a container network! Please remove the --publish option or add a network")
 	}
 	r = make([]*libcni.NetworkConfigList, len(args))
@@ -169,7 +167,7 @@ func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {
 		}
 		if i == 0 {
 			// Apply port mapping to 1st network
-			cfg, err = mapPorts(cfg, flagsNetInit.curr.Ports)
+			cfg, err = net.MapPorts(cfg, flagPorts)
 			if err != nil {
 				return nil, err
 			}
@@ -177,30 +175,6 @@ func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {
 		r[i] = cfg
 	}
 	return
-}
-
-func mapPorts(cfg *libcni.NetworkConfigList, ports []model.PortBinding) (*libcni.NetworkConfigList, error) {
-	if len(ports) == 0 {
-		return cfg, nil
-	}
-	portMap := make([]net.PortMapEntry, len(ports))
-	for i, p := range ports {
-		pub := p.Published
-		if pub == 0 {
-			pub = p.Target
-		}
-		prot := p.Protocol
-		if prot == "" {
-			prot = "tcp"
-		}
-		portMap[i] = net.PortMapEntry{
-			HostPort:      p.Published,
-			ContainerPort: p.Target,
-			Protocol:      prot,
-			HostIP:        p.IP,
-		}
-	}
-	return net.MapPorts(cfg, portMap)
 }
 
 func readContainerState() (s *specs.State, err error) {

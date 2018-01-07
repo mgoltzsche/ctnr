@@ -41,14 +41,6 @@ func (n *NetConfigs) GetConfig(name string) (*libcni.NetworkConfigList, error) {
 	return libcni.LoadConfList(n.confDir, name)
 }
 
-// See https://github.com/containernetworking/plugins/blob/master/plugins/meta/portmap/main.go
-type PortMapEntry struct {
-	HostPort      uint16 `json:"hostPort"`
-	ContainerPort uint16 `json:"containerPort"`
-	Protocol      string `json:"protocol"`
-	HostIP        string `json:"hostIP,omitempty"`
-}
-
 func MapPorts(original *libcni.NetworkConfigList, portMap []PortMapEntry) (*libcni.NetworkConfigList, error) {
 	if len(portMap) == 0 {
 		return original, nil

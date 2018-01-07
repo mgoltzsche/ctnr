@@ -137,38 +137,43 @@ func (b *HookBuilder) Build(spec *generate.Generator) (err error) {
 		"CNI_PATH=" + cniPluginPaths,
 	}
 
-	hookArgs := make([]string, 0, 10)
-	hookArgs = append(hookArgs, "cntnr", "net", "init")
+	netInitHookArgs := make([]string, 0, 10)
+	netInitHookArgs = append(netInitHookArgs, "cntnr", "net", "init")
+	netRmHookArgs := make([]string, 0, 5)
+	netRmHookArgs = append(netRmHookArgs, "cntnr", "net", "rm")
 	if b.hook.Domainname != "" {
-		hookArgs = append(hookArgs, "--domainname="+b.hook.Domainname)
+		netInitHookArgs = append(netInitHookArgs, "--domainname="+b.hook.Domainname)
 	}
 	for _, nameserver := range b.hook.DnsNameserver {
-		hookArgs = append(hookArgs, "--dns="+nameserver)
+		netInitHookArgs = append(netInitHookArgs, "--dns="+nameserver)
 	}
 	for _, search := range b.hook.DnsSearch {
-		hookArgs = append(hookArgs, "--dns-search="+search)
+		netInitHookArgs = append(netInitHookArgs, "--dns-search="+search)
 	}
 	for _, opt := range b.hook.DnsOptions {
-		hookArgs = append(hookArgs, "--dns-opts="+opt)
+		netInitHookArgs = append(netInitHookArgs, "--dns-opts="+opt)
 	}
 	for name, ip := range b.hook.Hosts {
-		hookArgs = append(hookArgs, "--hosts-entry="+name+"="+ip)
+		netInitHookArgs = append(netInitHookArgs, "--hosts-entry="+name+"="+ip)
 	}
 	for _, p := range b.hook.Ports {
-		hookArgs = append(hookArgs, "--publish="+p.String())
+		pOpt := "--publish=" + p.String()
+		netInitHookArgs = append(netInitHookArgs, pOpt)
+		netRmHookArgs = append(netRmHookArgs, pOpt)
 	}
 	if len(b.hook.Networks) > 0 {
-		hookArgs = append(hookArgs, b.hook.Networks...)
+		netInitHookArgs = append(netInitHookArgs, b.hook.Networks...)
+		netRmHookArgs = append(netRmHookArgs, b.hook.Networks...)
 	}
 
 	// Add hooks
 	spec.ClearPreStartHooks()
 	spec.ClearPostStopHooks()
-	spec.AddPreStartHook(executable, hookArgs)
+	spec.AddPreStartHook(executable, netInitHookArgs)
 	spec.AddPreStartHookEnv(executable, cniEnv)
 
 	if len(b.hook.Networks) > 0 {
-		spec.AddPostStopHook(executable, append([]string{"cntnr", "net", "rm"}, b.hook.Networks...))
+		spec.AddPostStopHook(executable, netRmHookArgs)
 		spec.AddPostStopHookEnv(executable, cniEnv)
 	}
 
