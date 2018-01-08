@@ -15,6 +15,7 @@
 package generate
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -97,6 +98,33 @@ func (b *SpecBuilder) SetLinuxSeccomp(profile *rspecs.LinuxSeccomp) {
 		spec.Linux = &rspecs.Linux{}
 	}
 	spec.Linux.Seccomp = profile
+}
+
+func (b *SpecBuilder) AddExposedPorts(ports []string) {
+	// Merge exposedPorts annotation
+	exposedPortsAnn := ""
+	if b.Spec().Annotations != nil {
+		exposedPortsAnn = b.Spec().Annotations["org.opencontainers.image.exposedPorts"]
+	}
+	exposed := map[string]bool{}
+	if exposedPortsAnn != "" {
+		for _, exposePortStr := range strings.Split(exposedPortsAnn, ",") {
+			exposed[strings.Trim(exposePortStr, " ")] = true
+		}
+	}
+	for _, e := range ports {
+		exposed[strings.Trim(e, " ")] = true
+	}
+	if len(exposed) > 0 {
+		exposecsv := make([]string, len(exposed))
+		i := 0
+		for k := range exposed {
+			exposecsv[i] = k
+			i++
+		}
+		sort.Strings(exposecsv)
+		b.AddAnnotation("org.opencontainers.image.exposedPorts", strings.Join(exposecsv, ","))
+	}
 }
 
 func (b *SpecBuilder) SetProcessEntrypoint(v []string) {

@@ -33,6 +33,12 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		spec.ToRootless()
 	}
 
+	if service.MountCgroups != "" {
+		if err = spec.AddCgroupsMount(service.MountCgroups); err != nil {
+			return
+		}
+	}
+
 	if err = applyService(service, vols, spec); err != nil {
 		return
 	}
@@ -59,8 +65,8 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 
 	if !rootless {
 		// Limit resources
-		spec.SetLinuxResourcesPidsLimit(32771)
-		spec.AddLinuxResourcesHugepageLimit("2MB", 9223372036854772000)
+		//spec.SetLinuxResourcesPidsLimit(32771)
+		//spec.AddLinuxResourcesHugepageLimit("2MB", 9223372036854772000)
 		// TODO: add options to limit memory, cpu and blockIO access
 
 		/*// Add network priority

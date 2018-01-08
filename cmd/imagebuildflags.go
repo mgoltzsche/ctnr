@@ -21,78 +21,78 @@ import (
 )
 
 func initImageBuildFlags(f *pflag.FlagSet, imageBuilder *builder.ImageBuilder) {
-	f.Var((*bFromImage)(imageBuilder), "from", "Extends the provided parent image (must come first)")
-	f.Var((*bAuthor)(imageBuilder), "author", "Sets the new image's author")
-	f.Var((*bWorkingDir)(imageBuilder), "work", "Sets the new image's working directory")
-	f.Var((*bEntrypoint)(imageBuilder), "entrypoint", "Sets the new image's entrypoint")
-	f.Var((*bCmd)(imageBuilder), "cmd", "Sets the new image's command")
-	f.Var((*bRun)(imageBuilder), "run", "Creates a new image by running the provided command in the current image")
-	f.Var((*bTag)(imageBuilder), "tag", "Tags the image")
+	f.Var((*iFromImage)(imageBuilder), "from", "Extends the provided parent image (must come first)")
+	f.Var((*iAuthor)(imageBuilder), "author", "Sets the new image's author")
+	f.Var((*iWorkingDir)(imageBuilder), "work", "Sets the new image's working directory")
+	f.Var((*iEntrypoint)(imageBuilder), "entrypoint", "Sets the new image's entrypoint")
+	f.Var((*iCmd)(imageBuilder), "cmd", "Sets the new image's command")
+	f.Var((*iRun)(imageBuilder), "run", "Creates a new image by running the provided command in the current image")
+	f.Var((*iTag)(imageBuilder), "tag", "Tags the image")
 }
 
-type bRun builder.ImageBuilder
+type iRun builder.ImageBuilder
 
-func (b *bRun) Set(cmd string) (err error) {
+func (b *iRun) Set(cmd string) (err error) {
 	(*builder.ImageBuilder)(b).Run(cmd)
 	return
 }
 
-func (b *bRun) Type() string {
+func (b *iRun) Type() string {
 	return "string"
 }
 
-func (b *bRun) String() string {
+func (b *iRun) String() string {
 	return ""
 }
 
-type bFromImage builder.ImageBuilder
+type iFromImage builder.ImageBuilder
 
-func (b *bFromImage) Set(image string) (err error) {
+func (b *iFromImage) Set(image string) (err error) {
 	(*builder.ImageBuilder)(b).FromImage(image)
 	return
 }
 
-func (b *bFromImage) Type() string {
+func (b *iFromImage) Type() string {
 	return "string"
 }
 
-func (b *bFromImage) String() string {
+func (b *iFromImage) String() string {
 	return ""
 }
 
-type bAuthor builder.ImageBuilder
+type iAuthor builder.ImageBuilder
 
-func (b *bAuthor) Set(author string) (err error) {
+func (b *iAuthor) Set(author string) (err error) {
 	(*builder.ImageBuilder)(b).SetAuthor(author)
 	return
 }
 
-func (b *bAuthor) Type() string {
+func (b *iAuthor) Type() string {
 	return "string"
 }
 
-func (b *bAuthor) String() string {
+func (b *iAuthor) String() string {
 	return ""
 }
 
-type bWorkingDir builder.ImageBuilder
+type iWorkingDir builder.ImageBuilder
 
-func (b *bWorkingDir) Set(s string) (err error) {
+func (b *iWorkingDir) Set(s string) (err error) {
 	(*builder.ImageBuilder)(b).SetWorkingDir(s)
 	return
 }
 
-func (b *bWorkingDir) Type() string {
+func (b *iWorkingDir) Type() string {
 	return "string"
 }
 
-func (b *bWorkingDir) String() string {
+func (b *iWorkingDir) String() string {
 	return ""
 }
 
-type bEntrypoint builder.ImageBuilder
+type iEntrypoint builder.ImageBuilder
 
-func (b *bEntrypoint) Set(s string) (err error) {
+func (b *iEntrypoint) Set(s string) (err error) {
 	entrypoint := make([]string, 0, 1)
 	if err = addStringEntries(s, &entrypoint); err != nil {
 		return
@@ -101,17 +101,17 @@ func (b *bEntrypoint) Set(s string) (err error) {
 	return
 }
 
-func (b *bEntrypoint) Type() string {
+func (b *iEntrypoint) Type() string {
 	return "string"
 }
 
-func (b *bEntrypoint) String() string {
+func (b *iEntrypoint) String() string {
 	return ""
 }
 
-type bCmd builder.ImageBuilder
+type iCmd builder.ImageBuilder
 
-func (b *bCmd) Set(s string) (err error) {
+func (b *iCmd) Set(s string) (err error) {
 	cmd := make([]string, 0, 1)
 	if err = addStringEntries(s, &cmd); err != nil {
 		return
@@ -120,25 +120,25 @@ func (b *bCmd) Set(s string) (err error) {
 	return
 }
 
-func (b *bCmd) Type() string {
+func (b *iCmd) Type() string {
 	return "string"
 }
 
-func (b *bCmd) String() string {
+func (b *iCmd) String() string {
 	return ""
 }
 
-type bTag builder.ImageBuilder
+type iTag builder.ImageBuilder
 
-func (b *bTag) Set(tag string) (err error) {
+func (b *iTag) Set(tag string) (err error) {
 	(*builder.ImageBuilder)(b).Tag(tag)
 	return
 }
 
-func (b *bTag) Type() string {
+func (b *iTag) Type() string {
 	return "string"
 }
 
-func (b *bTag) String() string {
+func (b *iTag) String() string {
 	return ""
 }

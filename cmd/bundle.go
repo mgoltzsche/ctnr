@@ -70,7 +70,7 @@ func init() {
 	bundleCmd.AddCommand(bundleDeleteCmd)
 	bundleCmd.AddCommand(bundleCreateCmd)
 	bundleCmd.AddCommand(bundleRunCmd)
-	initBundleCreateFlags(bundleCreateCmd.Flags())
+	flagsBundle.InitFlags(bundleCreateCmd.Flags())
 	bundleCreateCmd.Flags().BoolVarP(&flagBundleUpdate, "update", "u", false, "Updates existing bundle's config as well as rootfs if provided image differs from base image")
 	bundleCreateCmd.Flags().StringVarP(&flagBundleDir, "bundle", "b", "", "bundle name or directory")
 	initBundleRunFlags(bundleRunCmd.Flags())
@@ -98,7 +98,7 @@ func runBundleList(cmd *cobra.Command, args []string) (err error) {
 }
 
 func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
-	if err = flagsBundle.setBundleArgs(args); err != nil {
+	if err = flagsBundle.SetBundleArgs(args); err != nil {
 		return
 	}
 	istore, err := store.OpenLockedImageStore()
@@ -106,8 +106,11 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	defer istore.Close()
-	// TODO: Introduce --update flag to update existing bundle when flagBundleDir is set
-	c, err := createRuntimeBundle(istore, &model.Project{}, flagsBundle.last(), flagBundleDir, flagBundleUpdate)
+	service, err := flagsBundle.Get()
+	if err != nil {
+		return
+	}
+	c, err := createRuntimeBundle(istore, &model.Project{}, service, flagBundleDir, flagBundleUpdate)
 	if err != nil {
 		return
 	}

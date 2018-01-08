@@ -137,7 +137,7 @@ liteide: dependencies
 
 ide: .liteideimage
 	# Make sure to lock the build path to the top-level directory
-	cntnr bundle create -b cntnr-liteide --update=true --tty=true -w /work \
+	cntnr bundle create -b cntnr-liteide --update=true -w /work \
 		--mount "${REPODIR}:/work/src/github.com/mgoltzsche/cntnr" \
 		--mount "${REPODIR}/liteide.ini:/root/.config/liteide/liteide.ini" \
 		--mount /etc/machine-id:/etc/machine-id:ro \
@@ -146,7 +146,7 @@ ide: .liteideimage
 		--env GOPATH=/work \
 		${LITEIDEIMAGE} \
 		liteide /work/src/github.com/mgoltzsche/cntnr
-	cntnr bundle run cntnr-liteide &
+	cntnr bundle run --verbose cntnr-liteide &
 
 .liteideimage: .buildimage
 	# TODO: clean this up when --workdir and --env options are supported

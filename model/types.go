@@ -24,16 +24,17 @@ func NewProject() *Project {
 }
 
 type Service struct {
-	Name        string            `json:"-"`
-	Image       string            `json:"image,omitempty"`
-	Build       *ImageBuild       `json:"build,omitempty"`
-	Entrypoint  []string          `json:"entrypoint,omitempty"`
-	Command     []string          `json:"command,omitempty"`
-	Environment map[string]string `json:"environment,omitempty"`
-	Cwd         string            `json:"working_dir,omitempty"`
-	CapAdd      []string          `json:"cap_add,omitempty"`
-	CapDrop     []string          `json:"cap_drop,omitempty"`
-	Seccomp     string            `json:"seccomp,omitempty"`
+	Name         string            `json:"-"`
+	Image        string            `json:"image,omitempty"`
+	Build        *ImageBuild       `json:"build,omitempty"`
+	Entrypoint   []string          `json:"entrypoint,omitempty"`
+	Command      []string          `json:"command,omitempty"`
+	Environment  map[string]string `json:"environment,omitempty"`
+	Cwd          string            `json:"working_dir,omitempty"`
+	CapAdd       []string          `json:"cap_add,omitempty"`
+	CapDrop      []string          `json:"cap_drop,omitempty"`
+	Seccomp      string            `json:"seccomp,omitempty"`
+	MountCgroups string            `json:"cgroups_mount_option,omitempty"` // Not read from compose file. TODO: move to CLI only
 	NetConf
 	StdinOpen bool          `json:"stdin_open,omitempty"`
 	Tty       bool          `json:"tty,omitempty"`

@@ -13,6 +13,7 @@ import (
 
 	shellwords "github.com/mattn/go-shellwords"
 	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/net"
 	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
 	"gopkg.in/yaml.v2"
 )
@@ -294,89 +295,21 @@ func toPorts(p []string, sub Substitution, rp *[]PortBinding, path string) error
 		for _, e := range p {
 			// TODO: also support long syntax
 			e = sub(e)
-			if err := ParsePortBinding(e, rp); err != nil {
+			np := make([]net.PortMapEntry, 0, 1)
+			if err := net.ParsePortMapping(e, &np); err != nil {
 				return fmt.Errorf("%s: %s", path, err)
 			}
-		}
-	}
-	return nil
-}
-
-func ParsePortBinding(expr string, r *[]PortBinding) error {
-	sp := strings.Split(expr, "/")
-	if len(sp) > 2 {
-		return fmt.Errorf("Invalid port entry %q", expr)
-	}
-	prot := "tcp"
-	if len(sp) == 2 {
-		prot = strings.ToLower(sp[1])
-	}
-
-	var hostIp, hostPortExpr, targetPortExpr string
-	psi := strings.LastIndex(sp[0], ":")
-	hostPart := sp[0]
-	if psi > 0 && psi+1 < len(sp[0]) {
-		hostPart = sp[0][:psi]
-		targetPortExpr = sp[0][psi+1:]
-	}
-	isi := strings.LastIndex(hostPart, ":")
-	hostPortExpr = hostPart
-	if isi > 0 && isi+1 > len(hostPart) {
-		hostIp = hostPart[:isi]
-		hostPortExpr = hostPart[isi+1:]
-	}
-	if targetPortExpr == "" {
-		targetPortExpr = hostPortExpr
-	}
-	hostFrom, hostTo, err := toPortRange(hostPortExpr)
-	if err != nil {
-		return err
-	}
-	targetFrom, targetTo, err := toPortRange(targetPortExpr)
-	if err != nil {
-		return err
-	}
-	rangeSize := targetTo - targetFrom
-	if (hostTo - hostFrom) != rangeSize {
-		return fmt.Errorf("Port %q's range size differs between host and destination", expr)
-	}
-	for i := 0; i <= rangeSize; i++ {
-		targetPort := targetFrom + i
-		pubPort := hostFrom + i
-		if targetPort < 0 || targetPort > 65535 {
-			return fmt.Errorf("Target port %d exceeded range", targetPort)
-		}
-		if pubPort < 0 || pubPort > 65535 {
-			return fmt.Errorf("Published port %d exceeded range", pubPort)
-		}
-		b := PortBinding{uint16(targetPort), uint16(pubPort), prot, hostIp}
-		if *r == nil {
-			*r = []PortBinding{b}
-		} else {
-			*r = append(*r, b)
-		}
-	}
-	return nil
-}
-
-func toPortRange(rangeExpr string) (from, to int, err error) {
-	s := strings.Split(rangeExpr, "-")
-	if len(s) < 3 {
-		from, err = strconv.Atoi(s[0])
-		if err == nil {
-			if len(s) == 2 {
-				to, err = strconv.Atoi(s[1])
-				if err == nil && from <= to {
-					return
-				}
-			} else {
-				to = from
-				return
+			for _, p := range np {
+				*rp = append(*rp, PortBinding{
+					Published: p.HostPort,
+					Target:    p.ContainerPort,
+					Protocol:  p.Protocol,
+					IP:        p.HostIP,
+				})
 			}
 		}
 	}
-	err = fmt.Errorf("Invalid port range %q", rangeExpr)
-	return
+	return nil
 }
 
 func toVolumeMounts(dcVols []interface{}, sub Substitution, baseFile, destBaseFile string, rp *[]VolumeMount, path string) (err error) {

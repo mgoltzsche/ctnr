@@ -51,3 +51,15 @@ type ImageStoreRW interface {
 	UntagImage(tag string) error
 	Close() error
 }
+
+func GetImage(store ImageStoreRW, image string) (img Image, err error) {
+	if imgId, e := digest.Parse(image); e == nil && imgId.Validate() == nil {
+		return store.Image(imgId)
+	}
+	img, err = store.ImageByName(image)
+	// TODO: distiguish between image not found and severe error
+	if err != nil {
+		img, err = store.ImportImage(image)
+	}
+	return
+}

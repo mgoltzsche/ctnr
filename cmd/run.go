@@ -34,27 +34,37 @@ var (
 )
 
 func init() {
-	initBundleCreateFlags(runCmd.Flags())
+	flagsBundle.InitFlags(runCmd.Flags())
 	initBundleRunFlags(runCmd.Flags())
 }
 
-func runRun(cmd *cobra.Command, args []string) error {
+func runRun(cmd *cobra.Command, args []string) (err error) {
 	argSet := split(args, "---")
-	if err := flagsBundle.setBundleArgs(argSet[0]); err != nil {
+	services := make([]*model.Service, 0, len(argSet))
+	if err := flagsBundle.SetBundleArgs(argSet[0]); err != nil {
 		return err
 	}
+	service, err := flagsBundle.Get()
+	if err != nil {
+		return usageError(err.Error())
+	}
+	services = append(services, service)
 	for _, a := range argSet[1:] {
-		flagsBundle.add()
-		if err := cmd.Flags().Parse(a); err != nil {
+		if err = cmd.Flags().Parse(a); err != nil {
 			return usageError(err.Error())
 		}
-		if err := flagsBundle.setBundleArgs(cmd.Flags().Args()); err != nil {
-			return err
+		if err = flagsBundle.SetBundleArgs(cmd.Flags().Args()); err != nil {
+			return
 		}
+		service, err := flagsBundle.Get()
+		if err != nil {
+			return usageError(err.Error())
+		}
+		services = append(services, service)
 	}
 
 	project := model.NewProject()
-	for _, s := range flagsBundle.apps {
+	for _, s := range services {
 		project.Services[s.Name] = *s
 	}
 

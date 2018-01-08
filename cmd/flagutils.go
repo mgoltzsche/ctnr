@@ -31,14 +31,18 @@ func parseBool(s string) (bool, error) {
 	return b, err
 }
 
-func addStringEntries(s string, r *[]string) error {
+func parseStringEntries(s string) (r []string, err error) {
 	if s == "" {
-		return nil
+		return nil, nil
 	}
 	// TODO: fix parsing of cat asdf | sed ... > asd
 	// (currently parse ignores everything after the cat cmd silently)
-	e, err := shellwords.Parse(s)
-	if err != nil {
+	return shellwords.Parse(s)
+}
+
+func addStringEntries(s string, r *[]string) error {
+	e, err := parseStringEntries(s)
+	if err != nil || len(e) == 0 {
 		return err
 	}
 	*r = append(*r, e...)

@@ -17,35 +17,17 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/mgoltzsche/cntnr/model"
+	"github.com/mgoltzsche/cntnr/net"
 	"github.com/spf13/pflag"
 )
 
 var flagsBundle = newApps()
 
 func initBundleRunFlags(f *pflag.FlagSet) {
-	f.VarP((*cStdin)(flagsBundle), "stdin", "i", "binds stdin to the container")
-}
-
-func initBundleCreateFlags(f *pflag.FlagSet) {
-	c := flagsBundle
-	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
-	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
-	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
-	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
-	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
-	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
-	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default' or 'unconfined'")
-	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
-	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
-	f.Var((*cReadOnly)(c), "readonly", "mounts the root file system in read only mode")
-	f.VarP((*cTty)(flagsBundle), "tty", "t", "binds a terminal to the container")
-	initNetConfFlags(f, &c.netCfg)
-	// Stop parsing after first non flag argument (image)
-	f.SetInterspersed(false)
+	f.BoolVarP(&flagsBundle.stdin, "stdin", "i", false, "binds stdin to the container")
 }
 
 func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
@@ -56,31 +38,65 @@ func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
 	f.Var((*cDnsOptions)(c), "dns-opts", "DNS search options to write in container's /etc/resolv.conf")
 	f.Var((*cExtraHosts)(c), "hosts-entry", "additional entries to write in container's /etc/hosts")
 	f.VarP((*cPortBinding)(c), "publish", "p", "container ports to be published on the host: [[HOSTIP:]HOSTPORT:]PORT[/PROT]")
-	f.Var((*cNetworks)(c), "net", "add CNI network to container's network namespace")
+	f.Var((*cNetworks)(c), "network", "add CNI network to container's network namespace")
 }
 
 func newApps() *apps {
-	f := &apps{netCfg{nil}, []*model.Service{}}
-	f.add()
+	f := &apps{}
 	return f
 }
 
 type apps struct {
 	netCfg
-	apps []*model.Service
+	// TODO: update
+	//Update   bool
+	stdin    bool
+	tty      bool
+	readonly bool
+	app      *model.Service
 }
 
-func (c *apps) add() {
-	s := model.NewService("")
-	c.curr = &s.NetConf
-	c.apps = append(c.apps, s)
+func (c *apps) InitFlags(f *pflag.FlagSet) {
+	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
+	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
+	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
+	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
+	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
+	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
+	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default' or 'unconfined'")
+	f.Var((*cMountCgroups)(c), "mount-cgroups", "Mounts the host's cgroups with the given option: ro|rw|no")
+	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
+	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
+	f.BoolVar(&c.readonly, "readonly", false, "mounts the root file system in read only mode")
+	f.BoolVarP(&c.tty, "tty", "t", false, "binds a terminal to the container")
+	//f.BoolVarP(&c.Update, "update", "u", false, "Updates an existing bundle's configuration and rootfs if changed")
+	initNetConfFlags(f, &c.netCfg)
+	// Stop parsing after first non flag argument (image)
+	f.SetInterspersed(false)
 }
 
 func (c *apps) last() *model.Service {
-	return c.apps[len(c.apps)-1]
+	if c.app == nil {
+		c.app = model.NewService("")
+	}
+	return c.app
 }
 
-func (c *apps) setBundleArgs(ca []string) error {
+func (c *apps) Get() (*model.Service, error) {
+	if c.app == nil {
+		return nil, usageError("No service defined")
+	}
+	s := c.app
+	s.NetConf = c.net
+	s.Tty = c.tty
+	s.StdinOpen = c.stdin
+	s.ReadOnly = c.readonly
+	c.app = nil
+	c.net = model.NetConf{}
+	return s, nil
+}
+
+func (c *apps) SetBundleArgs(ca []string) error {
 	if len(ca) == 0 {
 		return usageError("No image arg specified")
 	}
@@ -105,51 +121,6 @@ func (c *cName) Type() string {
 
 func (c *cName) String() string {
 	return (*apps)(c).last().Name
-}
-
-type cStdin apps
-
-func (c *cStdin) Set(s string) (err error) {
-	(*apps)(c).last().StdinOpen, err = parseBool(s)
-	return
-}
-
-func (c *cStdin) Type() string {
-	return "bool"
-}
-
-func (c *cStdin) String() string {
-	return strconv.FormatBool((*apps)(c).last().StdinOpen)
-}
-
-type cTty apps
-
-func (c *cTty) Set(s string) (err error) {
-	(*apps)(c).last().Tty, err = parseBool(s)
-	return
-}
-
-func (c *cTty) Type() string {
-	return "bool"
-}
-
-func (c *cTty) String() string {
-	return strconv.FormatBool((*apps)(c).last().Tty)
-}
-
-type cReadOnly apps
-
-func (c *cReadOnly) Set(s string) (err error) {
-	(*apps)(c).last().ReadOnly, err = parseBool(s)
-	return
-}
-
-func (c *cReadOnly) Type() string {
-	return "bool"
-}
-
-func (c *cReadOnly) String() string {
-	return strconv.FormatBool((*apps)(c).last().ReadOnly)
 }
 
 type cEntrypoint apps
@@ -244,6 +215,21 @@ func (c *cSeccomp) String() string {
 	return (*apps)(c).last().Seccomp
 }
 
+type cMountCgroups apps
+
+func (c *cMountCgroups) Set(opt string) error {
+	(*apps)(c).last().MountCgroups = opt
+	return nil
+}
+
+func (c *cMountCgroups) Type() string {
+	return "string"
+}
+
+func (c *cMountCgroups) String() string {
+	return (*apps)(c).last().MountCgroups
+}
+
 type cExpose apps
 
 func (c *cExpose) Set(s string) (err error) {
@@ -287,13 +273,13 @@ func (c *cVolumeMount) String() string {
 }
 
 type netCfg struct {
-	curr *model.NetConf
+	net model.NetConf
 }
 
 type cHostname netCfg
 
 func (c *cHostname) Set(s string) error {
-	(*netCfg)(c).curr.Hostname = s
+	(*netCfg)(c).net.Hostname = s
 	return nil
 }
 
@@ -302,13 +288,13 @@ func (c *cHostname) Type() string {
 }
 
 func (c *cHostname) String() string {
-	return (*netCfg)(c).curr.Hostname
+	return (*netCfg)(c).net.Hostname
 }
 
 type cDomainname netCfg
 
 func (c *cDomainname) Set(s string) error {
-	(*netCfg)(c).curr.Domainname = s
+	(*netCfg)(c).net.Domainname = s
 	return nil
 }
 
@@ -317,13 +303,13 @@ func (c *cDomainname) Type() string {
 }
 
 func (c *cDomainname) String() string {
-	return (*netCfg)(c).curr.Domainname
+	return (*netCfg)(c).net.Domainname
 }
 
 type cDns netCfg
 
 func (c *cDns) Set(s string) error {
-	return addStringEntries(s, &(*netCfg)(c).curr.Dns)
+	return addStringEntries(s, &(*netCfg)(c).net.Dns)
 }
 
 func (c *cDns) Type() string {
@@ -331,13 +317,13 @@ func (c *cDns) Type() string {
 }
 
 func (c *cDns) String() string {
-	return entriesToString((*netCfg)(c).curr.Dns)
+	return entriesToString((*netCfg)(c).net.Dns)
 }
 
 type cDnsSearch netCfg
 
 func (c *cDnsSearch) Set(s string) error {
-	return addStringEntries(s, &(*netCfg)(c).curr.DnsSearch)
+	return addStringEntries(s, &(*netCfg)(c).net.DnsSearch)
 }
 
 func (c *cDnsSearch) Type() string {
@@ -345,13 +331,13 @@ func (c *cDnsSearch) Type() string {
 }
 
 func (c *cDnsSearch) String() string {
-	return entriesToString((*netCfg)(c).curr.DnsSearch)
+	return entriesToString((*netCfg)(c).net.DnsSearch)
 }
 
 type cDnsOptions netCfg
 
 func (c *cDnsOptions) Set(s string) error {
-	return addStringEntries(s, &(*netCfg)(c).curr.DnsOptions)
+	return addStringEntries(s, &(*netCfg)(c).net.DnsOptions)
 }
 
 func (c *cDnsOptions) Type() string {
@@ -359,7 +345,7 @@ func (c *cDnsOptions) Type() string {
 }
 
 func (c *cDnsOptions) String() string {
-	return entriesToString((*netCfg)(c).curr.DnsOptions)
+	return entriesToString((*netCfg)(c).net.DnsOptions)
 }
 
 type cExtraHosts netCfg
@@ -370,7 +356,7 @@ func (c *cExtraHosts) Set(v string) error {
 	if len(s) != 2 || k == "" || strings.Trim(s[1], " ") == "" {
 		return fmt.Errorf("Expected option value format: NAME=IP")
 	}
-	(*c).curr.ExtraHosts = append((*c).curr.ExtraHosts, model.ExtraHost{k, strings.Trim(s[1], " ")})
+	(*c).net.ExtraHosts = append((*c).net.ExtraHosts, model.ExtraHost{k, strings.Trim(s[1], " ")})
 	return nil
 }
 
@@ -380,7 +366,7 @@ func (c *cExtraHosts) Type() string {
 
 func (c *cExtraHosts) String() string {
 	s := ""
-	for _, e := range (*c).curr.ExtraHosts {
+	for _, e := range (*c).net.ExtraHosts {
 		s += strings.Trim(" "+e.Name+"="+e.Ip, " ")
 	}
 	return s
@@ -388,8 +374,20 @@ func (c *cExtraHosts) String() string {
 
 type cPortBinding netCfg
 
-func (c *cPortBinding) Set(s string) error {
-	return model.ParsePortBinding(s, &(*netCfg)(c).curr.Ports)
+func (c *cPortBinding) Set(s string) (err error) {
+	ports := make([]net.PortMapEntry, 0, 1)
+	if err = net.ParsePortMapping(s, &ports); err != nil {
+		return
+	}
+	for _, p := range ports {
+		(*netCfg)(c).net.Ports = append((*netCfg)(c).net.Ports, model.PortBinding{
+			Published: p.HostPort,
+			Target:    p.ContainerPort,
+			Protocol:  p.Protocol,
+			IP:        p.HostIP,
+		})
+	}
+	return
 }
 
 func (c *cPortBinding) Type() string {
@@ -398,7 +396,7 @@ func (c *cPortBinding) Type() string {
 
 func (c *cPortBinding) String() string {
 	s := ""
-	p := (*netCfg)(c).curr.Ports
+	p := (*netCfg)(c).net.Ports
 	if p != nil {
 		for _, p := range p {
 			s += strings.Trim(" "+p.String(), " ")
@@ -410,7 +408,7 @@ func (c *cPortBinding) String() string {
 type cNetworks netCfg
 
 func (c *cNetworks) Set(s string) error {
-	return addStringEntries(s, &(*netCfg)(c).curr.Networks)
+	return addStringEntries(s, &(*netCfg)(c).net.Networks)
 }
 
 func (c *cNetworks) Type() string {
@@ -418,5 +416,5 @@ func (c *cNetworks) Type() string {
 }
 
 func (c *cNetworks) String() string {
-	return entriesToString((*netCfg)(c).curr.Networks)
+	return entriesToString((*netCfg)(c).net.Networks)
 }
