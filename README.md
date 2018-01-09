@@ -11,9 +11,9 @@ Besides cntnr is a platform to try out new runc features.
 ## Features
 - OCI bundle and container preparation as well as execution as unprivileged user
 - OCI image build as unprivileged user
-- Simple POSIX-based image and bundle store to provide a high level of accessibility and portability
-- Various image formats and transports supported by [containers/image](https://github.com/containers/image)
+- Simple concurrently accessible portable POSIX-based image and bundle store
 - Image and bundle file system creation using [umoci](https://github.com/openSUSE/umoci)
+- Various image formats and transports supported by [containers/image](https://github.com/containers/image)
 - Optional container networking using [CNI](https://github.com/containernetworking/cni) (as OCI runtime hook)
 - Partial [docker compose](https://docs.docker.com/compose/compose-file/) file format support
 - Simple CLI partially compatible with [docker](https://www.docker.com/)'s
@@ -22,11 +22,14 @@ Besides cntnr is a platform to try out new runc features.
 
 ## Rootless containers
 
-The ability to run a container as unprivileged user has some advantages:
-
-- Container images can be built everywhere - also inside an unprivileged container (TODO).
-- A container can be run in a restrictive, rootless environment.
-- A higher degree and more flexible level of security since you can rely on your host OS' ACL.
+Concerning accessibility, usability and security container engines that do not require root privileges have several advantages compared to those that do:
+- **Containers can be run by unprivileged users.**  
+  _Required in restrictive environments and useful for graphical applications._
+- **Container images can be built everywhere.**  
+  _Higher flexibility in unprivileged CI/CD build jobs - running a container in a container will soon also be possible._
+- **A higher degree and more flexible level of security.**  
+  _Less likely for an attacker to gain root access through a possible engine security leak when run as unprivileged user._  
+  _User/group-based container access control leveraging the host OS' ACL._
 
 See [Aleksa Sarai's blog post](https://www.cyphar.com/blog/post/rootless-containers-with-runc) (which inspired me to start this project) for more information.
 
@@ -42,21 +45,27 @@ A feature on the roadmap is a daemon that runs as root and can configure a separ
 
 
 **Inside the container a process' or file's user cannot be changed.**
-This is caused by the fact that all operations in the container are still run by the host user whose ID is simply mapped to 0/root inside the container.
-Unfortunately this stops many official docker images as well as package managers from working.
+This is caused by the fact that all operations in the container are still run by the host user who is mapped to a user inside the container.
+Unfortunately this stops some official docker images as well as package managers from working.
 A solution approach is to hook the corresponding system calls and simulate them without actually doing them.
-Though this does not solve the whole problem since some applications may still not work when they ask for the actual state and expect their earlier system calls to be applied. For this reason e.g. apt-get cannot be used when the container is run as unprivileged user. Fortunately this approach works for yum and also for apk which is why for instance alpine-based images can already be built by unprivileged users.  
+Though this does not solve the whole problem since some applications may still not work when they ask for the actual state while expecting their earlier system calls to be applied. For this reason e.g. apt-get cannot be used when the container is run as unprivileged user. Fortunately this approach works for dnf and yum as well as apk which is why for instance alpine-based images can already be built by unprivileged users.  
 (=> See https://github.com/dex4er/fakechroot/wiki)
 
 
 ## Build
-Build the binary dist/bin/cntnr (requires docker)
+
+Build the binary `dist/bin/cntnr` as well as `dist/bin/cni-plugins` on a Linux machine with git, make and docker:
 ```
 git clone https://github.com/mgoltzsche/cntnr.git
 cd cntnr
 make
 ```  
-Optionally you can now open the project with LiteIDE running in a cntnr container
+Install in `/usr/local`:
+```
+sudo make install
+```  
+Optionally the project can now be opened with LiteIDE running in a cntnr container  
+_(Please note that it takes some time to build the LiteIDE container image)_:
 ```
 make ide
 ```
@@ -107,7 +116,7 @@ cntnr bundle run firefox
 ## Roadmap
 
 - separate OCI hook binary
-- CLI improvements: image build, bundle run, compose
+- CLI improvements: image rm, image build, bundle run, compose
 - additional configurable read-only image stores
 - Improved container, bundle and image garbage collection
 - health check

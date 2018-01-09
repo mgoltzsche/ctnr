@@ -148,18 +148,17 @@ ide: .liteideimage
 		liteide /work/src/github.com/mgoltzsche/cntnr
 	cntnr bundle run --verbose cntnr-liteide &
 
+LITEIDE_PKGS=g++ qt5-qttools qt5-qtbase-dev qt5-qtbase-x11 qt5-qtwebkit xkeyboard-config libcanberra-gtk3 adwaita-icon-theme ttf-dejavu
 .liteideimage: .buildimage
 	# TODO: clean this up when --workdir and --env options are supported
 	cntnr image create \
 		--from=docker-daemon:${BUILDIMAGE} \
 		--author='Max Goltzsche <max.goltzsche@gmail.com>' \
-		--run='cd / && git clone https://github.com/visualfc/liteide.git' \
-		--run='apk add --update --no-cache qt5-qtbase-dev qt5-qtbase-x11 qt5-qtwebkit qt5-qttools g++ || /usr/lib/qt5/bin/qmake -help >/dev/null' \
-		--run='cd /liteide/build && ./update_pkg.sh' \
-		--run='cd /liteide/build && QTDIR=/usr/lib/qt5 ./build_linux.sh' \
-		--run='apk add --update --no-cache xkeyboard-config || /usr/lib/qt5/bin/qmake -help >/dev/null' \
-		--run='apk add --update --no-cache libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family || /usr/lib/qt5/bin/qmake -help >/dev/null' \
-		--run='rm -rf /usr/local/bin; ln -s /liteide/build/liteide/bin /usr/local/bin' \
+		--run='cd / && git clone https://github.com/visualfc/liteide.git \
+			&& apk add --update --no-cache ${LITEIDE_PKGS} || /usr/lib/qt5/bin/qmake -help >/dev/null' \
+		--run='cd /liteide/build && ./update_pkg.sh \
+			&& cd /liteide/build && QTDIR=/usr/lib/qt5 ./build_linux.sh \
+			&& rm -rf /usr/local/bin; ln -s /liteide/build/liteide/bin /usr/local/bin' \
 		--tag=${LITEIDEIMAGE}
 
 install:
