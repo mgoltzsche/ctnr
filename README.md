@@ -9,7 +9,7 @@ Besides cntnr is a platform to try out new runc features.
 
 
 ## Features
-- OCI bundle and container preparation as well as execution as unprivileged user
+- OCI bundle and container preparation as well as execution as unprivileged user using [runc](https://github.com/opencontainers/runc)
 - OCI image build as unprivileged user
 - Simple concurrently accessible portable POSIX-based image and bundle store
 - Image and bundle file system creation using [umoci](https://github.com/openSUSE/umoci)
@@ -98,14 +98,34 @@ cntnr run -b firefox --update \
 	--mount /etc/machine-id:/etc/machine-id:ro \
 	local/firefox:alpine
 ```  
-The `--update` option makes this operation idempotent:
-The container's file system is reused and only recreated when the underlying image has changed.
+The `-b <BUNDLE>` and `--update` options make this operation idempotent:
+The bundle's file system is reused and only recreated when the underlying image has changed.
 Use this option to restart containers very quickly. Otherwise cntnr copies the
 image file system on container bundle creation which can take some time and disk space depending on the image's size.  
-Also this option enables container updates on restart when you frequently update the corresponding image using the following command:
+Also this option enables container updates on restart when you frequently update the corresponding base image using the following command:
 ```
 cntnr image import docker://alpine:3.7
 ```
+
+
+## The OCI standards and this implementation
+
+An *[OCI image](https://github.com/opencontainers/image-spec/tree/v1.0.0)* provides a base [configuration](https://github.com/opencontainers/image-spec/blob/v1.0.0/config.md) and file system to create an OCI container bundle from.  
+cntnr manages images in its store directory.
+A new bundle is created by extracting the image's file system layers into a directory
+and [deriving](https://github.com/opencontainers/image-spec/blob/v1.0.0/conversion.md) the bundle's default configuration from the image's configuration.
+
+
+An *[OCI bundle](https://github.com/opencontainers/runtime-spec/blob/v1.0.0/bundle.md)*
+provides the file system and [configuration](https://github.com/opencontainers/runtime-spec/blob/v1.0.0/config.md)
+required to run a container.
+Basically it is a directory containing a `rootfs` sub directory with the file system and a `config.json` file with the configuration.  
+cntnr manages bundles in its store directory. Alternatively a custom directory can also be used as bundle.
+
+
+A *[container](https://github.com/opencontainers/runtime-spec/blob/v1.0.0/runtime.md)* is a host-specific bundle instance.
+On Linux it is a set of namespaces in which a configured process can be run.  
+cntnr uses [runc/libcontainer](https://github.com/opencontainers/runc/blob/v1.0.0-rc4/libcontainer/README.md) as OCI runtime implementation.
 
 
 ## Related tools
@@ -126,6 +146,7 @@ cntnr image import docker://alpine:3.7
 - systemd integration (cgroup, startup notification)
 - network manager daemon with ACL to be used by unprivileged users to configure their container networks
 - service discovery integration (hook / DNS; consul, etcd)
+- _Far future: Make compatible with other platforms the runtime-spec/libcontainer supports_
 
 ## TL;DR
 Experiments with nested containers on an ubuntu 16.04 host
