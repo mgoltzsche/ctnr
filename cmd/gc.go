@@ -26,7 +26,7 @@ var (
 		Use:   "gc",
 		Short: "Garage collects all bundles in the bundle store",
 		Long:  `Garage collects all bundles in the bundle store.`,
-		Run:   handleError(runBundleGc),
+		Run:   wrapRun(runBundleGc),
 	}
 	bundleTTL time.Duration
 )

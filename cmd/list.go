@@ -25,7 +25,7 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Lists all active containers in the local store (--state-dir)",
 	Long:  `Lists all containers in the local store.`,
-	Run:   handleError(runList),
+	Run:   wrapRun(runList),
 }
 
 func runList(cmd *cobra.Command, args []string) error {

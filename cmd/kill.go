@@ -26,7 +26,7 @@ var (
 		Use:   "kill [flags] CONTAINERID",
 		Short: "Kills a running container",
 		Long:  `Kills a running container.`,
-		Run:   handleError(runKill),
+		Run:   wrapRun(runKill),
 	}
 	flagSignal string
 	flagAll    bool

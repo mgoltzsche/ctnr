@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 
 	"github.com/containers/image/types"
+	image "github.com/mgoltzsche/cntnr/oci/image"
 	istore "github.com/mgoltzsche/cntnr/oci/image/store"
 	storepkg "github.com/mgoltzsche/cntnr/oci/store"
 )
@@ -38,10 +39,11 @@ var (
 	flagStateDir    string
 	flagImagePolicy string
 
-	store    storepkg.Store
-	errorLog = log.NewStdLogger(os.Stderr)
-	warnLog  = log.NewStdLogger(os.Stderr)
-	debugLog = log.NewNopLogger()
+	store             storepkg.Store
+	lockedImageStore image.ImageStoreRW
+	errorLog          = log.NewStdLogger(os.Stderr)
+	warnLog           = log.NewStdLogger(os.Stderr)
+	debugLog          = log.NewNopLogger()
 )
 
 // RootCmd represents the base command when called without any subcommands

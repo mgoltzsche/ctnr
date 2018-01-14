@@ -24,7 +24,7 @@ var (
 		Use:   "run [flags] IMAGE1 [COMMAND1] [--- [flags] IMAGE2 [COMMAND2]]...",
 		Short: "Runs a container",
 		Long:  `Runs a container.`,
-		Run:   handleError(runRun),
+		Run:   wrapRun(runRun),
 	}
 
 /*
@@ -35,20 +35,20 @@ var (
 
 func init() {
 	flagsBundle.InitFlags(runCmd.Flags())
-	initBundleRunFlags(runCmd.Flags())
+	flagsBundle.InitRunFlags(runCmd.Flags())
 }
 
 func runRun(cmd *cobra.Command, args []string) (err error) {
 	argSet := split(args, "---")
-	services := make([]*model.Service, 0, len(argSet))
+	services := make([]model.Service, 0, len(argSet))
 	if err := flagsBundle.SetBundleArgs(argSet[0]); err != nil {
 		return err
 	}
-	service, err := flagsBundle.Get()
+	service, err := flagsBundle.Read()
 	if err != nil {
-		return usageError(err.Error())
+		return
 	}
-	services = append(services, service)
+	services = append(services, *service)
 	for _, a := range argSet[1:] {
 		if err = cmd.Flags().Parse(a); err != nil {
 			return usageError(err.Error())
@@ -56,19 +56,14 @@ func runRun(cmd *cobra.Command, args []string) (err error) {
 		if err = flagsBundle.SetBundleArgs(cmd.Flags().Args()); err != nil {
 			return
 		}
-		service, err := flagsBundle.Get()
-		if err != nil {
-			return usageError(err.Error())
+		service, e := flagsBundle.Read()
+		if e != nil {
+			return
 		}
-		services = append(services, service)
+		services = append(services, *service)
 	}
 
-	project := model.NewProject()
-	for _, s := range services {
-		project.Services[s.Name] = *s
-	}
-
-	return runProject(project)
+	return runServices(services, resourceResolver("", map[string]model.Volume{}))
 }
 
 func split(args []string, sep string) [][]string {

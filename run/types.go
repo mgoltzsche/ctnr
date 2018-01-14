@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/hashicorp/go-multierror"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -80,7 +81,7 @@ func WrapExitError(ex, err error) error {
 		err = ex
 	} else if ex != nil {
 		if exiterr, ok := ex.(*ExitError); ok {
-			err = &ExitError{exiterr.status, err}
+			err = &ExitError{exiterr.status, multierror.Append(ex, err)}
 		} else {
 			err = fmt.Errorf("%s, await container termination: %s", err, ex)
 		}

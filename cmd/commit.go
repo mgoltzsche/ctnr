@@ -26,7 +26,7 @@ var (
 		Use:   "commit [flags] CONTAINER [IMAGENAME]",
 		Short: "Creates a new image from the current container",
 		Long:  `Creates a new image from the current container.`,
-		Run:   handleError(runCommit),
+		Run:   wrapRun(runCommit),
 	}
 	flagAuthor  string
 	flagComment string
@@ -51,16 +51,10 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	defer lockedBundle.Close()
-	lockedStore, err := store.OpenLockedImageStore()
+	lockedStore, err := openImageStore()
 	if err != nil {
 		return
 	}
-	defer func() {
-		if e := lockedStore.Close(); e != nil && err == nil {
-			err = e
-		}
-	}()
-	// TODO: add proper comment
 	spec, err := lockedBundle.Spec()
 	if err != nil {
 		return

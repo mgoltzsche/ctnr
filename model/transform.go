@@ -20,14 +20,12 @@ const (
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.cntnr.bundle.id"
 )
 
-func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBuilder) (err error) {
+func (service *Service) ToSpec(res ResourceResolver, rootless bool, spec *generate.SpecBuilder) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("generate OCI bundle spec: %s", err)
 		}
 	}()
-
-	vols := NewVolumeResolver(p)
 
 	if rootless {
 		spec.ToRootless()
@@ -39,7 +37,7 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 		}
 	}
 
-	if err = applyService(service, vols, spec); err != nil {
+	if err = applyService(service, res, spec); err != nil {
 		return
 	}
 
@@ -53,7 +51,7 @@ func (service *Service) ToSpec(p *Project, rootless bool, spec *generate.SpecBui
 	} else {
 		// Use seccomp configuration from file
 		var j []byte
-		if j, err = ioutil.ReadFile(resolveFile(service.Seccomp, p.Dir)); err != nil {
+		if j, err = ioutil.ReadFile(res.ResolveFile(service.Seccomp)); err != nil {
 			return
 		}
 		seccomp := &specs.LinuxSeccomp{}
@@ -188,7 +186,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuilder) (err error) {
+func applyService(service *Service, res ResourceResolver, spec *generate.SpecBuilder) (err error) {
 	// Entrypoint & command
 	if service.Entrypoint != nil {
 		spec.SetProcessEntrypoint(service.Entrypoint)
@@ -247,13 +245,8 @@ func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuil
 
 	spec.SetRootReadonly(service.ReadOnly)
 
-	// Add mounts
-	for _, m := range service.Volumes {
-		mount, err := vols.PrepareVolumeMount(m)
-		if err != nil {
-			return err
-		}
-		spec.Spec().Mounts = append(spec.Spec().Mounts, mount)
+	if err = toMounts(service.Volumes, res, spec); err != nil {
+		return
 	}
 
 	// Capabilities
@@ -273,5 +266,43 @@ func applyService(service *Service, vols VolumeResolver, spec *generate.SpecBuil
 		}
 	}
 
+	return nil
+}
+
+func toMounts(mounts []VolumeMount, res ResourceResolver, spec *generate.SpecBuilder) error {
+	for _, m := range mounts {
+		src, err := res.ResolveMountSource(m)
+		if err != nil {
+			return err
+		}
+
+		t := m.Type
+		if t == "" {
+			t = "bind"
+		}
+		opts := m.Options
+		if len(opts) == 0 {
+			// Apply default mount options. See man7.org/linux/man-pages/man8/mount.8.html
+			opts = []string{"bind", "nodev", "mode=0755"}
+		} else {
+			foundBindOpt := false
+			for _, opt := range opts {
+				if opt == "bind" || opt == "rbind" {
+					foundBindOpt = true
+					break
+				}
+			}
+			if !foundBindOpt {
+				opts = append(opts, "rbind")
+			}
+		}
+
+		spec.Spec().Mounts = append(spec.Spec().Mounts, specs.Mount{
+			Type:        t,
+			Source:      src,
+			Destination: m.Target,
+			Options:     opts,
+		})
+	}
 	return nil
 }

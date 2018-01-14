@@ -75,12 +75,12 @@ make ide
 
 ### Create and run container from Docker image
 ```
-> cntnr run docker://alpine:3.6 echo hello world
+> cntnr run docker://alpine:3.7 echo hello world
 hello world
 ```
 
 ### Create and run Firefox as unprivileged user
-Build a Firefox ESR container image `local/firefox:alpine`:
+Build a Firefox ESR container image `local/firefox:alpine` (cached idempotent operation):
 ```
 cntnr image create \
 	--from=docker://alpine:3.7 \
@@ -90,18 +90,21 @@ cntnr image create \
 	--tag=local/firefox:alpine
 ```  
 
-Create a bundle named `firefox` from the previously built image (the `--update` option makes this operation idempotent):
+Create and run a bundle named `firefox` from the previously built image:
 ```
-cntnr bundle create -b firefox --update=true \
+cntnr run -b firefox --update \
 	--env DISPLAY=$DISPLAY \
 	--mount /tmp/.X11-unix:/tmp/.X11-unix \
 	--mount /etc/machine-id:/etc/machine-id:ro \
 	local/firefox:alpine
 ```  
-
-Run the previously prepared `firefox` bundle as container:
+The `--update` option makes this operation idempotent:
+The container's file system is reused and only recreated when the underlying image has changed.
+Use this option to restart containers very quickly. Otherwise cntnr copies the
+image file system on container bundle creation which can take some time and disk space depending on the image's size.  
+Also this option enables container updates on restart when you frequently update the corresponding image using the following command:
 ```
-cntnr bundle run firefox
+cntnr image import docker://alpine:3.7
 ```
 
 

@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/oci/image"
@@ -27,14 +28,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func handleError(cf func(cmd *cobra.Command, args []string) error) func(cmd *cobra.Command, args []string) {
+func wrapRun(cf func(cmd *cobra.Command, args []string) error) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		err := cf(cmd, args)
-		if exitErr, ok := err.(*run.ExitError); ok {
-			os.Exit(exitErr.Status())
-		} else {
-			exitOnError(cmd, err)
-		}
+		closeLockedImageStore()
+		exitOnError(cmd, err)
 	}
 }
 
@@ -42,17 +40,17 @@ func exitOnError(cmd *cobra.Command, err error) {
 	if err == nil {
 		return
 	}
-	msg := err.Error()
-	exitCode := 2
 	switch err.(type) {
 	case UsageError:
-		msg = fmt.Sprintf("Error: %s\n%s\n%s\n", msg, cmd.UsageString(), msg)
-		exitCode = 1
+		fmt.Fprintf(os.Stderr, "Error: %s\n%s\n%s\n", err, cmd.UsageString(), err)
+		os.Exit(1)
+	case *run.ExitError:
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		os.Exit(err.(*run.ExitError).Status())
 	default:
-		msg = msg + "\n"
+		fmt.Fprintf(os.Stderr, "%s\n", err)
 	}
-	os.Stderr.WriteString(msg)
-	os.Exit(exitCode)
+	os.Exit(255)
 }
 
 func usageError(msg string) UsageError {
@@ -75,60 +73,89 @@ func exitError(exitCode int, frmt string, values ...interface{}) {
 	os.Exit(exitCode)
 }
 
-func runProject(project *model.Project) (err error) {
+func openImageStore() (image.ImageStoreRW, error) {
+	if lockedImageStore == nil {
+		s, err := store.OpenLockedImageStore()
+		if err != nil {
+			return nil, err
+		}
+		lockedImageStore = s
+	}
+	return lockedImageStore, nil
+}
+
+func closeLockedImageStore() {
+	if lockedImageStore != nil {
+		lockedImageStore.Close()
+	}
+}
+
+func resourceResolver(baseDir string, volumes map[string]model.Volume) model.ResourceResolver {
+	paths := model.NewPathResolver(baseDir)
+	return model.NewResourceResolver(paths, volumes)
+}
+
+func runServices(services []model.Service, res model.ResourceResolver) (err error) {
 	manager, err := factory.NewContainerManager(flagStateDir, flagRootless, debugLog)
 	if err != nil {
 		return
 	}
 
-	istore, err := store.OpenLockedImageStore()
+	containers := run.NewContainerGroup(debugLog)
+	defer func() {
+		e := containers.Close()
+		err = run.WrapExitError(err, e)
+	}()
+
+	for _, s := range services {
+		var c run.Container
+		if c, err = createContainer(&s, res, manager); err != nil {
+			return
+		}
+		containers.Add(c)
+	}
+
+	closeLockedImageStore()
+	containers.Start()
+	containers.Wait()
+	return
+}
+
+func createContainer(model *model.Service, res model.ResourceResolver, manager run.ContainerManager) (c run.Container, err error) {
+	var bundle *bundle.LockedBundle
+	if bundle, err = createRuntimeBundle(model, res); err != nil {
+		return
+	}
+	defer func() {
+		if err != nil {
+			if e := bundle.Close(); e != nil {
+				err = multierror.Append(err, e)
+			}
+		}
+	}()
+
+	ioe := run.NewStdContainerIO()
+	if model.StdinOpen {
+		ioe.Stdin = os.Stdin
+	}
+
+	return manager.NewContainer("", bundle, ioe)
+}
+
+func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b *bundle.LockedBundle, err error) {
+	if service.Image == "" {
+		return nil, fmt.Errorf("service %q has no image", service.Name)
+	}
+
+	istore, err := openImageStore()
 	if err != nil {
 		return
 	}
-	defer istore.Close()
 
-	containers := run.NewContainerGroup(debugLog)
-	containers.HandleSignals()
-	defer func() {
-		err = run.WrapExitError(err, containers.Close())
-	}()
-
-	for _, s := range project.Services {
-		fmt.Println(s.JSON())
-		var bundle *bundle.LockedBundle
-		if bundle, err = createRuntimeBundle(istore, project, &s, "", false); err != nil {
-			return err
-		}
-
-		ioe := run.NewStdContainerIO()
-		if s.StdinOpen {
-			ioe.Stdin = os.Stdin
-		}
-
-		var container run.Container
-		if container, err = manager.NewContainer("", bundle, ioe); err != nil {
-			return err
-		}
-
-		if err = containers.Deploy(container); err != nil {
-			return err
-		}
-	}
-
-	istore.Close()
-	return containers.Wait()
-}
-
-func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *model.Service, bundleIdOrDir string, update bool) (b *bundle.LockedBundle, err error) {
-	if service.Image == "" {
-		err = fmt.Errorf("service %q has no image", service.Name)
-		return
-	}
-
-	bundleId := bundleIdOrDir
+	bundleId := service.Bundle
 	bundleDir := ""
-	if isFile(bundleIdOrDir) {
-		bundleDir = bundleIdOrDir
+	if isFile(bundleId) {
+		bundleDir = bundleId
 		bundleId = ""
 	}
 
@@ -147,15 +174,15 @@ func createRuntimeBundle(istore image.ImageStoreRW, p *model.Project, service *m
 	}
 
 	// Generate config.json
-	if err = service.ToSpec(p, flagRootless, builder.SpecBuilder); err != nil {
+	if err = service.ToSpec(res, flagRootless, builder.SpecBuilder); err != nil {
 		return
 	}
 
 	// Create bundle
 	if bundleDir != "" {
-		b, err = builder.Build(bundleDir, update)
+		b, err = builder.Build(bundleDir, service.BundleUpdate)
 	} else {
-		b, err = store.CreateBundle(builder, update)
+		b, err = store.CreateBundle(builder, service.BundleUpdate)
 	}
 	return
 }

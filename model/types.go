@@ -5,13 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
-
-type VolumeResolver interface {
-	PrepareVolumeMount(VolumeMount) (specs.Mount, error)
-}
 
 type Project struct {
 	Dir      string             `json:"-"`
@@ -25,6 +19,8 @@ func NewProject() *Project {
 
 type Service struct {
 	Name         string            `json:"-"`
+	BundleUpdate bool              `json:"-"`
+	Bundle       string            `json:"-"`
 	Image        string            `json:"image,omitempty"`
 	Build        *ImageBuild       `json:"build,omitempty"`
 	Entrypoint   []string          `json:"entrypoint,omitempty"`

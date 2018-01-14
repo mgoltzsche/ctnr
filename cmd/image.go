@@ -39,32 +39,32 @@ var (
 		Use:   "list",
 		Short: "Lists all images",
 		Long:  `Lists all images available in the local store.`,
-		Run:   handleError(runImageList),
+		Run:   wrapRun(runImageList),
 	}
 	imageTagCmd = &cobra.Command{
 		Use:   "tag IMAGE...",
 		Short: "Tags one or many images",
 		Long:  `Tags one or many images in the local store.`,
-		Run:   handleError(runImageTag),
+		Run:   wrapRun(runImageTag),
 	}
 	imageUntagCmd = &cobra.Command{
 		Use:   "untag IMAGE...",
 		Short: "Untags one or many images",
 		Long:  `Untags one or many images in the local store.`,
-		Run:   handleError(runImageUntag),
+		Run:   wrapRun(runImageUntag),
 	}
 	imageGcCmd = &cobra.Command{
 		Use:   "gc",
 		Short: "Garbage collects image blobs",
 		Long:  `Garbage collects all image blobs in the local store that are not referenced.`,
-		Run:   handleError(runImageGc),
+		Run:   wrapRun(runImageGc),
 	}
 	imageImportCmd = &cobra.Command{
 		Use:   "import IMAGE",
 		Short: "Imports an image",
 		Long: `Fetches an image either from a local or remote source and 
 imports it into the local store.`,
-		Run: handleError(runImageImport),
+		Run: wrapRun(runImageImport),
 	}
 	imageExportCmd = &cobra.Command{
 		Use:   "export IMAGEREF DEST",
@@ -79,13 +79,13 @@ to a local or remote destination.`,
 		Use:   "cat-config IMAGE",
 		Short: "Prints an image's configuration",
 		Long:  `Prints an image's configuration.`,
-		Run:   handleError(runImageCatConfig),
+		Run:   wrapRun(runImageCatConfig),
 	}
 	imageBuildCmd = &cobra.Command{
 		Use:   "create",
 		Short: "Builds a new image from the provided options",
 		Long:  `Builds a new image from the provided options.`,
-		Run:   handleError(runImageBuildRun),
+		Run:   wrapRun(runImageBuildRun),
 	}
 	flagImageTTL time.Duration
 	flagImage    string
@@ -133,11 +133,10 @@ func runImageImport(cmd *cobra.Command, args []string) (err error) {
 	if len(args) != 1 {
 		return usageError("No image provided to import")
 	}
-	lockedStore, err := store.OpenLockedImageStore()
+	lockedStore, err := openImageStore()
 	if err != nil {
 		return
 	}
-	defer lockedStore.Close()
 
 	img, err := lockedStore.ImportImage(args[0])
 	if err == nil {
@@ -150,11 +149,10 @@ func runImageTag(cmd *cobra.Command, args []string) (err error) {
 	if len(args) < 2 {
 		return usageError("ImageID and tag arguments required")
 	}
-	lockedStore, err := store.OpenLockedImageStore()
+	lockedStore, err := openImageStore()
 	if err != nil {
 		return
 	}
-	defer lockedStore.Close()
 
 	imageId, err := digest.Parse(args[0])
 	if err != nil {
@@ -172,11 +170,10 @@ func runImageUntag(cmd *cobra.Command, args []string) (err error) {
 	if len(args) == 0 {
 		return usageError("No image tag argument provided")
 	}
-	lockedStore, err := store.OpenLockedImageStore()
+	lockedStore, err := openImageStore()
 	if err != nil {
 		return
 	}
-	defer lockedStore.Close()
 
 	for _, tag := range args {
 		e := lockedStore.UntagImage(tag)
@@ -195,11 +192,10 @@ func runImageCatConfig(cmd *cobra.Command, args []string) (err error) {
 	if len(args) != 1 {
 		return usageError("No IMAGE argument provided")
 	}
-	lockedStore, err := store.OpenLockedImageStore()
+	lockedStore, err := openImageStore()
 	if err != nil {
 		return
 	}
-	defer lockedStore.Close()
 
 	img, err := lockedStore.ImageByName(args[0])
 	if err != nil {
@@ -221,11 +217,10 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 	if len(args) != 0 {
 		return usageError(fmt.Sprintf("No arguments supported but %q provided", args[0]))
 	}
-	lockedStore, err := store.OpenLockedImageStore()
+	lockedStore, err := openImageStore()
 	if err != nil {
 		return
 	}
-	defer lockedStore.Close()
 
 	cache := builder.NewImageBuildCache(filepath.Join(flagStoreDir, "image-build-cache"))
 	img, err := imageBuilder.Build(lockedStore, store.BundleStore, cache, flagRootless, log.NewStdLogger(os.Stderr))

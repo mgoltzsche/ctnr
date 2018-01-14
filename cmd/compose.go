@@ -29,7 +29,7 @@ var (
 		Use:   "run [flags] FILE",
 		Short: "Run a docker compose file",
 		Long:  `Converts and runs a docker compose file.`,
-		Run:   handleError(runComposeRun),
+		Run:   wrapRun(runComposeRun),
 	}
 )
 
@@ -47,5 +47,9 @@ func runComposeRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return runProject(project)
+	services := make([]model.Service, 0, len(project.Services))
+	for _, s := range project.Services {
+		services = append(services, s)
+	}
+	return runServices(services, resourceResolver(project.Dir, project.Volumes))
 }

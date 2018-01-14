@@ -241,9 +241,10 @@ func (c *Container) stop() bool {
 	}
 	c.mutex.Unlock()
 
-	quit := make(chan error, 1)
+	quit := make(chan bool, 1)
 	go func() {
-		quit <- c.Wait()
+		c.wait.Wait()
+		quit <- true
 	}()
 	select {
 	case <-time.After(time.Duration(10000000)): // TODO: read value from OCI runtime configuration
@@ -254,7 +255,7 @@ func (c *Container) stop() bool {
 			if err := c.process.Signal(syscall.SIGKILL); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: stop: killing container %q: %s\n", c.ID(), err)
 			}
-			c.Wait()
+			c.wait.Wait()
 		}
 		<-quit
 	case <-quit:
@@ -263,21 +264,31 @@ func (c *Container) stop() bool {
 	return true
 }
 
-func (c *Container) Wait() error {
+// Waits for the container process to terminate and returns the process' error if any
+func (c *Container) Wait() (err error) {
 	c.wait.Wait()
-	return c.err
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	err = c.err
+	c.err = nil
+	return err
 }
 
 func (c *Container) Close() (err error) {
-	if c.stop() {
+	c.stop()
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.container != nil {
 		err = c.err
+		if e := c.container.Destroy(); e != nil {
+			err = run.WrapExitError(err, e)
+		}
+		if e := c.bundle.Close(); e != nil {
+			err = run.WrapExitError(err, e)
+		}
+		c.container = nil
+		c.bundle = nil
+		c.err = nil
 	}
-	if e := c.container.Destroy(); e != nil {
-		err = run.WrapExitError(err, e)
-	}
-	if e := c.bundle.Close(); e != nil {
-		err = run.WrapExitError(err, e)
-	}
-	c.container = nil
-	return err
+	return
 }

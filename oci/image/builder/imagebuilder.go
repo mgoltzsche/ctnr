@@ -338,6 +338,8 @@ func (b *BuildState) commitLayer(comment string) (err error) {
 		}
 	}()
 
+	b.info.Println("  -> committing layer ...")
+
 	rootfs := filepath.Join(b.bundle.Dir(), "rootfs")
 	parentImageId := b.bundle.Image()
 	img, err := b.images.AddImageLayer(rootfs, parentImageId, b.author, comment)

@@ -1,70 +1,93 @@
 package run
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/log"
 )
 
 type ContainerGroup struct {
-	runners map[string]Container
+	runners []Container
 	debug   log.Logger
+	err     error
 }
 
 func NewContainerGroup(debug log.Logger) *ContainerGroup {
-	return &ContainerGroup{map[string]Container{}, debug}
+	return &ContainerGroup{nil, debug, nil}
 }
 
 func (m *ContainerGroup) Close() (err error) {
+	m.Stop()
+	err = m.err
 	for _, c := range m.runners {
-		c.Stop()
-	}
-	for _, c := range m.runners {
-		if e := c.Wait(); e != nil {
+		if e := c.Close(); e != nil {
 			if err == nil {
 				err = e
 			} else {
-				err = WrapExitError(e, err)
+				err = WrapExitError(err, e)
 			}
 		}
 	}
-	m.runners = map[string]Container{}
+	m.runners = nil
 	return err
 }
 
-func (m *ContainerGroup) Deploy(c Container) error {
-	err := c.Start()
-	if err == nil {
-		m.runners[c.ID()] = c
+func (m *ContainerGroup) Add(c Container) {
+	m.runners = append(m.runners, c)
+}
+
+func (m *ContainerGroup) Start() {
+	if m.err != nil {
+		return
 	}
-	return err
+
+	for i, c := range m.runners {
+		m.err = c.Start()
+		if m.err != nil {
+			m.debug.Println("start:", m.err)
+			for _, sc := range m.runners[0:i] {
+				sc.Stop()
+				if e := sc.Wait(); e != nil {
+					m.err = multierror.Append(m.err, e)
+				}
+			}
+			return
+		}
+	}
+	return
 }
 
-func (m *ContainerGroup) Wait() (err error) {
+func (m *ContainerGroup) Stop() {
 	for _, c := range m.runners {
-		e := c.Wait()
-		if e != nil {
-			m.debug.Println(e)
-			if err == nil {
-				err = e
-			}
-		}
+		c.Stop()
 	}
-	m.runners = map[string]Container{}
-	return err
 }
 
-func (m *ContainerGroup) HandleSignals() {
+func (m *ContainerGroup) Wait() {
+	if m.err != nil {
+		return
+	}
+
+	m.handleSignals()
+
+	for _, c := range m.runners {
+		if e := c.Wait(); e != nil {
+			m.debug.Println(e)
+			m.err = WrapExitError(m.err, e)
+		}
+	}
+	return
+}
+
+// TODO: close signal channel if there is a use case where the process is not terminated afterwards
+func (m *ContainerGroup) handleSignals() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	go func() {
 		<-sigs
-		err := m.Close()
-		if err != nil {
-			os.Stderr.WriteString(fmt.Sprintf("Failed to stop: %s\n", err))
-		}
+		m.Stop()
 	}()
 }

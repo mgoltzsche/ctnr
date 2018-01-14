@@ -42,7 +42,7 @@ and not executed manually.`,
 		Long: `Initializes a container's networks.
 The OCI container state JSON [1] is expected on stdin.
 See OCI state spec at https://github.com/opencontainers/runtime-spec/blob/master/runtime.md`,
-		Run: handleError(runNetInit),
+		Run: wrapRun(runNetInit),
 	}
 	netRemoveCmd = &cobra.Command{
 		Use:   "rm",
@@ -50,7 +50,7 @@ See OCI state spec at https://github.com/opencontainers/runtime-spec/blob/master
 		Long: `Removes a container's networks.
 The OCI container state JSON is expected on stdin.
 See OCI state spec at https://github.com/opencontainers/runtime-spec/blob/master/runtime.md`,
-		Run: handleError(runNetRemove),
+		Run: wrapRun(runNetRemove),
 	}
 )
 

@@ -24,11 +24,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var flagsBundle = newApps()
-
-func initBundleRunFlags(f *pflag.FlagSet) {
-	f.BoolVarP(&flagsBundle.stdin, "stdin", "i", false, "binds stdin to the container")
-}
+var flagsBundle = bundleFlags{}
 
 func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
 	f.Var((*cHostname)(c), "hostname", "container hostname")
@@ -41,23 +37,19 @@ func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
 	f.Var((*cNetworks)(c), "network", "add CNI network to container's network namespace")
 }
 
-func newApps() *apps {
-	f := &apps{}
-	return f
-}
-
-type apps struct {
+type bundleFlags struct {
 	netCfg
-	// TODO: update
-	//Update   bool
+	update   bool
 	stdin    bool
 	tty      bool
 	readonly bool
 	app      *model.Service
 }
 
-func (c *apps) InitFlags(f *pflag.FlagSet) {
+func (c *bundleFlags) InitFlags(f *pflag.FlagSet) {
 	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
+	f.BoolVarP(&c.update, "update", "u", false, "Updates an existing bundle's configuration and rootfs if changed")
+	f.VarP((*cBundle)(c), "bundle", "b", "bundle name or directory")
 	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
 	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
 	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
@@ -69,24 +61,28 @@ func (c *apps) InitFlags(f *pflag.FlagSet) {
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.BoolVar(&c.readonly, "readonly", false, "mounts the root file system in read only mode")
 	f.BoolVarP(&c.tty, "tty", "t", false, "binds a terminal to the container")
-	//f.BoolVarP(&c.Update, "update", "u", false, "Updates an existing bundle's configuration and rootfs if changed")
 	initNetConfFlags(f, &c.netCfg)
-	// Stop parsing after first non flag argument (image)
+	// Stop parsing after first non flag argument (which is the image)
 	f.SetInterspersed(false)
 }
 
-func (c *apps) last() *model.Service {
+func (c *bundleFlags) InitRunFlags(f *pflag.FlagSet) {
+	f.BoolVarP(&c.stdin, "stdin", "i", false, "binds stdin to the container")
+}
+
+func (c *bundleFlags) curr() *model.Service {
 	if c.app == nil {
 		c.app = model.NewService("")
 	}
 	return c.app
 }
 
-func (c *apps) Get() (*model.Service, error) {
+func (c *bundleFlags) Read() (*model.Service, error) {
 	if c.app == nil {
 		return nil, usageError("No service defined")
 	}
 	s := c.app
+	s.BundleUpdate = c.update
 	s.NetConf = c.net
 	s.Tty = c.tty
 	s.StdinOpen = c.stdin
@@ -96,11 +92,11 @@ func (c *apps) Get() (*model.Service, error) {
 	return s, nil
 }
 
-func (c *apps) SetBundleArgs(ca []string) error {
+func (c *bundleFlags) SetBundleArgs(ca []string) error {
 	if len(ca) == 0 {
 		return usageError("No image arg specified")
 	}
-	last := c.last()
+	last := c.curr()
 	last.Image = ca[0]
 	if len(ca) > 1 {
 		last.Command = ca[1:]
@@ -108,10 +104,10 @@ func (c *apps) SetBundleArgs(ca []string) error {
 	return nil
 }
 
-type cName apps
+type cName bundleFlags
 
 func (c *cName) Set(s string) error {
-	(*apps)(c).last().Name = s
+	(*bundleFlags)(c).curr().Name = s
 	return nil
 }
 
@@ -120,14 +116,29 @@ func (c *cName) Type() string {
 }
 
 func (c *cName) String() string {
-	return (*apps)(c).last().Name
+	return (*bundleFlags)(c).curr().Name
 }
 
-type cEntrypoint apps
+type cBundle bundleFlags
+
+func (c *cBundle) Set(bundle string) error {
+	(*bundleFlags)(c).curr().Bundle = bundle
+	return nil
+}
+
+func (c *cBundle) Type() string {
+	return "string"
+}
+
+func (c *cBundle) String() string {
+	return (*bundleFlags)(c).curr().Bundle
+}
+
+type cEntrypoint bundleFlags
 
 func (c *cEntrypoint) Set(s string) error {
-	(*apps)(c).last().Entrypoint = nil
-	return addStringEntries(s, &(*apps)(c).last().Entrypoint)
+	(*bundleFlags)(c).curr().Entrypoint = nil
+	return addStringEntries(s, &(*bundleFlags)(c).curr().Entrypoint)
 }
 
 func (c *cEntrypoint) Type() string {
@@ -135,13 +146,13 @@ func (c *cEntrypoint) Type() string {
 }
 
 func (c *cEntrypoint) String() string {
-	return entriesToString((*apps)(c).last().Entrypoint)
+	return entriesToString((*bundleFlags)(c).curr().Entrypoint)
 }
 
-type cWorkingDir apps
+type cWorkingDir bundleFlags
 
 func (c *cWorkingDir) Set(s string) error {
-	(*apps)(c).last().Cwd = s
+	(*bundleFlags)(c).curr().Cwd = s
 	return nil
 }
 
@@ -150,13 +161,13 @@ func (c *cWorkingDir) Type() string {
 }
 
 func (c *cWorkingDir) String() string {
-	return (*apps)(c).last().Cwd
+	return (*bundleFlags)(c).curr().Cwd
 }
 
-type cEnvironment apps
+type cEnvironment bundleFlags
 
 func (c *cEnvironment) Set(s string) error {
-	return addMapEntries(s, &(*apps)(c).last().Environment)
+	return addMapEntries(s, &(*bundleFlags)(c).curr().Environment)
 }
 
 func (c *cEnvironment) Type() string {
@@ -164,13 +175,13 @@ func (c *cEnvironment) Type() string {
 }
 
 func (c *cEnvironment) String() string {
-	return mapToString((*apps)(c).last().Environment)
+	return mapToString((*bundleFlags)(c).curr().Environment)
 }
 
-type cCapAdd apps
+type cCapAdd bundleFlags
 
 func (c *cCapAdd) Set(s string) error {
-	return addStringEntries(s, &(*apps)(c).last().CapAdd)
+	return addStringEntries(s, &(*bundleFlags)(c).curr().CapAdd)
 }
 
 func (c *cCapAdd) Type() string {
@@ -178,17 +189,17 @@ func (c *cCapAdd) Type() string {
 }
 
 func (c *cCapAdd) String() string {
-	return entriesToString((*apps)(c).last().CapAdd)
+	return entriesToString((*bundleFlags)(c).curr().CapAdd)
 }
 
-type cCapDrop apps
+type cCapDrop bundleFlags
 
 func (c *cCapDrop) Set(s string) error {
 	if strings.ToUpper(s) == "ALL" {
-		(*apps)(c).last().CapAdd = nil
+		(*bundleFlags)(c).curr().CapAdd = nil
 		return nil
 	} else {
-		return addStringEntries(s, &(*apps)(c).last().CapDrop)
+		return addStringEntries(s, &(*bundleFlags)(c).curr().CapDrop)
 	}
 }
 
@@ -197,13 +208,13 @@ func (c *cCapDrop) Type() string {
 }
 
 func (c *cCapDrop) String() string {
-	return entriesToString((*apps)(c).last().CapDrop)
+	return entriesToString((*bundleFlags)(c).curr().CapDrop)
 }
 
-type cSeccomp apps
+type cSeccomp bundleFlags
 
 func (c *cSeccomp) Set(s string) error {
-	(*apps)(c).last().Seccomp = s
+	(*bundleFlags)(c).curr().Seccomp = s
 	return nil
 }
 
@@ -212,13 +223,13 @@ func (c *cSeccomp) Type() string {
 }
 
 func (c *cSeccomp) String() string {
-	return (*apps)(c).last().Seccomp
+	return (*bundleFlags)(c).curr().Seccomp
 }
 
-type cMountCgroups apps
+type cMountCgroups bundleFlags
 
 func (c *cMountCgroups) Set(opt string) error {
-	(*apps)(c).last().MountCgroups = opt
+	(*bundleFlags)(c).curr().MountCgroups = opt
 	return nil
 }
 
@@ -227,13 +238,13 @@ func (c *cMountCgroups) Type() string {
 }
 
 func (c *cMountCgroups) String() string {
-	return (*apps)(c).last().MountCgroups
+	return (*bundleFlags)(c).curr().MountCgroups
 }
 
-type cExpose apps
+type cExpose bundleFlags
 
 func (c *cExpose) Set(s string) (err error) {
-	return addStringEntries(s, &(*apps)(c).last().Expose)
+	return addStringEntries(s, &(*bundleFlags)(c).curr().Expose)
 }
 
 func (c *cExpose) Type() string {
@@ -241,10 +252,10 @@ func (c *cExpose) Type() string {
 }
 
 func (c *cExpose) String() string {
-	return entriesToString((*apps)(c).last().Entrypoint)
+	return entriesToString((*bundleFlags)(c).curr().Entrypoint)
 }
 
-type cVolumeMount apps
+type cVolumeMount bundleFlags
 
 func (c *cVolumeMount) Set(s string) (err error) {
 	v := model.VolumeMount{}
@@ -255,7 +266,7 @@ func (c *cVolumeMount) Set(s string) (err error) {
 	if err != nil {
 		return
 	}
-	r := &(*apps)(c).last().Volumes
+	r := &(*bundleFlags)(c).curr().Volumes
 	*r = append(*r, v)
 	return
 }
@@ -266,7 +277,7 @@ func (c *cVolumeMount) Type() string {
 
 func (c *cVolumeMount) String() string {
 	s := ""
-	for _, v := range (*apps)(c).last().Volumes {
+	for _, v := range (*bundleFlags)(c).curr().Volumes {
 		s += strings.Trim(" "+v.String(), " ")
 	}
 	return s

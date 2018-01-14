@@ -41,28 +41,26 @@ var (
 		Use:   "list",
 		Short: "Lists all bundles available in the local store (--bundle-store-dir)",
 		Long:  `Lists all bundles available in the local store (--bundle-store-dir).`,
-		Run:   handleError(runBundleList),
+		Run:   wrapRun(runBundleList),
 	}
 	bundleCreateCmd = &cobra.Command{
 		Use:   "create [flags] IMAGE [COMMAND]",
 		Short: "Creates a new bundle",
 		Long:  `Creates a new OCI runtime bundle`,
-		Run:   handleError(runBundleCreate),
+		Run:   wrapRun(runBundleCreate),
 	}
 	bundleDeleteCmd = &cobra.Command{
 		Use:   "delete BUNDLEID",
 		Short: "Deletes a bundle from the local store",
 		Long:  `Deletes a bundle from the local store.`,
-		Run:   handleError(runBundleDelete),
+		Run:   wrapRun(runBundleDelete),
 	}
 	bundleRunCmd = &cobra.Command{
 		Use:   "run [flags] BUNDLEID|BUNDLEDIR",
 		Short: "Runs an existing bundle",
 		Long:  `Runs an existing OCI runtime bundle`,
-		Run:   handleError(runBundleRun),
+		Run:   wrapRun(runBundleRun),
 	}
-	flagBundleDir    string
-	flagBundleUpdate bool
 )
 
 func init() {
@@ -71,9 +69,7 @@ func init() {
 	bundleCmd.AddCommand(bundleCreateCmd)
 	bundleCmd.AddCommand(bundleRunCmd)
 	flagsBundle.InitFlags(bundleCreateCmd.Flags())
-	bundleCreateCmd.Flags().BoolVarP(&flagBundleUpdate, "update", "u", false, "Updates existing bundle's config as well as rootfs if provided image differs from base image")
-	bundleCreateCmd.Flags().StringVarP(&flagBundleDir, "bundle", "b", "", "bundle name or directory")
-	initBundleRunFlags(bundleRunCmd.Flags())
+	flagsBundle.InitRunFlags(bundleRunCmd.Flags())
 }
 
 func runBundleList(cmd *cobra.Command, args []string) (err error) {
@@ -101,16 +97,13 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 	if err = flagsBundle.SetBundleArgs(args); err != nil {
 		return
 	}
-	istore, err := store.OpenLockedImageStore()
+	service, err := flagsBundle.Read()
 	if err != nil {
 		return
 	}
-	defer istore.Close()
-	service, err := flagsBundle.Get()
-	if err != nil {
-		return
-	}
-	c, err := createRuntimeBundle(istore, &model.Project{}, service, flagBundleDir, flagBundleUpdate)
+	paths := model.NewPathResolver("")
+	res := model.NewResourceResolver(paths, map[string]model.Volume{})
+	c, err := createRuntimeBundle(service, res)
 	if err != nil {
 		return
 	}
@@ -166,7 +159,7 @@ func runBundleRun(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 	ioe := run.NewStdContainerIO()
-	if flagsBundle.last().StdinOpen {
+	if flagsBundle.curr().StdinOpen {
 		ioe.Stdin = os.Stdin
 	}
 	c, err := containers.NewContainer("", lockedBundle, ioe)
