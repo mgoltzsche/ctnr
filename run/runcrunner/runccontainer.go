@@ -13,31 +13,36 @@ import (
 )
 
 type RuncContainer struct {
-	io      run.ContainerIO
-	id      string
-	bundle  run.ContainerBundle
-	rootDir string
-	cmd     *exec.Cmd
-	mutex   *sync.Mutex
-	wait    *sync.WaitGroup
-	debug   log.Logger
-	err     error
+	io           run.ContainerIO
+	id           string
+	bundle       run.ContainerBundle
+	noNewKeyring bool
+	noPivot      bool
+	rootDir      string
+	cmd          *exec.Cmd
+	mutex        *sync.Mutex
+	wait         *sync.WaitGroup
+	debug        log.Logger
+	err          error
 }
 
-func NewRuncContainer(id string, bundle run.ContainerBundle, rootDir string, ioe run.ContainerIO, debug log.Logger) *RuncContainer {
+func NewRuncContainer(cfg *run.ContainerConfig, rootDir string, debug log.Logger) *RuncContainer {
+	id := cfg.Id
 	if id == "" {
-		if id = bundle.ID(); id == "" {
+		if id = cfg.Bundle.ID(); id == "" {
 			panic("no container ID provided and bundle ID is empty")
 		}
 	}
 	return &RuncContainer{
-		io:      ioe,
-		id:      id,
-		bundle:  bundle,
-		rootDir: rootDir,
-		mutex:   &sync.Mutex{},
-		wait:    &sync.WaitGroup{},
-		debug:   debug,
+		id:           id,
+		io:           cfg.Io,
+		bundle:       cfg.Bundle,
+		noPivot:      cfg.NoPivotRoot,
+		noNewKeyring: cfg.NoNewKeyring,
+		rootDir:      rootDir,
+		mutex:        &sync.Mutex{},
+		wait:         &sync.WaitGroup{},
+		debug:        debug,
 	}
 }
 
@@ -59,7 +64,15 @@ func (c *RuncContainer) Start() (err error) {
 	}
 
 	c.err = nil
-	c.cmd = exec.Command("runc", "--root", c.rootDir, "run", c.ID())
+	args := append(make([]string, 0, 5), "--root="+c.rootDir)
+	if c.noPivot {
+		args = append(args, "--no-pivot")
+	}
+	if c.noNewKeyring {
+		args = append(args, "--no-new-keyring")
+	}
+	args = append(args, "run", c.ID())
+	c.cmd = exec.Command("runc", args...)
 	c.cmd.Dir = c.bundle.Dir()
 	c.cmd.Stdout = c.io.Stdout
 	c.cmd.Stderr = c.io.Stderr

@@ -13,6 +13,8 @@ import (
 	"github.com/mgoltzsche/cntnr/run"
 )
 
+var _ run.ContainerManager = &ContainerManager{}
+
 type ContainerManager struct {
 	runners map[string]run.Container
 	rootDir string
@@ -27,8 +29,8 @@ func NewContainerManager(rootDir string, debug log.Logger) (*ContainerManager, e
 	return &ContainerManager{map[string]run.Container{}, absRoot, debug}, nil
 }
 
-func (m *ContainerManager) NewContainer(id string, bundle run.ContainerBundle, ioe run.ContainerIO) (run.Container, error) {
-	return NewRuncContainer(id, bundle, m.rootDir, ioe, m.debug), nil
+func (m *ContainerManager) NewContainer(cfg *run.ContainerConfig) (run.Container, error) {
+	return NewRuncContainer(cfg, m.rootDir, m.debug), nil
 }
 
 func (m *ContainerManager) Kill(id, signal string, all bool) error {

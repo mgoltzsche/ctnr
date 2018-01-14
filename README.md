@@ -194,11 +194,11 @@ dist/bin/cntnr bundle run nested
 "mkdir /sys/fs/cgroup/cpuset/05dh[...]: permission denied"
   -> inner container: add --rootless option
 "could not create session key: operation not permitted"
-  -> inner container: set --no-new-keyring libcontainer run option (TODO: expose)
+  -> inner container: enable --no-new-keyring option
   -> outer container: allow corresponding syscall in seccomp profile (dirty: set --seccomp=unconfined)
 "pivot_root operation not permitted"
+  -> inner container: enable --no-pivot option
   -> outer container: seccomp: add "pivot_root" syscall to the list of SCMP_ACT_ALLOW calls
-  -> inner container: set --no-pivot libcontainer run option (TODO: expose)
 
 # Deprecated: Different error in rootless container:
 cntnr bundle create -b nested-alpine --update -t --cap-add=all --seccomp=unconfined --mount=./dist/bin/cntnr:/bin/cntnr:exec:ro --mount=./dist/cni-plugins:/cni --mount=/boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic docker://alpine:3.7

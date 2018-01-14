@@ -18,6 +18,14 @@ type ContainerBundle interface {
 	Close() error
 }
 
+type ContainerConfig struct {
+	Id           string
+	Bundle       ContainerBundle
+	Io           ContainerIO
+	NoPivotRoot  bool
+	NoNewKeyring bool
+}
+
 type ContainerIO struct {
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -32,7 +40,7 @@ func NewStdContainerIO() ContainerIO {
 }
 
 type ContainerManager interface {
-	NewContainer(id string, bundle ContainerBundle, ioe ContainerIO) (Container, error)
+	NewContainer(cfg *ContainerConfig) (Container, error)
 	List() ([]ContainerInfo, error)
 	Kill(id, signal string, all bool) error
 }

@@ -139,7 +139,13 @@ func createContainer(model *model.Service, res model.ResourceResolver, manager r
 		ioe.Stdin = os.Stdin
 	}
 
-	return manager.NewContainer("", bundle, ioe)
+	return manager.NewContainer(&run.ContainerConfig{
+		Id:           "",
+		Bundle:       bundle,
+		Io:           ioe,
+		NoNewKeyring: model.NoNewKeyring,
+		NoPivotRoot:  model.NoPivot,
+	})
 }
 
 func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b *bundle.LockedBundle, err error) {

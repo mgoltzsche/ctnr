@@ -19,8 +19,10 @@ func NewProject() *Project {
 
 type Service struct {
 	Name         string            `json:"-"`
-	BundleUpdate bool              `json:"-"`
 	Bundle       string            `json:"-"`
+	BundleUpdate bool              `json:"-"`
+	NoPivot      bool              `json:"-"`
+	NoNewKeyring bool              `json:"-"`
 	Image        string            `json:"image,omitempty"`
 	Build        *ImageBuild       `json:"build,omitempty"`
 	Entrypoint   []string          `json:"entrypoint,omitempty"`

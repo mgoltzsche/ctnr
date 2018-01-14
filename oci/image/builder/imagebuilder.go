@@ -243,7 +243,11 @@ func (b *BuildState) Run(cmd string) (err error) {
 			return
 		}
 		// TODO: move container creation into bundle init method and update the process here only
-		container, err := manager.NewContainer(b.bundle.ID(), b.bundle, run.NewStdContainerIO())
+		container, err := manager.NewContainer(&run.ContainerConfig{
+			Id:     b.bundle.ID(),
+			Bundle: b.bundle,
+			Io:     run.NewStdContainerIO(),
+		})
 		if err != nil {
 			return
 		}

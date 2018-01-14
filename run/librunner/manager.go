@@ -12,6 +12,8 @@ import (
 	"github.com/opencontainers/runc/libcontainer"
 )
 
+var _ run.ContainerManager = &ContainerManager{}
+
 type ContainerManager struct {
 	factory  libcontainer.Factory
 	runners  map[string]run.Container
@@ -36,8 +38,8 @@ func NewContainerManager(rootDir string, rootless bool, debug log.Logger) (r *Co
 	return
 }
 
-func (m *ContainerManager) NewContainer(id string, bundle run.ContainerBundle, ioe run.ContainerIO) (c run.Container, err error) {
-	if c, err = NewContainer(id, bundle, ioe, m.rootless, m.factory, m.debug); err != nil {
+func (m *ContainerManager) NewContainer(cfg *run.ContainerConfig) (c run.Container, err error) {
+	if c, err = NewContainer(cfg, m.rootless, m.factory, m.debug); err != nil {
 		err = fmt.Errorf("new container: %s", err)
 	}
 	return

@@ -23,6 +23,7 @@ import (
 
 func init() {
 	if len(os.Args) > 1 && os.Args[1] == "init" {
+		// Initializes the previously created container in this new process
 		runtime.GOMAXPROCS(1)
 		runtime.LockOSThread()
 		factory, _ := libcontainer.New("")
@@ -48,9 +49,10 @@ type Container struct {
 	err       error
 }
 
-func NewContainer(id string, bundle run.ContainerBundle, ioe run.ContainerIO, rootless bool, factory libcontainer.Factory, debug log.Logger) (r *Container, err error) {
+func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.Factory, debug log.Logger) (r *Container, err error) {
+	id := cfg.Id
 	if id == "" {
-		if id = bundle.ID(); id == "" {
+		if id = cfg.Bundle.ID(); id == "" {
 			panic("no container ID provided and bundle ID is empty")
 		}
 	}
@@ -66,7 +68,7 @@ func NewContainer(id string, bundle run.ContainerBundle, ioe run.ContainerIO, ro
 
 	debug.Printf("Creating container %q", id)
 
-	spec, err := bundle.Spec()
+	spec, err := cfg.Bundle.Spec()
 	if err != nil {
 		return
 	}
@@ -77,7 +79,9 @@ func NewContainer(id string, bundle run.ContainerBundle, ioe run.ContainerIO, ro
 	if err != nil {
 		return
 	}
-	if err = os.Chdir(bundle.Dir()); err != nil {
+
+	// Must change to bundle dir because CreateLibcontainerConfig assumes it is in the bundle directory
+	if err = os.Chdir(cfg.Bundle.Dir()); err != nil {
 		return nil, fmt.Errorf("change to bundle directory: %s", err)
 	}
 	defer func() {
@@ -88,9 +92,9 @@ func NewContainer(id string, bundle run.ContainerBundle, ioe run.ContainerIO, ro
 
 	config, err := specconv.CreateLibcontainerConfig(&specconv.CreateOpts{
 		CgroupName:       id,
-		UseSystemdCgroup: false,
-		NoPivotRoot:      false,
-		NoNewKeyring:     false,
+		UseSystemdCgroup: false, // TODO: expose as option
+		NoPivotRoot:      cfg.NoPivotRoot,
+		NoNewKeyring:     cfg.NoNewKeyring,
 		Spec:             spec,
 		Rootless:         rootless,
 	})
@@ -98,7 +102,7 @@ func NewContainer(id string, bundle run.ContainerBundle, ioe run.ContainerIO, ro
 		return
 	}
 	if spec.Root != nil {
-		config.Rootfs = filepath.Join(bundle.Dir(), spec.Root.Path)
+		config.Rootfs = filepath.Join(cfg.Bundle.Dir(), spec.Root.Path)
 	}
 	container, err := factory.Create(id, config)
 	if err != nil {
@@ -108,8 +112,8 @@ func NewContainer(id string, bundle run.ContainerBundle, ioe run.ContainerIO, ro
 	r = &Container{
 		container: container,
 		id:        id,
-		io:        ioe,
-		bundle:    bundle,
+		io:        cfg.Io,
+		bundle:    cfg.Bundle,
 		spec:      spec,
 		mutex:     &sync.Mutex{},
 		wait:      &sync.WaitGroup{},

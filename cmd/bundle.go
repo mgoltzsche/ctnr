@@ -159,10 +159,16 @@ func runBundleRun(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 	ioe := run.NewStdContainerIO()
-	if flagsBundle.curr().StdinOpen {
+	if flagsBundle.stdin {
 		ioe.Stdin = os.Stdin
 	}
-	c, err := containers.NewContainer("", lockedBundle, ioe)
+	c, err := containers.NewContainer(&run.ContainerConfig{
+		Id:           "",
+		Bundle:       lockedBundle,
+		Io:           ioe,
+		NoPivotRoot:  flagsBundle.noPivot,
+		NoNewKeyring: flagsBundle.noNewKeyring,
+	})
 	if err != nil {
 		return
 	}

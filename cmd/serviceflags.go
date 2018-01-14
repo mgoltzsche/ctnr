@@ -39,11 +39,13 @@ func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
 
 type bundleFlags struct {
 	netCfg
-	update   bool
-	stdin    bool
-	tty      bool
-	readonly bool
-	app      *model.Service
+	update       bool
+	stdin        bool
+	tty          bool
+	readonly     bool
+	noPivot      bool
+	noNewKeyring bool
+	app          *model.Service
 }
 
 func (c *bundleFlags) InitFlags(f *pflag.FlagSet) {
@@ -68,6 +70,8 @@ func (c *bundleFlags) InitFlags(f *pflag.FlagSet) {
 
 func (c *bundleFlags) InitRunFlags(f *pflag.FlagSet) {
 	f.BoolVarP(&c.stdin, "stdin", "i", false, "binds stdin to the container")
+	f.BoolVar(&c.noNewKeyring, "no-new-keyring", false, "do not create a new session keyring for the container. This will cause the container to inherit the calling processes session key")
+	f.BoolVar(&c.noPivot, "no-pivot", false, "do not use pivot root to jail process inside rootfs. This should be used whenever the rootfs is on top of a ramdisk")
 }
 
 func (c *bundleFlags) curr() *model.Service {
