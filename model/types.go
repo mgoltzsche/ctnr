@@ -18,11 +18,12 @@ func NewProject() *Project {
 }
 
 type Service struct {
-	Name         string            `json:"-"`
-	Bundle       string            `json:"-"`
-	BundleUpdate bool              `json:"-"`
-	NoPivot      bool              `json:"-"`
-	NoNewKeyring bool              `json:"-"`
+	Name         string `json:"-"`
+	Bundle       string `json:"bundle,omitempty"`
+	BundleUpdate bool   `json:"bundle_update,omitempty"`
+	NoPivot      bool   `json:"no_pivot,omitempty"`
+	NoNewKeyring bool   `json:"no_new_keyring,omitempty"`
+
 	Image        string            `json:"image,omitempty"`
 	Build        *ImageBuild       `json:"build,omitempty"`
 	Entrypoint   []string          `json:"entrypoint,omitempty"`

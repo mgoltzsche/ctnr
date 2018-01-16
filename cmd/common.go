@@ -109,6 +109,7 @@ func runServices(services []model.Service, res model.ResourceResolver) (err erro
 
 	for _, s := range services {
 		var c run.Container
+		debugLog.Println(s.JSON())
 		if c, err = createContainer(&s, res, manager); err != nil {
 			return
 		}

@@ -25,8 +25,8 @@ Besides cntnr is a platform to try out new runc features.
 Concerning accessibility, usability and security container engines that do not require root privileges have several advantages compared to those that do:
 - **Containers can be run by unprivileged users.**  
   _Required in restrictive environments and useful for graphical applications._
-- **Container images can be built everywhere.**  
-  _Higher flexibility in unprivileged CI/CD build jobs - running a container in a container will soon also be possible._
+- **Container images can be built almost in every Linux environment.**  
+  _Higher flexibility in unprivileged CI/CD build jobs - running a container in a container is already possible (see limitations and experiments below)._
 - **A higher degree and more flexible level of security.**  
   _Less likely for an attacker to gain root access through a possible engine security leak when run as unprivileged user._  
   _User/group-based container access control leveraging the host OS' ACL._
@@ -108,7 +108,7 @@ cntnr image import docker://alpine:3.7
 ```
 
 
-## The OCI standards and their implementation
+## The OCI standard and this implementation
 
 An *[OCI image](https://github.com/opencontainers/image-spec/tree/v1.0.0)* basically provides a base [configuration](https://github.com/opencontainers/image-spec/blob/v1.0.0/config.md) and file system to create an OCI bundle from. The file system consists of a list of layers which are represented by archive files each containing the diff to its parent.  
 cntnr manages images in its local store directory in the [OCI image layout format](https://github.com/opencontainers/image-spec/blob/v1.0.0/image-layout.md).
@@ -148,67 +148,6 @@ cntnr uses [runc/libcontainer](https://github.com/opencontainers/runc/blob/v1.0.
 - service discovery integration (hook / DNS; consul, etcd)
 - _Far future: Make it available on platforms other than Linux_
 
-## TL;DR
-Experiments with nested containers on an ubuntu 16.04 host
-```
-# Working example (privileged docker host container):
-docker run -ti --privileged --name cnestedpriv --rm \
-	-v $(pwd)/dist/bin/cntnr:/bin/cntnr \
-	ubuntu:16.04
-> cntnr run -t --network=host docker://alpine:3.7
+## Experiments
 
-# Not working (unprivileged docker host container):
-docker run -ti --name cnested --cap-add=SYS_PTRACE --rm \
-	-v $(pwd)/dist/bin/cntnr:/bin/cntnr \
-	-v /boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic \
-	alpine:3.7
-> cntnr run  -ti --rootless --net=host docker://alpine:3.7
-=> doesn't work
-> apt-get update
-> apt-get install -y wget ptrace apparmor
-> wget -O /bin/checkconfig https://raw.githubusercontent.com/moby/moby/master/contrib/check-config.sh && chmod +x /bin/checkconfig
-> checkconfig # docker host check script
-=> all general features are fine
-> cntnr run -ti --network=host docker://alpine:3.7
-=> error: "WARN[0000] os: process already finished" and then terminates with "running exec setns process for init caused \"exit status 34\""
-=> capability (or syscall in seccomp) missing
-
-# Works in privileged cntnr container (as root or unprivileged user)
-dist/bin/cntnr bundle create -b nested --update -t \
-	--cap-add=all \
-	--mount=./dist/bin/cntnr:/bin/cntnr:exec:ro \
-	--mount=./dist/cni-plugins:/cni \
-	--mount=/boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic \
-	docker://alpine:3.7
-dist/bin/cntnr bundle run nested
-> cntnr run -t --rootless --network=host docker://alpine:3.7
-
-# Problem remaining: Works in privileged docker container but not in unprivileged:
-# => Look for forbidden capabilities/syscalls that can be avoided or must be added to the outer container
-# => support low child container isolation to be able to build an image everywhere
-
-# Known errors and workarounds to run a container as unprivileged user (also see https://github.com/opencontainers/runc/issues/1456):
-"running exec setns process for init caused \"exit status 34\""
-  -> inner container: add --rootless option (if that has no effect: add setns syscall to list of SCMP_ACT_ALLOW calls (TODO: which syscall exactly?))
-  -> {root} (outer container: add --seccomp=unconfined option instead of --cap-add=all)
-"mkdir /sys/fs/cgroup/cpuset/05dh[...]: permission denied"
-  -> inner container: add --rootless option
-"could not create session key: operation not permitted"
-  -> inner container: enable --no-new-keyring option
-  -> outer container: allow corresponding syscall in seccomp profile (dirty: set --seccomp=unconfined)
-"pivot_root operation not permitted"
-  -> inner container: enable --no-pivot option
-  -> outer container: seccomp: add "pivot_root" syscall to the list of SCMP_ACT_ALLOW calls
-
-# Deprecated: Different error in rootless container:
-cntnr bundle create -b nested-alpine --update -t --cap-add=all --seccomp=unconfined --mount=./dist/bin/cntnr:/bin/cntnr:exec:ro --mount=./dist/cni-plugins:/cni --mount=/boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic docker://alpine:3.7
-=> /sys/fs/cgroup is there (of type 'none' and with option 'rbind' in opposite to the root container mount of type 'sysfs')
-cntnr bundle run nested-alpine
-> cntnr run -t --network=host docker://alpine:3.7
-=> error: "mkdir /sys/fs/cgroup/cpuset/pqf3hvfjl5cnlpk4hvdbsievki: permission denied"
-=> problem: other cgroups should stay untouched but only child cgroups required for rw access:
-    https://github.com/opencontainers/runtime-spec/issues/66
-    https://github.com/opencontainers/runtime-spec/pull/397
-   => seems not to be completely solvable as long as one has to deal with kernel <4.6
-    https://github.com/opencontainers/runc/issues/225
-```
+[Experiments with nested containers](experiments.md)

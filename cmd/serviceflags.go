@@ -91,6 +91,8 @@ func (c *bundleFlags) Read() (*model.Service, error) {
 	s.Tty = c.tty
 	s.StdinOpen = c.stdin
 	s.ReadOnly = c.readonly
+	s.NoPivot = c.noPivot
+	s.NoNewKeyring = c.noNewKeyring
 	c.app = nil
 	c.net = model.NetConf{}
 	return s, nil
