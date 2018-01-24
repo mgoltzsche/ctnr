@@ -31,7 +31,7 @@ Concerning accessibility, usability and security container engines that do not r
   _Less likely for an attacker to gain root access through a possible engine security leak when run as unprivileged user._  
   _User/group-based container access control leveraging the host OS' ACL._
 
-See [Aleksa Sarai's blog post](https://www.cyphar.com/blog/post/rootless-containers-with-runc) (which inspired me to start this project) for more information.
+See [Aleksa Sarai's blog post](https://www.cyphar.com/blog/post/rootless-containers-with-runc) (which was an inspiration for this project) for more information.
 
 
 ### Limitations & challenges
@@ -46,10 +46,13 @@ A feature on the roadmap is a daemon that runs as root and can configure a separ
 
 **Inside the container a process' or file's user cannot be changed.**
 This is caused by the fact that all operations in the container are still run by the host user who is mapped to a user inside the container.
-Unfortunately this stops some official docker images as well as package managers from working.
-A solution approach is to hook the corresponding system calls and simulate them without actually doing them.
-Though this does not solve the whole problem since some applications may still not work when they ask for the actual state while expecting their earlier system calls to be applied. For this reason e.g. apt-get cannot be used when the container is run as unprivileged user. Fortunately this approach works for dnf and yum as well as apk which is why for instance alpine-based images can already be built by unprivileged users.  
-(=> See https://github.com/dex4er/fakechroot/wiki)
+Unfortunately this stops many package managers as well as official docker images from working.  
+A solution approach is to hook the kernel-space system calls and prevent their propagation to the kernel.
+Though this does not solve the whole problem since applications that rely on or check the state they assume to have changed previously using such a fake system call will still not work. For this reason e.g. apt-get cannot be used in such an environment.
+Fortunately dnf, yum and apk are already working with this approach in plain [runc](https://github.com/opencontainers/runc).
+Other implementations are namely [remainroot](https://github.com/cyphar/remainroot) (using `ptrace`) and [fakechroot](https://github.com/dex4er/fakechroot) (using `LD_PRELOAD`).  
+A more complete solution additionally requires the emulation of all kernel-space system calls by keeping track of the changed state.
+This is implemented for instance in [PRoot](https://github.com/proot-me/PRoot).
 
 
 ## Build
