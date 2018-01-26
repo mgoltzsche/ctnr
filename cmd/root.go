@@ -91,7 +91,7 @@ func init() {
 	if uid != 0 {
 		flagStateDir = "/run/user/" + strconv.Itoa(uid) + "/cntnr"
 	}
-	flagImagePolicy = "default"
+	flagImagePolicy = "insecure"
 	policyFile := "/etc/containers/policy.json"
 	if _, err = os.Stat(policyFile); err == nil {
 		flagImagePolicy = policyFile
@@ -125,7 +125,7 @@ func preRun(cmd *cobra.Command, args []string) {
 	}
 
 	var imagePolicy istore.TrustPolicyContext
-	if flagImagePolicy == "default" {
+	if flagImagePolicy == "reject" {
 		imagePolicy = istore.TrustPolicyReject()
 	} else if flagImagePolicy == "insecure" {
 		imagePolicy = istore.TrustPolicyInsecure()
