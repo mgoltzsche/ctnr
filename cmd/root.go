@@ -16,19 +16,20 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/spf13/cobra"
 	//homedir "github.com/mitchellh/go-homedir"
 	//"github.com/spf13/viper"
 	"os"
-	"os/user"
 	"path/filepath"
 
 	"github.com/containers/image/types"
 	image "github.com/mgoltzsche/cntnr/oci/image"
 	istore "github.com/mgoltzsche/cntnr/oci/image/store"
 	storepkg "github.com/mgoltzsche/cntnr/oci/store"
+	"github.com/mitchellh/go-homedir"
 )
 
 var (
@@ -39,11 +40,11 @@ var (
 	flagStateDir    string
 	flagImagePolicy string
 
-	store             storepkg.Store
+	store            storepkg.Store
 	lockedImageStore image.ImageStoreRW
-	errorLog          = log.NewStdLogger(os.Stderr)
-	warnLog           = log.NewStdLogger(os.Stderr)
-	debugLog          = log.NewNopLogger()
+	errorLog         = log.NewStdLogger(os.Stderr)
+	warnLog          = log.NewStdLogger(os.Stderr)
+	debugLog         = log.NewNopLogger()
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -81,23 +82,23 @@ func init() {
 	// will be global for your application.
 	//RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cntnr.yaml)")
 
-	currUser, err := user.Current()
-	if err != nil {
-		exitError(2, "cannot get current user: %s", err)
+	uid := os.Geteuid()
+	homeDir, err := homedir.Dir()
+	if err == nil {
+		flagStoreDir = filepath.Join(homeDir, ".cntnr")
 	}
-	flagStoreDir = filepath.Join(currUser.HomeDir, ".cntnr")
 	flagStateDir = "/run/cntnr"
-	if currUser.Uid != "0" {
-		flagStateDir = "/run/user/" + currUser.Uid + "/cntnr"
+	if uid != 0 {
+		flagStateDir = "/run/user/" + strconv.Itoa(uid) + "/cntnr"
 	}
-	flagImagePolicy = "insecure"
+	flagImagePolicy = "default"
 	policyFile := "/etc/containers/policy.json"
 	if _, err = os.Stat(policyFile); err == nil {
 		flagImagePolicy = policyFile
 	}
 	f := RootCmd.PersistentFlags()
 	f.BoolVar(&flagVerbose, "verbose", false, "enables verbose log output")
-	f.BoolVar(&flagRootless, "rootless", currUser.Uid != "0", "enables image and container management as unprivileged user")
+	f.BoolVar(&flagRootless, "rootless", uid != 0, "enables image and container management as unprivileged user")
 	f.StringVar(&flagStoreDir, "store-dir", flagStoreDir, "directory to store images and containers")
 	f.StringVar(&flagStateDir, "state-dir", flagStateDir, "directory to store OCI container states (should be tmpfs)")
 	f.StringVar(&flagImagePolicy, "image-policy", flagImagePolicy, "image trust policy configuration file or 'insecure'")
@@ -124,12 +125,14 @@ func preRun(cmd *cobra.Command, args []string) {
 	}
 
 	var imagePolicy istore.TrustPolicyContext
-	if flagImagePolicy == "" {
-		exitError(2, "empty value for --image-policy option")
+	if flagImagePolicy == "default" {
+		imagePolicy = istore.TrustPolicyReject()
 	} else if flagImagePolicy == "insecure" {
 		imagePolicy = istore.TrustPolicyInsecure()
-	} else {
+	} else if flagImagePolicy != "" {
 		imagePolicy = istore.TrustPolicyFromFile(flagImagePolicy)
+	} else {
+		exitError(2, "empty value for --image-policy option")
 	}
 	store, err = storepkg.NewStore(flagStoreDir, flagRootless, ctx, imagePolicy, errorLog, debugLog)
 	exitOnError(cmd, err)

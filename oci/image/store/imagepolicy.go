@@ -60,6 +60,20 @@ func (c *trustPolicyDefault) Policy() (p *signature.PolicyContext, err error) {
 	return
 }
 
+type trustPolicyReject struct{}
+
+func TrustPolicyReject() TrustPolicyContext {
+	return &trustPolicyReject{}
+}
+
+func (c *trustPolicyReject) Policy() (p *signature.PolicyContext, err error) {
+	return signature.NewPolicyContext(&signature.Policy{
+		Default: []signature.PolicyRequirement{
+			signature.NewPRReject(),
+		},
+	})
+}
+
 type trustPolicyInsecure struct{}
 
 func TrustPolicyInsecure() TrustPolicyContext {
