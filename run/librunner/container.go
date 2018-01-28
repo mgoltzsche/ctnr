@@ -102,7 +102,11 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 		return
 	}
 	if spec.Root != nil {
-		config.Rootfs = filepath.Join(cfg.Bundle.Dir(), spec.Root.Path)
+		if filepath.IsAbs(spec.Root.Path) {
+			config.Rootfs = spec.Root.Path
+		} else {
+			config.Rootfs = filepath.Join(cfg.Bundle.Dir(), spec.Root.Path)
+		}
 	}
 	container, err := factory.Create(id, config)
 	if err != nil {

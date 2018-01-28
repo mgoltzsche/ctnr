@@ -45,6 +45,7 @@ type bundleFlags struct {
 	readonly     bool
 	noPivot      bool
 	noNewKeyring bool
+	proot        bool
 	app          *model.Service
 }
 
@@ -63,6 +64,7 @@ func (c *bundleFlags) InitFlags(f *pflag.FlagSet) {
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.BoolVar(&c.readonly, "readonly", false, "mounts the root file system in read only mode")
 	f.BoolVarP(&c.tty, "tty", "t", false, "binds a terminal to the container")
+	f.BoolVar(&c.proot, "proot", flagRootless && flagPRootPath != "", "enables PRoot")
 	initNetConfFlags(f, &c.netCfg)
 	// Stop parsing after first non flag argument (which is the image)
 	f.SetInterspersed(false)
@@ -85,6 +87,9 @@ func (c *bundleFlags) Read() (*model.Service, error) {
 	if c.app == nil {
 		return nil, usageError("No service defined")
 	}
+	if c.proot && flagPRootPath == "" {
+		return nil, usageError("--proot enabled but no --proot-path specified")
+	}
 	s := c.app
 	s.BundleUpdate = c.update
 	s.NetConf = c.net
@@ -93,6 +98,7 @@ func (c *bundleFlags) Read() (*model.Service, error) {
 	s.ReadOnly = c.readonly
 	s.NoPivot = c.noPivot
 	s.NoNewKeyring = c.noNewKeyring
+	s.PRoot = c.proot
 	c.app = nil
 	c.net = model.NetConf{}
 	return s, nil

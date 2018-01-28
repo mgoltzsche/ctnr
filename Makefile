@@ -1,6 +1,6 @@
 BUILDIMAGE=local/cntnr-build:latest
 LITEIDEIMAGE=local/cntnr-build:liteide
-DOCKERRUN=docker run --name cntnr-build --rm -v "${REPODIR}:/work" -w /work -u `id -u`:`id -g`
+DOCKERRUN=docker run --name cntnr-build --rm -v "${REPODIR}:/work" -w /work -u `id -u`:`id -u`
 
 REPODIR=$(shell pwd)
 GOPATH=${REPODIR}/build

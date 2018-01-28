@@ -23,6 +23,7 @@ type Service struct {
 	BundleUpdate bool   `json:"bundle_update,omitempty"`
 	NoPivot      bool   `json:"no_pivot,omitempty"`
 	NoNewKeyring bool   `json:"no_new_keyring,omitempty"`
+	PRoot        bool   `json:"proot,omitempty"`
 
 	Image        string            `json:"image,omitempty"`
 	Build        *ImageBuild       `json:"build,omitempty"`

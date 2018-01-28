@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"fmt"
+	"os/exec"
 	"strconv"
 
 	"github.com/mgoltzsche/cntnr/log"
@@ -33,8 +34,9 @@ import (
 )
 
 var (
+	flagRootless    = os.Geteuid() != 0
+	flagPRootPath   = findPRootBinary()
 	flagVerbose     bool
-	flagRootless    bool
 	flagCfgFile     string
 	flagStoreDir    string
 	flagStateDir    string
@@ -98,7 +100,8 @@ func init() {
 	}
 	f := RootCmd.PersistentFlags()
 	f.BoolVar(&flagVerbose, "verbose", false, "enables verbose log output")
-	f.BoolVar(&flagRootless, "rootless", uid != 0, "enables image and container management as unprivileged user")
+	f.BoolVar(&flagRootless, "rootless", flagRootless, "enables image and container management as unprivileged user")
+	f.StringVar(&flagPRootPath, "proot-path", flagPRootPath, "proot binary location")
 	f.StringVar(&flagStoreDir, "store-dir", flagStoreDir, "directory to store images and containers")
 	f.StringVar(&flagStateDir, "state-dir", flagStateDir, "directory to store OCI container states (should be tmpfs)")
 	f.StringVar(&flagImagePolicy, "image-policy", flagImagePolicy, "image trust policy configuration file or 'insecure'")
@@ -136,6 +139,23 @@ func preRun(cmd *cobra.Command, args []string) {
 	}
 	store, err = storepkg.NewStore(flagStoreDir, flagRootless, ctx, imagePolicy, errorLog, debugLog)
 	exitOnError(cmd, err)
+}
+
+func findPRootBinary() string {
+	paths := []string{"/usr/bin/proot", "/usr/local/bin/proot"}
+	self, err := os.Executable()
+	if err == nil {
+		paths = append([]string{filepath.Dir(self) + "/proot"}, paths...)
+	}
+	for _, path := range paths {
+		if _, err = os.Stat(path); err == nil {
+			return path
+		}
+	}
+	if proot, err := exec.LookPath("proot"); err == nil {
+		return proot
+	}
+	return ""
 }
 
 // initConfig reads in config file and ENV variables if set.

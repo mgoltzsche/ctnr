@@ -20,7 +20,7 @@ const (
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.cntnr.bundle.id"
 )
 
-func (service *Service) ToSpec(res ResourceResolver, rootless bool, spec *generate.SpecBuilder) (err error) {
+func (service *Service) ToSpec(res ResourceResolver, rootless bool, prootPath string, spec *generate.SpecBuilder) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("generate OCI bundle spec: %s", err)
@@ -37,7 +37,7 @@ func (service *Service) ToSpec(res ResourceResolver, rootless bool, spec *genera
 		}
 	}
 
-	if err = applyService(service, res, spec); err != nil {
+	if err = applyService(service, res, prootPath, spec); err != nil {
 		return
 	}
 
@@ -186,7 +186,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(service *Service, res ResourceResolver, spec *generate.SpecBuilder) (err error) {
+func applyService(service *Service, res ResourceResolver, prootPath string, spec *generate.SpecBuilder) (err error) {
 	// Entrypoint & command
 	if service.Entrypoint != nil {
 		spec.SetProcessEntrypoint(service.Entrypoint)
@@ -194,6 +194,13 @@ func applyService(service *Service, res ResourceResolver, spec *generate.SpecBui
 	}
 	if service.Command != nil {
 		spec.SetProcessCmd(service.Command)
+	}
+	// Add proot
+	if service.PRoot {
+		if prootPath == "" {
+			return fmt.Errorf("proot enabled but no proot path provided")
+		}
+		spec.SetPRootPath(prootPath)
 	}
 
 	// Env

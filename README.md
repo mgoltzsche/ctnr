@@ -50,9 +50,8 @@ Unfortunately this stops many package managers as well as official docker images
 A solution approach is to hook the kernel-space system calls and prevent their propagation to the kernel.
 Though this does not solve the whole problem since applications that rely on or check the state they assume to have changed previously using such a fake system call will still not work. For this reason e.g. apt-get cannot be used in such an environment.
 Fortunately dnf, yum and apk are already working with this approach in plain [runc](https://github.com/opencontainers/runc).
-Other implementations are namely [remainroot](https://github.com/cyphar/remainroot) (using `ptrace`) and [fakechroot](https://github.com/dex4er/fakechroot) (using `LD_PRELOAD`).  
-A more complete solution additionally requires the emulation of all kernel-space system calls by keeping track of the changed state.
-This is implemented for instance in [PRoot](https://github.com/proot-me/PRoot).
+Other implementations are namely [fakechroot](https://github.com/dex4er/fakechroot) (using `LD_PRELOAD`), [remainroot](https://github.com/cyphar/remainroot) (using `ptrace`) and [PRoot](https://github.com/proot-me/PRoot) (using `ptrace`).
+The latter can be used with cntnr when installed on your system (using `./install-proot.sh`).
 
 
 ## Build
@@ -137,6 +136,7 @@ cntnr uses [runc/libcontainer](https://github.com/opencontainers/runc/blob/v1.0.
 - [rkt](https://rkt.io)
 - [runc](https://github.com/opencontainers/runc), [skopeo](https://github.com/projectatomic/skopeo), [umoci](https://github.com/openSUSE/umoci)
 - [udocker](https://github.com/indigo-dc/udocker)
+- [runrootless](https://github.com/AkihiroSuda/runrootless)
 - [singularity](http://singularity.lbl.gov/)
 
 ## Roadmap

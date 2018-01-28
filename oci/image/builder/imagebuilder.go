@@ -71,13 +71,13 @@ func (b *ImageBuilder) Tag(tag string) {
 	})
 }
 
-func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, info log.Logger) (img image.Image, err error) {
+func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, info log.Logger) (img image.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("build image: %s", err)
 		}
 	}()
-	state := NewBuildState(images, bundles, cache, rootless, info)
+	state := NewBuildState(images, bundles, cache, rootless, proot, info)
 	defer func() {
 		if e := state.Close(); e != nil {
 			err = multierror.Append(err, e)
@@ -112,14 +112,16 @@ type BuildState struct {
 	bundle   *bundle.LockedBundle
 	author   string
 	rootless bool
+	proot    string
 	info     log.Logger
 }
 
-func NewBuildState(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, info log.Logger) (r BuildState) {
+func NewBuildState(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, info log.Logger) (r BuildState) {
 	r.images = images
 	r.bundles = bundles
 	r.cache = cache
 	r.rootless = rootless
+	r.proot = proot
 	r.info = info
 	return
 }
@@ -135,6 +137,9 @@ func (b *BuildState) initBundle(cmd string) (err error) {
 		}
 		if b.rootless {
 			bb.ToRootless()
+		}
+		if b.proot != "" {
+			bb.SetPRootPath(b.proot)
 		}
 		bb.UseHostNetwork()
 		bb.SetProcessEntrypoint(entrypoint)

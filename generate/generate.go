@@ -31,7 +31,7 @@ type SpecBuilder struct {
 	generate.Generator
 	entrypoint []string
 	cmd        []string
-	seccompSet bool
+	prootPath  string
 }
 
 func NewSpecBuilder() SpecBuilder {
@@ -127,6 +127,30 @@ func (b *SpecBuilder) AddExposedPorts(ports []string) {
 	}
 }
 
+func (b *SpecBuilder) SetPRootPath(prootPath string) {
+	b.prootPath = prootPath
+	spec := b.Spec()
+	// This has been derived from https://github.com/AkihiroSuda/runrootless/blob/b9a7df0120a7fee15c0223fd0fbc8c3885edd9b3/bundle/spec.go
+	spec.Mounts = append(spec.Mounts,
+		rspecs.Mount{
+			Destination: "/dev/proot",
+			Type:        "tmpfs",
+			Source:      "tmpfs",
+			Options:     []string{"exec", "mode=755", "size=32256k"},
+		},
+		rspecs.Mount{
+			Destination: "/dev/proot/proot",
+			Type:        "bind",
+			Source:      prootPath,
+			Options:     []string{"bind", "ro"},
+		},
+	)
+	spec.Process.Env = append(spec.Process.Env, "PROOT_TMP_DIR=/dev/proot", "PROOT_NO_SECCOMP=1")
+	b.AddProcessCapability("CAP_" + capability.CAP_SYS_PTRACE.String())
+	b.applyEntrypoint()
+	b.SetLinuxSeccompDefault()
+}
+
 func (b *SpecBuilder) SetProcessEntrypoint(v []string) {
 	b.entrypoint = v
 	b.cmd = nil
@@ -139,17 +163,22 @@ func (b *SpecBuilder) SetProcessCmd(v []string) {
 }
 
 func (b *SpecBuilder) applyEntrypoint() {
+	var args []string
 	if b.entrypoint != nil || b.cmd != nil {
 		if b.entrypoint != nil && b.cmd != nil {
-			b.SetProcessArgs(append(b.entrypoint, b.cmd...))
+			args = append(b.entrypoint, b.cmd...)
 		} else if b.entrypoint != nil {
-			b.SetProcessArgs(b.entrypoint)
+			args = b.entrypoint
 		} else {
-			b.SetProcessArgs(b.cmd)
+			args = b.cmd
 		}
 	} else {
-		b.SetProcessArgs([]string{})
+		args = []string{}
 	}
+	if b.prootPath != "" {
+		args = append([]string{"/dev/proot/proot", "-0"}, args...)
+	}
+	b.SetProcessArgs(args)
 }
 
 func (b *SpecBuilder) ApplyImage(img ispecs.Image) {

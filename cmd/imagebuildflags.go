@@ -20,6 +20,8 @@ import (
 	"github.com/mgoltzsche/cntnr/oci/image/builder"
 )
 
+var flagProot bool
+
 func initImageBuildFlags(f *pflag.FlagSet, imageBuilder *builder.ImageBuilder) {
 	f.Var((*iFromImage)(imageBuilder), "from", "Extends the provided parent image (must come first)")
 	f.Var((*iAuthor)(imageBuilder), "author", "Sets the new image's author")
@@ -28,6 +30,7 @@ func initImageBuildFlags(f *pflag.FlagSet, imageBuilder *builder.ImageBuilder) {
 	f.Var((*iCmd)(imageBuilder), "cmd", "Sets the new image's command")
 	f.Var((*iRun)(imageBuilder), "run", "Creates a new image by running the provided command in the current image")
 	f.Var((*iTag)(imageBuilder), "tag", "Tags the image")
+	f.BoolVar(&flagProot, "proot", flagRootless && flagPRootPath != "", "enables PRoot")
 }
 
 type iRun builder.ImageBuilder

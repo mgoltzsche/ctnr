@@ -181,7 +181,7 @@ func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b 
 	}
 
 	// Generate config.json
-	if err = service.ToSpec(res, flagRootless, builder.SpecBuilder); err != nil {
+	if err = service.ToSpec(res, flagRootless, flagPRootPath, builder.SpecBuilder); err != nil {
 		return
 	}
 
