@@ -48,10 +48,10 @@ A feature on the roadmap is a daemon that runs as root and can configure a separ
 This is caused by the fact that all operations in the container are still run by the host user who is mapped to a user inside the container.
 Unfortunately this stops many package managers as well as official docker images from working.  
 A solution approach is to hook the kernel-space system calls and prevent their propagation to the kernel.
-Though this does not solve the whole problem since applications that rely on or check the state they assume to have changed previously using such a fake system call will still not work. For this reason e.g. apt-get cannot be used in such an environment.
-Fortunately dnf, yum and apk are already working with this approach in plain [runc](https://github.com/opencontainers/runc).
-Other implementations are namely [fakechroot](https://github.com/dex4er/fakechroot) (using `LD_PRELOAD`), [remainroot](https://github.com/cyphar/remainroot) (using `ptrace`) and [PRoot](https://github.com/proot-me/PRoot) (using `ptrace`).
-The latter can be used with cntnr when installed on your system (using `./install-proot.sh`).
+Though this does not solve the whole problem since applications that rely on or check the state they assume to have changed previously using such a fake system call will still not work.  
+While `apk` already works with plain [runc](https://github.com/opencontainers/runc) `apt-get` does not.
+To also make software like `apt-get` work other implementations as namely [fakechroot](https://github.com/dex4er/fakechroot) (using `LD_PRELOAD`), [remainroot](https://github.com/cyphar/remainroot) (using `ptrace`) or [PRoot](https://github.com/proot-me/PRoot) (using `ptrace`) can be used.
+[PRoot](https://github.com/proot-me/PRoot) is used by cntnr per default when installed on your system (using `./install-proot.sh`).
 
 
 ## Build
