@@ -11,6 +11,13 @@
           "type": "insecureAcceptAnything"
         }
       ]
+    },
+    "docker": {
+      "": [
+        {
+          "type": "insecureAcceptAnything"
+        }
+      ]
     }
   }
 }
