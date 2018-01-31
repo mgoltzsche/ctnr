@@ -75,7 +75,6 @@ func (m *ContainerGroup) Wait() {
 
 	for _, c := range m.runners {
 		if e := c.Wait(); e != nil {
-			m.debug.Println(e)
 			m.err = WrapExitError(m.err, e)
 		}
 	}

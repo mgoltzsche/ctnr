@@ -26,7 +26,7 @@ type RuncContainer struct {
 	err          error
 }
 
-func NewRuncContainer(cfg *run.ContainerConfig, rootDir string, debug log.Logger) *RuncContainer {
+func NewRuncContainer(cfg *run.ContainerConfig, rootDir string, debug log.FieldLogger) *RuncContainer {
 	id := cfg.Id
 	if id == "" {
 		if id = cfg.Bundle.ID(); id == "" {
@@ -42,7 +42,7 @@ func NewRuncContainer(cfg *run.ContainerConfig, rootDir string, debug log.Logger
 		rootDir:      rootDir,
 		mutex:        &sync.Mutex{},
 		wait:         &sync.WaitGroup{},
-		debug:        debug,
+		debug:        debug.WithField("id", id),
 	}
 }
 
@@ -99,8 +99,8 @@ func (c *RuncContainer) Start() (err error) {
 
 func (c *RuncContainer) cmdWait() {
 	defer c.wait.Done()
-	c.err = run.NewExitError(c.cmd.Wait())
-	c.debug.Printf("Container %q terminated", c.ID())
+	c.err = run.NewExitError(c.cmd.Wait(), c.ID())
+	c.debug.Println("Container terminated")
 }
 
 func (c *RuncContainer) Stop() {
@@ -117,7 +117,7 @@ func (c *RuncContainer) stop() {
 
 	if c.cmd.Process != nil {
 		// Terminate container orderly
-		c.debug.Printf("Terminating container %q...", c.ID())
+		c.debug.Println("Terminating container...")
 		c.cmd.Process.Signal(syscall.SIGINT)
 	}
 
@@ -130,7 +130,7 @@ func (c *RuncContainer) stop() {
 	case <-time.After(time.Duration(10000000)): // TODO: read value from OCI runtime configuration
 		// Kill container after timeout
 		if c.cmd.Process != nil {
-			c.debug.Printf("Killing container %q since stop timeout exceeded", c.ID())
+			c.debug.Println("Killing container since stop timeout exceeded")
 			e := c.cmd.Process.Kill()
 			if e != nil && c.cmd.ProcessState != nil && !c.cmd.ProcessState.Exited() {
 				err = fmt.Errorf("stop: container %q has been killed since it did not respond: %s", c.ID(), e)

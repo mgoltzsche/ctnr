@@ -19,15 +19,15 @@ type ContainerManager struct {
 	runners  map[string]run.Container
 	rootDir  string
 	rootless bool
-	debug    log.Logger
+	loggers  log.Loggers
 }
 
-func NewContainerManager(rootDir string, rootless bool, debug log.Logger) (r *ContainerManager, err error) {
+func NewContainerManager(rootDir string, rootless bool, loggers log.Loggers) (r *ContainerManager, err error) {
 	absRoot, err := filepath.Abs(rootDir)
 	if err != nil {
 		return
 	}
-	r = &ContainerManager{runners: map[string]run.Container{}, rootDir: absRoot, rootless: rootless, debug: debug}
+	r = &ContainerManager{runners: map[string]run.Container{}, rootDir: absRoot, rootless: rootless, loggers: loggers}
 	binary, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s executable: %s", os.Args[0], err)
@@ -39,7 +39,7 @@ func NewContainerManager(rootDir string, rootless bool, debug log.Logger) (r *Co
 }
 
 func (m *ContainerManager) NewContainer(cfg *run.ContainerConfig) (c run.Container, err error) {
-	if c, err = NewContainer(cfg, m.rootless, m.factory, m.debug); err != nil {
+	if c, err = NewContainer(cfg, m.rootless, m.factory, m.loggers); err != nil {
 		err = fmt.Errorf("new container: %s", err)
 	}
 	return

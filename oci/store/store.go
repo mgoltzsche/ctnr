@@ -41,7 +41,7 @@ type LockedStore struct {
 	return
 }*/
 
-func NewStore(dir string, rootless bool, systemContext *types.SystemContext, trustPolicy istore.TrustPolicyContext, errorLog log.Logger, debugLog log.Logger) (r Store, err error) {
+func NewStore(dir string, rootless bool, systemContext *types.SystemContext, trustPolicy istore.TrustPolicyContext, loggers log.Loggers) (r Store, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("init store: %s", err)
@@ -64,13 +64,13 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 		fsEval = fseval.RootlessFsEval
 	}
 	mtreeStore := istore.NewMtreeStore(mtreeDir, fsEval)
-	blobStore := istore.NewBlobStore(blobDir, debugLog)
-	blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, debugLog)
-	rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), errorLog)
-	r.ImageStore, err = istore.NewImageStore(rostore, systemContext, trustPolicy, errorLog)
+	blobStore := istore.NewBlobStore(blobDir, loggers.Debug)
+	blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, loggers.Debug)
+	rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), loggers.Error)
+	r.ImageStore, err = istore.NewImageStore(rostore, systemContext, trustPolicy, loggers.Error)
 	if err != nil {
 		return
 	}
-	r.BundleStore, err = bstore.NewBundleStore(bundleDir, debugLog)
+	r.BundleStore, err = bstore.NewBundleStore(bundleDir, loggers.Debug)
 	return
 }

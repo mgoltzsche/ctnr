@@ -42,7 +42,7 @@ func runComposeRun(cmd *cobra.Command, args []string) error {
 		return usageError("No compose file argument provided")
 	}
 
-	project, err := model.LoadProject(args[0], warnLog)
+	project, err := model.LoadProject(args[0], loggers.Warn)
 	if err != nil {
 		return err
 	}

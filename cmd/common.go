@@ -42,13 +42,14 @@ func exitOnError(cmd *cobra.Command, err error) {
 	}
 	switch err.(type) {
 	case UsageError:
-		fmt.Fprintf(os.Stderr, "Error: %s\n%s\n%s\n", err, cmd.UsageString(), err)
+		logger.Errorf("%s\n%s\n%s", err, cmd.UsageString(), err)
 		os.Exit(1)
 	case *run.ExitError:
-		fmt.Fprintf(os.Stderr, "%s\n", err)
-		os.Exit(err.(*run.ExitError).Status())
+		exiterr := err.(*run.ExitError)
+		logger.WithField("id", exiterr.ContainerID()).WithField("status", exiterr.Status()).Error("Container terminated")
+		os.Exit(exiterr.Status())
 	default:
-		fmt.Fprintf(os.Stderr, "%s\n", err)
+		logger.Error(err)
 	}
 	os.Exit(255)
 }
@@ -90,18 +91,22 @@ func closeLockedImageStore() {
 	}
 }
 
+func newContainerManager() (run.ContainerManager, error) {
+	return factory.NewContainerManager(flagStateDir, flagRootless, loggers)
+}
+
 func resourceResolver(baseDir string, volumes map[string]model.Volume) model.ResourceResolver {
 	paths := model.NewPathResolver(baseDir)
 	return model.NewResourceResolver(paths, volumes)
 }
 
 func runServices(services []model.Service, res model.ResourceResolver) (err error) {
-	manager, err := factory.NewContainerManager(flagStateDir, flagRootless, debugLog)
+	manager, err := newContainerManager()
 	if err != nil {
 		return
 	}
 
-	containers := run.NewContainerGroup(debugLog)
+	containers := run.NewContainerGroup(loggers.Debug)
 	defer func() {
 		e := containers.Close()
 		err = run.WrapExitError(err, e)
@@ -109,7 +114,7 @@ func runServices(services []model.Service, res model.ResourceResolver) (err erro
 
 	for _, s := range services {
 		var c run.Container
-		debugLog.Println(s.JSON())
+		loggers.Debug.Println(s.JSON())
 		if c, err = createContainer(&s, res, manager); err != nil {
 			return
 		}

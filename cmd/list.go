@@ -17,7 +17,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +32,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return usageError("No args expected")
 	}
 
-	containers, err := factory.NewContainerManager(flagStateDir, flagRootless, debugLog)
+	containers, err := newContainerManager()
 	if err != nil {
 		return err
 	}

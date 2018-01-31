@@ -20,11 +20,14 @@ import (
 	"strconv"
 
 	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/log/logrusadapt"
 	"github.com/spf13/cobra"
 	//homedir "github.com/mitchellh/go-homedir"
 	//"github.com/spf13/viper"
 	"os"
 	"path/filepath"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/containers/image/types"
 	image "github.com/mgoltzsche/cntnr/oci/image"
@@ -44,9 +47,8 @@ var (
 
 	store            storepkg.Store
 	lockedImageStore image.ImageStoreRW
-	errorLog         = log.NewStdLogger(os.Stderr)
-	warnLog          = log.NewStdLogger(os.Stderr)
-	debugLog         = log.NewNopLogger()
+	loggers          log.Loggers
+	logger           *logrus.Logger
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -84,6 +86,14 @@ func init() {
 	// will be global for your application.
 	//RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cntnr.yaml)")
 
+	logrus.SetLevel(logrus.DebugLevel)
+	logger = logrus.New()
+	logger.Level = logrus.DebugLevel
+	loggers.Info = logrusadapt.NewInfoLogger(logger)
+	loggers.Warn = logrusadapt.NewWarnLogger(logger)
+	loggers.Error = logrusadapt.NewInfoLogger(logger)
+	loggers.Debug = log.NewNopLogger()
+
 	uid := os.Geteuid()
 	homeDir, err := homedir.Dir()
 	if err == nil {
@@ -109,7 +119,7 @@ func init() {
 
 func preRun(cmd *cobra.Command, args []string) {
 	if flagVerbose {
-		debugLog = log.NewStdLogger(os.Stderr)
+		loggers.Debug = logrusadapt.NewDebugLogger(logger)
 	}
 
 	// init store
@@ -137,7 +147,7 @@ func preRun(cmd *cobra.Command, args []string) {
 	} else {
 		exitError(2, "empty value for --image-policy option")
 	}
-	store, err = storepkg.NewStore(flagStoreDir, flagRootless, ctx, imagePolicy, errorLog, debugLog)
+	store, err = storepkg.NewStore(flagStoreDir, flagRootless, ctx, imagePolicy, loggers)
 	exitOnError(cmd, err)
 }
 

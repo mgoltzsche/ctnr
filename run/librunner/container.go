@@ -45,11 +45,11 @@ type Container struct {
 	spec      *specs.Spec
 	mutex     *sync.Mutex
 	wait      *sync.WaitGroup
-	debug     log.Logger
+	log       log.Loggers
 	err       error
 }
 
-func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.Factory, debug log.Logger) (r *Container, err error) {
+func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.Factory, loggers log.Loggers) (r *Container, err error) {
 	id := cfg.Id
 	if id == "" {
 		if id = cfg.Bundle.ID(); id == "" {
@@ -66,7 +66,8 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 		}
 	}()
 
-	debug.Printf("Creating container %q", id)
+	loggers = loggers.WithField("id", id)
+	loggers.Debug.Println("Creating container")
 
 	spec, err := cfg.Bundle.Spec()
 	if err != nil {
@@ -121,7 +122,7 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 		spec:      spec,
 		mutex:     &sync.Mutex{},
 		wait:      &sync.WaitGroup{},
-		debug:     debug,
+		log:       loggers,
 	}
 
 	return
@@ -133,7 +134,7 @@ func (c *Container) ID() string {
 
 // Prepare and start the container process from spec and with stdio
 func (c *Container) Start() (err error) {
-	c.debug.Printf("Starting container %q process", c.id)
+	c.log.Debug.Println("Starting container")
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -209,13 +210,18 @@ func (c *Container) handleProcessTermination() {
 	// Wait for process
 	_, err := c.process.Wait()
 
-	c.debug.Printf("Container %q process terminated", c.ID())
+	err = run.NewExitError(err, c.ID())
+	logger := c.log.Debug
+	if exiterr, ok := err.(*run.ExitError); ok {
+		logger = logger.WithField("status", exiterr.Status())
+	}
+	logger.Println("Container terminated")
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	// Register process error
-	c.err = run.NewExitError(err)
+	c.err = err
 	c.process = nil
 
 	// Release TTY
@@ -242,10 +248,10 @@ func (c *Container) stop() bool {
 		return false
 	}
 
-	c.debug.Printf("Stopping container %q process", c.ID())
+	c.log.Debug.Println("Stopping container")
 
 	if err := c.process.Signal(syscall.SIGINT); err != nil {
-		c.debug.Printf("Failed to send SIGINT to container %q process: %s", c.ID(), err)
+		c.log.Debug.Println("Failed to send SIGINT to container:", err)
 	}
 	c.mutex.Unlock()
 
@@ -259,9 +265,13 @@ func (c *Container) stop() bool {
 		// Kill container after timeout
 		process := c.process
 		if process != nil {
-			c.debug.Printf("Killing container %q process since stop timeout exceeded", c.ID())
+			c.log.Warn.Println("Killing container (stop timeout exceeded)")
 			if err := c.process.Signal(syscall.SIGKILL); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: stop: killing container %q: %s\n", c.ID(), err)
+				errlog := c.log.Error
+				if pid, e := c.process.Pid(); e == nil {
+					errlog = errlog.WithField("pid", pid)
+				}
+				errlog.Println("Failed to kill container:", err)
 			}
 			c.wait.Wait()
 		}

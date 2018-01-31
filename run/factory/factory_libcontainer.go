@@ -8,6 +8,6 @@ import (
 	"github.com/mgoltzsche/cntnr/run/librunner"
 )
 
-func NewContainerManager(rootDir string, rootless bool, logger log.Logger) (run.ContainerManager, error) {
-	return librunner.NewContainerManager(rootDir, rootless, logger)
+func NewContainerManager(rootDir string, rootless bool, loggers log.Loggers) (run.ContainerManager, error) {
+	return librunner.NewContainerManager(rootDir, rootless, loggers)
 }

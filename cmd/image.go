@@ -23,7 +23,6 @@ import (
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
-	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/image/builder"
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
@@ -230,7 +229,7 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 			return usageError("proot enabled but no --proot-path provided")
 		}
 	}
-	img, err := imageBuilder.Build(lockedStore, store.BundleStore, cache, flagRootless, proot, log.NewStdLogger(os.Stderr))
+	img, err := imageBuilder.Build(lockedStore, store.BundleStore, cache, flagRootless, proot, loggers)
 	if err == nil {
 		fmt.Fprintln(os.Stdout, img.ID())
 	}

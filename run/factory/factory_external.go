@@ -8,6 +8,6 @@ import (
 	"github.com/mgoltzsche/cntnr/run/runcrunner"
 )
 
-func NewContainerManager(rootDir string, rootless bool, logger log.Logger) (run.ContainerManager, error) {
-	return runcrunner.NewContainerManager(rootDir, logger)
+func NewContainerManager(rootDir string, rootless bool, loggers log.Loggers) (run.ContainerManager, error) {
+	return runcrunner.NewContainerManager(rootDir, loggers)
 }

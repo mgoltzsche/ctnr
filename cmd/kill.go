@@ -17,7 +17,6 @@ package cmd
 import (
 	"os"
 
-	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +41,7 @@ func runKill(cmd *cobra.Command, args []string) (err error) {
 		return usageError("At least one container ID argument expected")
 	}
 
-	containers, err := factory.NewContainerManager(flagStateDir, flagRootless, debugLog)
+	containers, err := newContainerManager()
 	if err != nil {
 		return err
 	}

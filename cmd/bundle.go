@@ -27,7 +27,6 @@ import (
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/run"
-	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -144,7 +143,7 @@ func runBundleRun(cmd *cobra.Command, args []string) (err error) {
 		return usageError("Exactly one argument required")
 	}
 
-	containers, err := factory.NewContainerManager(flagStateDir, flagRootless, debugLog)
+	containers, err := newContainerManager()
 	if err != nil {
 		return err
 	}

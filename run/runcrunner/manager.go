@@ -18,15 +18,15 @@ var _ run.ContainerManager = &ContainerManager{}
 type ContainerManager struct {
 	runners map[string]run.Container
 	rootDir string
-	debug   log.Logger
+	debug   log.FieldLogger
 }
 
-func NewContainerManager(rootDir string, debug log.Logger) (*ContainerManager, error) {
+func NewContainerManager(rootDir string, loggers log.Loggers) (*ContainerManager, error) {
 	absRoot, err := filepath.Abs(rootDir)
 	if err != nil {
 		return nil, err
 	}
-	return &ContainerManager{map[string]run.Container{}, absRoot, debug}, nil
+	return &ContainerManager{map[string]run.Container{}, absRoot, loggers.Debug}, nil
 }
 
 func (m *ContainerManager) NewContainer(cfg *run.ContainerConfig) (run.Container, error) {

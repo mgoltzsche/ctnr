@@ -3,7 +3,6 @@ package builder
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -71,13 +70,13 @@ func (b *ImageBuilder) Tag(tag string) {
 	})
 }
 
-func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, info log.Logger) (img image.Image, err error) {
+func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, loggers log.Loggers) (img image.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("build image: %s", err)
 		}
 	}()
-	state := NewBuildState(images, bundles, cache, rootless, proot, info)
+	state := NewBuildState(images, bundles, cache, rootless, proot, loggers)
 	defer func() {
 		if e := state.Close(); e != nil {
 			err = multierror.Append(err, e)
@@ -113,16 +112,16 @@ type BuildState struct {
 	author   string
 	rootless bool
 	proot    string
-	info     log.Logger
+	loggers  log.Loggers
 }
 
-func NewBuildState(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, info log.Logger) (r BuildState) {
+func NewBuildState(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, loggers log.Loggers) (r BuildState) {
 	r.images = images
 	r.bundles = bundles
 	r.cache = cache
 	r.rootless = rootless
 	r.proot = proot
-	r.info = info
+	r.loggers = loggers
 	return
 }
 
@@ -243,7 +242,7 @@ func (b *BuildState) Run(cmd string) (err error) {
 			return
 		}
 		rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
-		manager, err := factory.NewContainerManager(rootfs, b.rootless, log.NewStdLogger(os.Stderr))
+		manager, err := factory.NewContainerManager(rootfs, b.rootless, b.loggers)
 		if err != nil {
 			return
 		}
@@ -347,7 +346,7 @@ func (b *BuildState) commitLayer(comment string) (err error) {
 		}
 	}()
 
-	b.info.Println("  -> committing layer ...")
+	b.loggers.Info.Println("  -> committing layer ...")
 
 	rootfs := filepath.Join(b.bundle.Dir(), "rootfs")
 	parentImageId := b.bundle.Image()
@@ -396,7 +395,7 @@ func (b *BuildState) AddTag(name string) (err error) {
 }
 
 func (b *BuildState) cached(uniqComment string, call func(comment string) error) (err error) {
-	b.info.Println(uniqComment)
+	b.loggers.Info.Println(uniqComment)
 	var parentImgId digest.Digest
 	if b.image != nil {
 		parentImgId = (*b.image).ID()
@@ -409,7 +408,7 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 				if err = b.setImage(&cachedImg); err != nil {
 					return fmt.Errorf("cached image: %s", err)
 				}
-				b.info.Printf("  -> using cached image %s", cachedImg.ID())
+				b.loggers.Info.Printf("  -> using cached image %s", cachedImg.ID())
 				return
 			}
 		} else if e, ok := err.(CacheError); !ok || !e.Temporary() {
@@ -420,7 +419,7 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 		}
 	}
 
-	b.info.Println("  -> building ...")
+	b.loggers.Info.Println("  -> building ...")
 
 	defer func() {
 		if err != nil {
@@ -440,7 +439,7 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 		err = b.cache.Put(parentImgId, uniqComment, (*b.image).ID())
 	}
 
-	b.info.Printf("  -> built image %s", (*b.image).ID())
+	b.loggers.Info.Printf("  -> built image %s", (*b.image).ID())
 
 	return
 }
