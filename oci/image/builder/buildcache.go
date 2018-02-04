@@ -3,6 +3,7 @@ package builder
 import (
 	"path/filepath"
 
+	"github.com/mgoltzsche/cntnr/log"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -13,11 +14,12 @@ type ImageBuildCache interface {
 }
 
 type imageBuildCache struct {
-	dir string
+	dir  string
+	warn log.FieldLogger
 }
 
-func NewImageBuildCache(dir string) ImageBuildCache {
-	return &imageBuildCache{dir}
+func NewImageBuildCache(dir string, warn log.FieldLogger) ImageBuildCache {
+	return &imageBuildCache{dir, warn}
 }
 
 func (s *imageBuildCache) Get(parent digest.Digest, uniqHistoryEntry string) (child digest.Digest, err error) {
@@ -46,5 +48,6 @@ func (s *imageBuildCache) Put(parent digest.Digest, uniqHistoryEntry string, chi
 }
 
 func (s *imageBuildCache) cache(image digest.Digest) CacheFile {
-	return NewCacheFile(filepath.Join(s.dir, image.Algorithm().String(), image.Hex()))
+	file := filepath.Join(s.dir, image.Algorithm().String(), image.Hex())
+	return NewCacheFile(file, s.warn.WithField("image", image.String()))
 }

@@ -89,19 +89,20 @@ func (b *Bundle) resetExpiryTime() error {
 	return nil
 }
 
-func (b *Bundle) GC(before time.Time) (bool, error) {
+func (b *Bundle) GC(before time.Time) (r bool, err error) {
 	st, err := os.Stat(b.dir)
 	if err != nil {
 		return false, fmt.Errorf("bundle gc check: %s", err)
 	}
 	if st.ModTime().Before(before) {
-		bl, err := lockBundle(b)
+		var bl *lock.Lockfile
+		bl, err = lockBundle(b)
 		if err != nil {
 			return false, fmt.Errorf("bundle gc check: %s", err)
 		}
 		defer func() {
-			if err := bl.Unlock(); err != nil {
-				fmt.Fprintf(os.Stderr, "bundle gc check: %s\n", err)
+			if e := bl.Unlock(); e != nil {
+				err = multierror.Append(err, fmt.Errorf("bundle gc check: %s", err))
 			}
 		}()
 		st, err = os.Stat(b.dir)

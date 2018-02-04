@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
+	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -81,7 +81,7 @@ func unlock(lock lock.Locker, err *error) {
 		if *err == nil {
 			*err = e
 		} else {
-			fmt.Fprint(os.Stderr, "Error: %s", e)
+			*err = multierror.Append(*err, e)
 		}
 	}
 }

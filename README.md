@@ -51,7 +51,7 @@ A solution approach is to hook the kernel-space system calls and prevent their p
 Though this does not solve the whole problem since applications that rely on or check the state they assume to have changed previously using such a fake system call will still not work.  
 While `apk` already works with plain [runc](https://github.com/opencontainers/runc) `apt-get` does not.
 To also make software like `apt-get` work other implementations as namely [fakechroot](https://github.com/dex4er/fakechroot) (using `LD_PRELOAD`), [remainroot](https://github.com/cyphar/remainroot) (using `ptrace`) or [PRoot](https://github.com/proot-me/PRoot) (using `ptrace`) can be used.
-[PRoot](https://github.com/proot-me/PRoot) is used by cntnr per default when installed on your system (using `./install-proot.sh`).
+[PRoot](https://github.com/proot-me/PRoot) is used by cntnr per default when installed on your system (using `./contrib/install-proot.sh`).
 
 
 ## Build

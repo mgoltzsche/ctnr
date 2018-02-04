@@ -13,6 +13,7 @@ import (
 	ocitransport "github.com/containers/image/oci/layout"
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
+	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
@@ -316,7 +317,7 @@ func (s *ImageStoreRW) updateImageIndex(name string, create bool, transform func
 			if err == nil {
 				err = e
 			} else {
-				fmt.Fprintf(os.Stderr, "update image index: %s", e)
+				err = multierror.Append(err, e)
 			}
 		}
 	}()

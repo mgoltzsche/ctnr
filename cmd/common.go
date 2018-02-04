@@ -70,7 +70,7 @@ func (err UsageError) Error() string {
 }
 
 func exitError(exitCode int, frmt string, values ...interface{}) {
-	os.Stderr.WriteString(fmt.Sprintf(frmt+"\n", values...))
+	loggers.Error.Printf(frmt, values...)
 	os.Exit(exitCode)
 }
 

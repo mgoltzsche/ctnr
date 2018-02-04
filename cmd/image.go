@@ -177,7 +177,7 @@ func runImageUntag(cmd *cobra.Command, args []string) (err error) {
 	for _, tag := range args {
 		e := lockedStore.UntagImage(tag)
 		if e != nil {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", e)
+			loggers.Error.Println(e)
 			err = e
 		}
 	}
@@ -221,7 +221,7 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
-	cache := builder.NewImageBuildCache(filepath.Join(flagStoreDir, "image-build-cache"))
+	cache := builder.NewImageBuildCache(filepath.Join(flagStoreDir, "image-build-cache"), loggers.Warn)
 	proot := ""
 	if flagProot {
 		proot = flagPRootPath

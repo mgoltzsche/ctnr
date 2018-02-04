@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mgoltzsche/cntnr/log"
 	"github.com/pkg/errors"
 )
 
 type CacheFile struct {
 	file  string
 	cache map[string]string
+	warn  log.Logger
 }
 
 type CacheError string
@@ -30,8 +32,8 @@ type cacheEntry struct {
 	Value string
 }
 
-func NewCacheFile(file string) CacheFile {
-	return CacheFile{file, nil}
+func NewCacheFile(file string, warn log.Logger) CacheFile {
+	return CacheFile{file, nil, warn}
 }
 
 func (s *CacheFile) Get(key string) (child string, err error) {
@@ -60,14 +62,16 @@ func (s *CacheFile) read() (idx map[string]string, err error) {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
+	i := 0
 	for scanner.Scan() {
 		if line := scanner.Text(); line != "" {
 			entry := cacheEntry{}
 			if e := json.Unmarshal([]byte(line), &entry); e != nil {
-				fmt.Fprintf(os.Stderr, "Error: read build cache: %s\n", err)
+				s.warn.Printf("read build cache line %d: %s", i, err)
 			} else {
 				idx[entry.Key] = entry.Value
 			}
+			i++
 		}
 	}
 	if err = scanner.Err(); err != nil {

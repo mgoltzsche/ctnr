@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	lock "github.com/mgoltzsche/cntnr/pkg/lock"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -44,7 +45,7 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 	defer func() {
 		if err != nil {
 			if e := r.lock.Unlock(); e != nil {
-				fmt.Fprintf(os.Stderr, "Error: unlock image repo: %s\n", e)
+				err = multierror.Append(err, fmt.Errorf("unlock image repo: %s", e))
 			}
 		}
 	}()
@@ -118,10 +119,11 @@ func (r *ImageRepo) Close() (err error) {
 	// Unlock image repo dir
 	defer func() {
 		if e := r.lock.Unlock(); e != nil {
+			e = fmt.Errorf("image repo: close: %s", e)
 			if err == nil {
-				err = fmt.Errorf("image repo: close: %s", e)
+				err = e
 			} else {
-				fmt.Fprintf(os.Stderr, "image repo: close: %s\n", e)
+				err = multierror.Append(err, e)
 			}
 		}
 	}()

@@ -107,7 +107,6 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	defer c.Close()
-	fmt.Println(c.Dir())
 	return
 }
 
@@ -115,25 +114,22 @@ func runBundleDelete(cmd *cobra.Command, args []string) (err error) {
 	if len(args) == 0 {
 		return usageError("No bundle specified to remove")
 	}
-	failed := false
 	for _, id := range args {
-		b, err := store.Bundle(id)
-		if err == nil {
+		b, e := store.Bundle(id)
+		if e == nil {
 			bl, e := b.Lock()
 			if e == nil {
-				err = bl.Delete()
-				if err == nil {
-					continue
+				e = bl.Delete()
+				if e == nil {
+					loggers.Info.WithField("id", id).Println("Bundle deleted")
 				}
+				err = multierror.Append(err, e)
 			} else {
-				err = e
+				err = multierror.Append(err, e)
 			}
+		} else {
+			err = multierror.Append(err, e)
 		}
-		os.Stderr.WriteString(err.Error() + "\n")
-		failed = true
-	}
-	if failed {
-		err = fmt.Errorf("bundle rm: Not all specified bundles have been removed")
 	}
 	return
 }

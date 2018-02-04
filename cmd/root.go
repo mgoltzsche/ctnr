@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os/exec"
 	"strconv"
 
@@ -73,7 +72,7 @@ func Execute() {
 	RootCmd.AddCommand(commitCmd)
 	RootCmd.AddCommand(gcCmd)
 	if err := RootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		loggers.Error.Println(err)
 		os.Exit(1)
 	}
 }
@@ -145,7 +144,7 @@ func preRun(cmd *cobra.Command, args []string) {
 	} else if flagImagePolicy != "" {
 		imagePolicy = istore.TrustPolicyFromFile(flagImagePolicy)
 	} else {
-		exitError(2, "empty value for --image-policy option")
+		exitOnError(cmd, usageError("empty value for --image-policy option"))
 	}
 	store, err = storepkg.NewStore(flagStoreDir, flagRootless, ctx, imagePolicy, loggers)
 	exitOnError(cmd, err)
