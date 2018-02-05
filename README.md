@@ -3,7 +3,7 @@
 CNTNR DEVELOPMENT IS IN AN EARLY STATE!
 
 cntnr is a container engine library and CLI built on top of [runc](https://github.com/opencontainers/runc)
-to manage and build OCI images as well as runtime bundles.  
+to manage and build OCI images as well as containers.  
 cntnr aims to ease system container creation and execution as unprivileged user.
 Besides cntnr is a platform to try out new runc features.
 
@@ -17,7 +17,7 @@ Besides cntnr is a platform to try out new runc features.
 - Optional container networking using [CNI](https://github.com/containernetworking/cni) (as OCI runtime hook)
 - Partial [docker compose](https://docs.docker.com/compose/compose-file/) file format support
 - Simple CLI partially compatible with [docker](https://www.docker.com/)'s
-- Easy installation: single statically linked binary (plus optional CNI plugin binaries) and convention over configuration
+- Easy installation: single statically linked binary (plus optional binaries: CNI plugins, proot) and convention over configuration
 
 
 ## Rootless containers
@@ -30,8 +30,6 @@ Concerning accessibility, usability and security container engines that do not r
 - **A higher degree and more flexible level of security.**  
   _Less likely for an attacker to gain root access through a possible engine security leak when run as unprivileged user._  
   _User/group-based container access control leveraging the host OS' ACL._
-
-See [Aleksa Sarai's blog post](https://www.cyphar.com/blog/post/rootless-containers-with-runc) (which was an inspiration for this project) for more information.
 
 
 ### Limitations & challenges
@@ -52,6 +50,9 @@ Though this does not solve the whole problem since applications that rely on or 
 While `apk` already works with plain [runc](https://github.com/opencontainers/runc) `apt-get` does not.
 To also make software like `apt-get` work other implementations as namely [fakechroot](https://github.com/dex4er/fakechroot) (using `LD_PRELOAD`), [remainroot](https://github.com/cyphar/remainroot) (using `ptrace`) or [PRoot](https://github.com/proot-me/PRoot) (using `ptrace`) can be used.
 [PRoot](https://github.com/proot-me/PRoot) is used by cntnr per default when installed on your system (using `./contrib/install-proot.sh`).
+
+
+For more details see Aleksa Sarai's [summary](https://rootlesscontaine.rs/) of the state of the art of rootless containers.
 
 
 ## Build
@@ -137,21 +138,27 @@ cntnr uses [runc/libcontainer](https://github.com/opencontainers/runc/blob/v1.0.
 - [docker](https://www.docker.com/)
 - [rkt](https://rkt.io)
 - [runc](https://github.com/opencontainers/runc), [skopeo](https://github.com/projectatomic/skopeo), [umoci](https://github.com/openSUSE/umoci)
+- [lxc](https://linuxcontainers.org/lxc/introduction/)
 - [udocker](https://github.com/indigo-dc/udocker)
 - [runrootless](https://github.com/AkihiroSuda/runrootless)
 - [singularity](http://singularity.lbl.gov/)
+- [orca-build](https://github.com/cyphar/orca-build)
+
 
 ## Roadmap
 
 - separate OCI hook binary
-- CLI improvements: image rm, image build, bundle run, compose
-- additional configurable read-only image stores
+- CLI improvements: `image rm`, `image create`, `compose`, `--mount`
+- Improved docker compose support
 - Improved container, bundle and image garbage collection
 - health check
 - systemd integration (cgroup, startup notification)
+- ostree-based store
+- additional configurable read-only image stores
 - network manager daemon with ACL to be used by unprivileged users to configure their container networks
 - service discovery integration (hook / DNS; consul, etcd)
 - _Far future: Make it available on platforms other than Linux_
+
 
 ## Experiments
 
