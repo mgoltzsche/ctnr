@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/pkg/errors"
 )
 
 // TODO: Make sure sharedLockDir is thread-safe.
@@ -31,7 +33,7 @@ func (l *NoopLocker) Locker {
 
 func NewExclusiveDirLocker(dir string) (r ExclusiveLocker, err error) {
 	if err = os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("init lock directory: %s", err)
+		return nil, errors.Wrap(err, "init lock directory")
 	}
 	l := exclusiveLocker{}
 	if l.lockfile, err = LockFile(filepath.Join(dir, "exclusive.lock")); err != nil {
@@ -52,23 +54,18 @@ func (l *exclusiveLocker) Lock() (err error) {
 	defer func() {
 		if err != nil {
 			if e := l.Unlock(); e != nil {
-				err = fmt.Errorf("%s, lock: %s", err, e)
+				// TODO: split error properly
+				err = errors.Errorf("%s, lock: %s", err, e)
 			}
 		}
 	}()
 
 	// Wait until no shared lock acquired
-	if err = l.awaitSharedLocks(); err != nil {
-		err = fmt.Errorf("lock: await free shared lock: %s", err)
-	}
-	return
+	return errors.Wrap(l.awaitSharedLocks(), "lock")
 }
 
-func (l *exclusiveLocker) Unlock() (err error) {
-	if err = l.lockfile.Unlock(); err != nil {
-		err = fmt.Errorf("unlock: %s", err)
-	}
-	return
+func (l *exclusiveLocker) Unlock() error {
+	return errors.Wrap(l.lockfile.Unlock(), "unlock")
 }
 
 func (l *exclusiveLocker) awaitSharedLocks() (err error) {
@@ -103,7 +100,7 @@ func (l *exclusiveLocker) awaitSharedLocks() (err error) {
 			}
 			locked = true
 			if e = awaitFileChange(fpath, l.dir); e != nil && !os.IsNotExist(e) {
-				err = fmt.Errorf("await exclusive usage: %s", e)
+				err = errors.Wrap(e, "await exclusive lock usage")
 				return
 			}
 			break
@@ -126,7 +123,7 @@ func (l *sharedLocker) Lock() (err error) {
 	// Lock dir exclusively
 	err = l.exclusive.Lock()
 	if err != nil {
-		err = fmt.Errorf("shared lock: %s", err)
+		err = errors.Wrap(err, "shared lock")
 		return
 	}
 	defer l.exclusive.Unlock()
@@ -134,7 +131,7 @@ func (l *sharedLocker) Lock() (err error) {
 	// Register shared lock file
 	file, err := ioutil.TempFile(l.dir, fmt.Sprintf("sharedlock-%d-", os.Getpid()))
 	if err != nil {
-		err = fmt.Errorf("shared lock: %s", err)
+		err = errors.Wrap(err, "shared lock")
 		return
 	}
 	l.sharedLockFile = file.Name()
@@ -149,7 +146,7 @@ func (l *sharedLocker) Unlock() (err error) {
 		panic("unlock shared: invalid state - was not locked")
 	}
 	if err = os.Remove(l.sharedLockFile); err != nil {
-		err = fmt.Errorf("unlock shared: %s", err)
+		err = errors.Wrap(err, "unlock shared")
 	}
 	l.sharedLockFile = ""
 	return

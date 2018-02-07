@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pkg/errors"
 )
 
 type ContainerBundle interface {
@@ -93,10 +94,11 @@ func WrapExitError(ex, err error) error {
 	if err == nil {
 		err = ex
 	} else if ex != nil {
+		// TODO: wrap ExitError and get it from cause instead whereever a type assertion is done now
 		if exiterr, ok := ex.(*ExitError); ok {
 			err = &ExitError{exiterr.status, exiterr.containerId, multierror.Append(ex, err)}
 		} else {
-			err = fmt.Errorf("%s, await container termination: %s", err, ex)
+			err = errors.Errorf("%s, await container termination: %s", err, ex)
 		}
 	}
 	return err

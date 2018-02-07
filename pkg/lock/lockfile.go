@@ -1,7 +1,6 @@
 package lock
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/nightlyone/lockfile"
+	"github.com/pkg/errors"
 )
 
 type Lockfile struct {
@@ -19,7 +19,7 @@ type Lockfile struct {
 func LockFile(file string) (*Lockfile, error) {
 	file, err := normalizePath(file)
 	if err != nil {
-		return nil, fmt.Errorf("lock file: %s", err)
+		return nil, errors.Wrap(err, "lock file")
 	}
 
 	l, err := lockfile.New(file)

@@ -26,13 +26,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/containers/image/types"
 	image "github.com/mgoltzsche/cntnr/oci/image"
 	istore "github.com/mgoltzsche/cntnr/oci/image/store"
 	storepkg "github.com/mgoltzsche/cntnr/oci/store"
 	"github.com/mitchellh/go-homedir"
+	"github.com/sirupsen/logrus"
 )
 
 var (

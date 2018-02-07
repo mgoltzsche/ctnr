@@ -16,7 +16,6 @@ package generate
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,6 +23,7 @@ import (
 	utils "github.com/mgoltzsche/cntnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-tools/generate"
+	"github.com/pkg/errors"
 )
 
 const ANNOTATION_HOOK_ARGS = "com.github.mgoltzsche.cntnr.bundle.hook.args"
@@ -71,7 +71,7 @@ func NewHookBuilderFromSpec(spec *specs.Spec) (b HookBuilder, err error) {
 	if spec != nil && spec.Annotations != nil {
 		if hookArgs := spec.Annotations[ANNOTATION_HOOK_ARGS]; hookArgs != "" {
 			if err = json.Unmarshal([]byte(hookArgs), &b.hook); err != nil {
-				err = fmt.Errorf("hook builder from spec: read spec's hook args: %s", err)
+				err = errors.Wrap(err, "hook builder from spec: read spec's hook args")
 			}
 		}
 	}
@@ -112,14 +112,14 @@ func (b *HookBuilder) AddPortMapEntry(entry PortMapEntry) {
 func (b *HookBuilder) Build(spec *generate.Generator) (err error) {
 	defer func() {
 		if err != nil {
-			err = fmt.Errorf("generate hook call: %s", err)
+			err = errors.Wrap(err, "generate hook call")
 		}
 	}()
 
 	//hookBinary, err := exec.LookPath("cntnr-hooks")
 	executable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("Cannot find network hook binary! %s", err)
+		return errors.Wrap(err, "find network hook binary")
 	}
 	cniPluginPaths := os.Getenv("CNI_PATH")
 	if cniPluginPaths == "" {
@@ -129,7 +129,7 @@ func (b *HookBuilder) Build(spec *generate.Generator) (err error) {
 		}
 	}
 	if cniPluginPaths == "" {
-		return fmt.Errorf("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
+		return errors.New("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
 	}
 	// TODO: add all CNI env vars
 	cniEnv := []string{

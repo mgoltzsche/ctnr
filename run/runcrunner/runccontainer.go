@@ -1,7 +1,6 @@
 package runcrunner
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"sync"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/run"
+	"github.com/pkg/errors"
 )
 
 type RuncContainer struct {
@@ -55,12 +55,12 @@ func (c *RuncContainer) Start() (err error) {
 	defer c.mutex.Unlock()
 
 	if c.cmd != nil {
-		return fmt.Errorf("start %q: container already started", c.ID())
+		return errors.Errorf("start %q: container already started", c.ID())
 	}
 
 	spec, err := c.bundle.Spec()
 	if err != nil {
-		return fmt.Errorf("start %q: could not load bundle's spec: %s", c.ID(), err)
+		return errors.Wrapf(err, "start %q: load bundle spec", c.ID())
 	}
 
 	c.err = nil
@@ -88,7 +88,7 @@ func (c *RuncContainer) Start() (err error) {
 	}
 
 	if err = c.cmd.Start(); err != nil {
-		return fmt.Errorf("start %q: %s", c.ID(), err)
+		return errors.Wrapf(err, "start %q", c.ID())
 	}
 
 	c.wait.Add(1)
@@ -133,7 +133,7 @@ func (c *RuncContainer) stop() {
 			c.debug.Println("Killing container since stop timeout exceeded")
 			e := c.cmd.Process.Kill()
 			if e != nil && c.cmd.ProcessState != nil && !c.cmd.ProcessState.Exited() {
-				err = fmt.Errorf("stop: container %q has been killed since it did not respond: %s", c.ID(), e)
+				err = errors.Wrapf(e, "stop: container %q has been killed since it did not respond", c.ID())
 			}
 			c.Wait()
 		}

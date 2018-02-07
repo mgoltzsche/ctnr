@@ -17,11 +17,12 @@ package atomic
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"github.com/pkg/errors"
 )
 
 // Writes a file atomically by first writing into a temp file before moving it to its final destination
@@ -42,18 +43,18 @@ func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 
 	// Write temp file
 	if size, err = io.Copy(tmpFile, reader); err != nil {
-		err = fmt.Errorf("copy to temp file: %s", err)
+		err = errors.Wrap(err, "write to temp file")
 		return
 	}
 	if err = tmpFile.Sync(); err != nil {
-		err = fmt.Errorf("sync temp file: %s", err)
+		err = errors.Wrap(err, "sync temp file")
 		return
 	}
 	tmpFile.Close()
 
 	// Rename temp file
 	if err = os.Rename(tmpPath, dest); err != nil {
-		return 0, fmt.Errorf("rename temp file: %s", err)
+		return 0, errors.Wrap(err, "rename temp file")
 	}
 	tmpRemoved = true
 	return
@@ -63,7 +64,7 @@ func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 func WriteJson(dest string, o interface{}) (size int64, err error) {
 	var buf bytes.Buffer
 	if err = json.NewEncoder(&buf).Encode(o); err != nil {
-		return 0, fmt.Errorf("write json: %s", err)
+		return 0, errors.Wrap(err, "write json")
 	}
 	return WriteFile(dest, &buf)
 }

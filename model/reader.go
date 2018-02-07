@@ -15,6 +15,7 @@ import (
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/net"
 	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
+	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 )
 
@@ -52,7 +53,7 @@ func loadFromComposeYAML(file string, sub Substitution, r *Project) error {
 func readComposeYAML(file string) (*dockerCompose, error) {
 	b, err := ioutil.ReadFile(filepath.FromSlash(file))
 	if err != nil {
-		return nil, fmt.Errorf("Cannot read compose file: %v", err)
+		return nil, errors.Wrap(err, "read compose file")
 	}
 	dc := &dockerCompose{}
 	err = yaml.Unmarshal(b, dc)
@@ -62,7 +63,7 @@ func readComposeYAML(file string) (*dockerCompose, error) {
 
 func convertCompose(c *dockerCompose, sub Substitution, r *Project) error {
 	if c.Services == nil || len(c.Services) == 0 {
-		return fmt.Errorf("No services defined in %s", c.Dir)
+		return errors.New("no services defined in: " + c.Dir)
 	}
 	toVolumes(c, sub, &r.Volumes, ".volumes")
 	r.Services = map[string]Service{}
@@ -108,7 +109,7 @@ func toVolumes(c *dockerCompose, sub Substitution, rp *map[string]Volume, path s
 				}
 			}
 		default:
-			return fmt.Errorf("Unsupported entry type %v at %s", t, path+".name")
+			return errors.Errorf("unsupported entry type %v at %s", t, path+".name")
 		}
 		r[name] = Volume{"", externalName}
 	}
@@ -127,16 +128,16 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, p *
 		} else {
 			yml, err = readComposeYAML(absFile(s.Extends.File, c.Dir))
 			if err != nil {
-				return fmt.Errorf("services.%s.extends.file: %v", d.Name, err)
+				return errors.Wrapf(err, "services.%s.extends.file", d.Name)
 			}
 		}
 		base := yml.Services[s.Extends.Service]
 		if base == nil {
-			return fmt.Errorf("services.%s.extends.service: Invalid reference", d.Name)
+			return errors.Errorf("services.%s.extends.service: Invalid reference", d.Name)
 		}
 		err = convertComposeService(yml, base, sub, p, d, envFileEnv)
 		if err != nil {
-			return fmt.Errorf("Failed to read base service %q in %s: %v", d.Name, yml.Dir, err)
+			return errors.Wrapf(err, "read base service %q in %s", d.Name, yml.Dir)
 		}
 	}
 
@@ -261,12 +262,12 @@ func toExtraHosts(h []string, sub Substitution, rp *[]ExtraHost, path string) er
 	for _, l := range h {
 		s := strings.SplitN(l, ":", 2)
 		if len(s) != 2 {
-			return fmt.Errorf("Invalid entry at %s: %s. Expected format: HOST:IP", path, l)
+			return errors.Errorf("invalid entry at %s: %s. Expected format: HOST:IP", path, l)
 		}
 		host := sub(s[0])
 		ip := sub(s[1])
 		if host == "" || ip == "" {
-			return fmt.Errorf("Empty host or IP at %s: %s", path, l)
+			return errors.Errorf("empty host or IP at %s: %s", path, l)
 		}
 		r = append(r, ExtraHost{host, ip})
 	}
@@ -297,7 +298,7 @@ func toPorts(p []string, sub Substitution, rp *[]PortBinding, path string) error
 			e = sub(e)
 			np := make([]net.PortMapEntry, 0, 1)
 			if err := net.ParsePortMapping(e, &np); err != nil {
-				return fmt.Errorf("%s: %s", path, err)
+				return errors.Wrap(err, path)
 			}
 			for _, p := range np {
 				*rp = append(*rp, PortBinding{
@@ -324,7 +325,7 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, baseFile, destBaseFi
 		switch t := e.(type) {
 		case string:
 			if err = ParseVolumeMount(sub(e.(string)), &v); err != nil {
-				return fmt.Errorf("%s: %s", path, err)
+				return errors.Wrap(err, path)
 			}
 		case map[interface{}]interface{}:
 			m := e.(map[interface{}]interface{})
@@ -347,10 +348,10 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, baseFile, destBaseFi
 				}
 			}
 			if v.Target == "" {
-				return fmt.Errorf("No volume mount target specified at %s: %v", path, e)
+				return errors.Errorf("no volume mount target specified at %s: %v", path, e)
 			}
 		default:
-			return fmt.Errorf("Unsupported element type %v at %s", t, path)
+			return errors.Errorf("unsupported element type %v at %s", t, path)
 		}
 
 		if v.Source != "" && !v.IsNamedVolume() {
@@ -367,6 +368,7 @@ func ParseVolumeMount(expr string, r *VolumeMount) (err error) {
 	r.Options = []string{}
 	s := strings.Split(expr, ":")
 	switch len(s) {
+	case 0:
 	case 1:
 		r.Source = ""
 		r.Target = s[0]
@@ -376,7 +378,7 @@ func ParseVolumeMount(expr string, r *VolumeMount) (err error) {
 		r.Options = s[2:]
 	}
 	if r.Target == "" {
-		err = fmt.Errorf("No volume mount target specified: %s", expr)
+		err = errors.Errorf("no volume mount target specified but %v", expr)
 	}
 	return
 }
@@ -411,7 +413,7 @@ func toImageBuild(s interface{}, sub Substitution, rp **ImageBuild, baseFile, de
 		*rp = r
 	case nil:
 	default:
-		err = fmt.Errorf("string or []string expected at %s but was: %s", path, s)
+		err = errors.Errorf("string or []string expected at %s but was: %s", path, s)
 	}
 	return
 }
@@ -425,7 +427,7 @@ func toHealthCheckDescriptor(c *dcHealthCheck, sub Substitution, path string) (*
 			return nil, err
 		}
 		if len(test) == 0 {
-			return nil, fmt.Errorf("%s: undefined health test command", path+".test")
+			return nil, errors.Errorf("%s.test: undefined health test command", path)
 		}
 		var cmd []string
 		switch test[0] {
@@ -451,7 +453,7 @@ func toHealthCheckDescriptor(c *dcHealthCheck, sub Substitution, path string) (*
 		retriesStr := toString(c.Retries, sub, path+".retries")
 		retries, err := strconv.ParseUint(retriesStr, 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %s", path, err)
+			return nil, errors.Wrap(err, path)
 		}
 		return &Check{cmd, interval, timeout, uint(retries), disable}, nil
 	}
@@ -479,7 +481,7 @@ func toStringArray(v interface{}, sub Substitution, r []string, path string) ([]
 		r = append(r, l...)
 	case nil:
 	default:
-		return r, fmt.Errorf("string or []string expected at %s but was: %s", path, v)
+		return r, errors.Errorf("string or []string expected at %s but was %v", path, v)
 	}
 	return r, nil
 }
@@ -509,7 +511,7 @@ func toStringMap(v interface{}, sub Substitution, r map[string]string, path stri
 	case nil:
 		return r, nil
 	default:
-		return nil, fmt.Errorf("map[string]string or []string expected at %s but was: %v", path, t)
+		return nil, errors.Errorf("map[string]string or []string expected at %s but was: %v", path, t)
 	}
 }
 
@@ -523,7 +525,7 @@ func toDuration(v, defaultVal string, sub Substitution, p string) (time.Duration
 	}
 	d, e := time.ParseDuration(v)
 	if e != nil {
-		return 0, fmt.Errorf("%s: invalid duration: %q", p, v)
+		return 0, errors.Errorf("%s: duration expected but found %q", p, v)
 	}
 	return d, nil
 }
@@ -535,7 +537,7 @@ func toBool(v interface{}, sub Substitution, path string) (bool, error) {
 	}
 	b, err := strconv.ParseBool(sub(s))
 	if err != nil {
-		return b, fmt.Errorf("%s: Cannot parse %q as bool", path, s)
+		return b, errors.Errorf("%s: bool expected but found %q", path, s)
 	}
 	return b, nil
 }
@@ -551,7 +553,7 @@ func toString(v interface{}, sub Substitution, path string) string {
 	case nil:
 		return ""
 	default:
-		panic(fmt.Sprintf("String expected at %s but was %v", path, t))
+		panic(fmt.Sprintf("%s: string expected but found %v", path, t))
 	}
 }
 
@@ -573,7 +575,7 @@ func readEnvironment() (map[string]string, error) {
 func applyEnvFile(file string, r map[string]string) error {
 	f, err := os.Open(filepath.FromSlash(file))
 	if err != nil {
-		return fmt.Errorf("Cannot open env file %q: %s", file, err)
+		return errors.Wrapf(err, "open env file %q", file)
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
@@ -583,14 +585,14 @@ func applyEnvFile(file string, r map[string]string) error {
 		if line != "" && strings.Index(line, "#") != 0 {
 			kv := strings.SplitN(line, "=", 2)
 			if len(kv) != 2 {
-				return fmt.Errorf("Invalid env file entry at %s:%d: %q", file, i, kv)
+				return errors.Errorf("invalid env file entry at %s:%d: %q", file, i, kv)
 			}
 			r[kv[0]] = kv[1]
 		}
 		i++
 	}
 	if err = scanner.Err(); err != nil {
-		return fmt.Errorf("Cannot read env file %q: %s", file, err)
+		return errors.Wrapf(err, "read env file %q", file)
 	}
 	return nil
 }

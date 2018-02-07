@@ -61,9 +61,7 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 	defer runtime.UnlockOSThread()
 
 	defer func() {
-		if err != nil {
-			err = errors.Wrap(err, "new container")
-		}
+		err = errors.Wrap(err, "new container")
 	}()
 
 	loggers = loggers.WithField("id", id)
@@ -74,7 +72,7 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 		return
 	}
 	if spec.Process == nil {
-		return nil, fmt.Errorf("bundle spec declares no process to run")
+		return nil, errors.New("bundle spec declares no process to run")
 	}
 	orgwd, err := os.Getwd()
 	if err != nil {
@@ -83,12 +81,11 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 
 	// Must change to bundle dir because CreateLibcontainerConfig assumes it is in the bundle directory
 	if err = os.Chdir(cfg.Bundle.Dir()); err != nil {
-		return nil, fmt.Errorf("change to bundle directory: %s", err)
+		return nil, errors.Wrap(err, "change to bundle directory")
 	}
 	defer func() {
-		if e := os.Chdir(orgwd); e != nil {
-			err = fmt.Errorf("change back from bundle to previous directory: %s", e)
-		}
+		e := os.Chdir(orgwd)
+		err = errors.Wrap(e, "change back from bundle to previous directory")
 	}()
 
 	config, err := specconv.CreateLibcontainerConfig(&specconv.CreateOpts{
@@ -140,13 +137,11 @@ func (c *Container) Start() (err error) {
 	defer c.mutex.Unlock()
 
 	defer func() {
-		if err != nil {
-			err = fmt.Errorf("start %q: %s", c.container.ID(), err)
-		}
+		err = errors.Wrapf(err, "start %q", c.container.ID())
 	}()
 
 	if c.process != nil {
-		return fmt.Errorf("container already started")
+		return errors.New("container already started")
 	}
 
 	// Create container process (see https://github.com/opencontainers/runc/blob/v1.0.0-rc4/utils_linux.go: startContainer->runner.run->newProcess)
@@ -193,7 +188,7 @@ func (c *Container) Start() (err error) {
 
 	// Run container process
 	if err = c.container.Run(lp); err != nil {
-		return fmt.Errorf("spawn main process: %s", err)
+		return errors.Wrap(err, "spawn main process")
 	}
 	c.process = lp
 	c.tty = tty

@@ -2,7 +2,6 @@ package runcrunner
 
 import (
 	"bytes"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/run"
+	"github.com/pkg/errors"
 )
 
 var _ run.ContainerManager = &ContainerManager{}
@@ -45,7 +45,7 @@ func (m *ContainerManager) Kill(id, signal string, all bool) error {
 	c.Stdout = &buf
 	c.Stderr = &buf
 	if err := c.Run(); err != nil {
-		return fmt.Errorf("%s: %s", err, strings.TrimRight(buf.String(), "\n"))
+		return errors.Errorf("kill: %s: %s", err, strings.TrimRight(buf.String(), "\n"))
 	}
 	return nil
 }

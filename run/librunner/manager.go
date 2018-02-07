@@ -1,7 +1,6 @@
 package librunner
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/opencontainers/runc/libcontainer"
+	"github.com/pkg/errors"
 )
 
 var _ run.ContainerManager = &ContainerManager{}
@@ -30,7 +30,7 @@ func NewContainerManager(rootDir string, rootless bool, loggers log.Loggers) (r 
 	r = &ContainerManager{runners: map[string]run.Container{}, rootDir: absRoot, rootless: rootless, loggers: loggers}
 	binary, err := os.Executable()
 	if err != nil {
-		return nil, fmt.Errorf("resolve %s executable: %s", os.Args[0], err)
+		return nil, errors.Wrapf(err, "new container manager: resolve %q executable", os.Args[0])
 	}
 	if r.factory, err = libcontainer.New(rootDir, libcontainer.Cgroupfs, libcontainer.InitArgs(binary, "init")); err != nil {
 		return
@@ -39,10 +39,8 @@ func NewContainerManager(rootDir string, rootless bool, loggers log.Loggers) (r 
 }
 
 func (m *ContainerManager) NewContainer(cfg *run.ContainerConfig) (c run.Container, err error) {
-	if c, err = NewContainer(cfg, m.rootless, m.factory, m.loggers); err != nil {
-		err = fmt.Errorf("new container: %s", err)
-	}
-	return
+	c, err = NewContainer(cfg, m.rootless, m.factory, m.loggers)
+	return c, errors.Wrap(err, "new container")
 }
 
 func (m *ContainerManager) Kill(id, signal string, all bool) error {
