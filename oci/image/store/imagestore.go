@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -9,8 +8,10 @@ import (
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/image"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	digest "github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -30,7 +31,7 @@ type ImageStore struct {
 func NewImageStore(store *ImageStoreRO, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, warn log.Logger) (*ImageStore, error) {
 	lck, err := lock.NewExclusiveDirLocker(filepath.Join(os.TempDir(), "cntnr", "lock"))
 	if err != nil {
-		err = fmt.Errorf("NewImageStore: %s", err)
+		err = errors.Wrap(err, "new image store")
 	}
 	return &ImageStore{lck, store, systemContext, trustPolicy, warn}, err
 }
@@ -44,12 +45,7 @@ func (s *ImageStore) openLockedImageStore(locker lock.Locker) (image.ImageStoreR
 }
 
 func (s *ImageStore) ImageGC(before time.Time) (err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("image gc: %s", err)
-		}
-	}()
-
+	defer exterrors.Wrapd(&err, "image gc")
 	lockedStore, err := s.openLockedImageStore(s.lock)
 	if err != nil {
 		return

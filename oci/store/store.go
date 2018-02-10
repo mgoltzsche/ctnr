@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"github.com/containers/image/types"
@@ -11,6 +10,7 @@ import (
 	"github.com/mgoltzsche/cntnr/oci/image"
 	istore "github.com/mgoltzsche/cntnr/oci/image/store"
 	"github.com/openSUSE/umoci/pkg/fseval"
+	"github.com/pkg/errors"
 )
 
 // Minimal Store interface.
@@ -35,42 +35,35 @@ type LockedStore struct {
 		return
 	}
 	if b, err = builder.NewImageBuilderFromBundle(rwstore, bundle, author); err != nil {
-		err = fmt.Errorf("image builder from bundle: %s", err)
+		err = errors.Wrap(err, "image builder from bundle")
 		rwstore.Close()
 	}
 	return
 }*/
 
 func NewStore(dir string, rootless bool, systemContext *types.SystemContext, trustPolicy istore.TrustPolicyContext, loggers log.Loggers) (r Store, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("init store: %s", err)
-		}
-	}()
 	if dir == "" {
-		return r, fmt.Errorf("no store directory provided")
+		return r, errors.New("init store: no store directory provided")
 	}
 	dir, err = filepath.Abs(dir)
-	if err != nil {
-		return
+	if err == nil {
+		blobDir := filepath.Join(dir, "blobs")
+		mtreeDir := filepath.Join(dir, "mtree")
+		imageRepoDir := filepath.Join(dir, "image-repos")
+		imageIdDir := filepath.Join(dir, "image-ids")
+		bundleDir := filepath.Join(dir, "bundles")
+		fsEval := fseval.DefaultFsEval
+		if rootless {
+			fsEval = fseval.RootlessFsEval
+		}
+		mtreeStore := istore.NewMtreeStore(mtreeDir, fsEval)
+		blobStore := istore.NewBlobStore(blobDir, loggers.Debug)
+		blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, loggers.Debug)
+		rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), loggers.Error)
+		r.ImageStore, err = istore.NewImageStore(rostore, systemContext, trustPolicy, loggers.Error)
+		if err == nil {
+			r.BundleStore, err = bstore.NewBundleStore(bundleDir, loggers.Debug)
+		}
 	}
-	blobDir := filepath.Join(dir, "blobs")
-	mtreeDir := filepath.Join(dir, "mtree")
-	imageRepoDir := filepath.Join(dir, "image-repos")
-	imageIdDir := filepath.Join(dir, "image-ids")
-	bundleDir := filepath.Join(dir, "bundles")
-	fsEval := fseval.DefaultFsEval
-	if rootless {
-		fsEval = fseval.RootlessFsEval
-	}
-	mtreeStore := istore.NewMtreeStore(mtreeDir, fsEval)
-	blobStore := istore.NewBlobStore(blobDir, loggers.Debug)
-	blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, loggers.Debug)
-	rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), loggers.Error)
-	r.ImageStore, err = istore.NewImageStore(rostore, systemContext, trustPolicy, loggers.Error)
-	if err != nil {
-		return
-	}
-	r.BundleStore, err = bstore.NewBundleStore(bundleDir, loggers.Debug)
-	return
+	return r, errors.Wrap(err, "init store")
 }

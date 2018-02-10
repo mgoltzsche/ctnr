@@ -1,9 +1,10 @@
 package net
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 // See https://github.com/containernetworking/plugins/blob/master/plugins/meta/portmap/main.go
@@ -34,20 +35,18 @@ func (p PortMapEntry) String() string {
 
 func ParsePortMapping(expr string, r *[]PortMapEntry) (err error) {
 	defer func() {
-		if err != nil {
-			err = fmt.Errorf("invalid port binding expression %q: err", expr, err)
-		}
+		err = errors.Wrapf(err, "invalid port binding expression %q", expr)
 	}()
 
 	sp := strings.Split(expr, "/")
 	if len(sp) > 2 {
-		return fmt.Errorf("too many '/' occurences")
+		return errors.New("too many '/' occurences")
 	}
 	prot := "tcp"
 	if len(sp) == 2 {
 		prot = strings.ToLower(sp[1])
 		if prot == "" {
-			return fmt.Errorf("no protocol defined after '/'")
+			return errors.New("no protocol defined after '/'")
 		}
 	}
 
@@ -77,16 +76,16 @@ func ParsePortMapping(expr string, r *[]PortMapEntry) (err error) {
 	}
 	rangeSize := targetTo - targetFrom
 	if (hostTo - hostFrom) != rangeSize {
-		return fmt.Errorf("port %q's range size differs between host and destination", expr)
+		return errors.Errorf("port %q's range size differs between host and destination", expr)
 	}
 	for i := 0; i <= rangeSize; i++ {
 		targetPort := targetFrom + i
 		pubPort := hostFrom + i
 		if targetPort < 0 || targetPort > 65535 {
-			return fmt.Errorf("target port %d exceeded range", targetPort)
+			return errors.Errorf("target port %d exceeds range", targetPort)
 		}
 		if pubPort < 0 || pubPort > 65535 {
-			return fmt.Errorf("published port %d exceeded range", pubPort)
+			return errors.Errorf("published port %d exceeds range", pubPort)
 		}
 		*r = append(*r, PortMapEntry{uint16(targetPort), uint16(pubPort), prot, hostIp})
 	}
@@ -109,6 +108,6 @@ func toPortRange(rangeExpr string) (from, to int, err error) {
 			}
 		}
 	}
-	err = fmt.Errorf("invalid port range %q", rangeExpr)
+	err = errors.Errorf("invalid port range %q", rangeExpr)
 	return
 }

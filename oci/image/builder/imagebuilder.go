@@ -73,7 +73,7 @@ func (b *ImageBuilder) Tag(tag string) {
 func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, loggers log.Loggers) (img image.Image, err error) {
 	defer func() {
 		if err != nil {
-			err = fmt.Errorf("build image: %s", err)
+			err = errors.Wrap(err, "build image")
 		}
 	}()
 	state := NewBuildState(images, bundles, cache, rootless, proot, loggers)
@@ -90,7 +90,7 @@ func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleSto
 	state.config.OS = runtime.GOOS
 
 	if len(b.steps) == 0 {
-		return img, fmt.Errorf("No build steps defined")
+		return img, errors.New("no build steps defined")
 	}
 
 	for _, step := range b.steps {
@@ -204,7 +204,7 @@ func (b *BuildState) SetCmd(cmd []string) (err error) {
 
 func (b *BuildState) FromImage(image string) (err error) {
 	if b.image != nil {
-		return fmt.Errorf("base image must be defined as first build step")
+		return errors.New("base image must be defined as first build step")
 	}
 	img, e := b.images.ImageByName(image)
 	// TODO: distiguish between 'image not found' and serious error
@@ -226,7 +226,7 @@ func (b *BuildState) setImage(img *image.Image) (err error) {
 
 func (b *BuildState) Run(cmd string) (err error) {
 	if b.image == nil {
-		err = fmt.Errorf("cannot run a command in an empty image")
+		err = errors.New("cannot run a command in an empty image")
 		return
 	}
 
@@ -274,7 +274,7 @@ func (b *BuildState) Run(cmd string) (err error) {
 
 func (b *BuildState) Tag(tag string) (err error) {
 	if b.image == nil {
-		return fmt.Errorf("no image to tag")
+		return errors.New("no image to tag provided")
 	}
 	img, err := b.images.TagImage(b.image.ID(), tag)
 	if err == nil {
@@ -302,7 +302,7 @@ func (b *ImageBuilder) AddFile(src, dest string) {
 				err = multierror.Append(err, b.bundle.Close())
 				b.bundle = nil
 			}
-			err = fmt.Errorf("add file to image: %s", err)
+			err = errors.Wrap(err, "add file to image")
 			b.err = multierror.Append(b.err, err)
 		}
 	}()
@@ -406,7 +406,7 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 			if cachedImg, err = b.images.Image(cachedImgId); err == nil {
 				// TODO: distiguish between image not found and serious error
 				if err = b.setImage(&cachedImg); err != nil {
-					return fmt.Errorf("cached image: %s", err)
+					return errors.Wrap(err, "cached image")
 				}
 				b.loggers.Info.Printf("  -> using cached image %s", cachedImg.ID())
 				return

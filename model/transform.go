@@ -2,7 +2,6 @@ package model
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"github.com/mgoltzsche/cntnr/generate"
 	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -22,9 +22,7 @@ const (
 
 func (service *Service) ToSpec(res ResourceResolver, rootless bool, prootPath string, spec *generate.SpecBuilder) (err error) {
 	defer func() {
-		if err != nil {
-			err = fmt.Errorf("generate OCI bundle spec: %s", err)
-		}
+		err = errors.Wrap(err, "generate OCI bundle spec")
 	}()
 
 	if rootless {
@@ -80,7 +78,7 @@ func (service *Service) ToSpec(res ResourceResolver, rootless bool, prootPath st
 	useNoNetwork := sliceutils.Contains(networks, "none")
 	useHostNetwork := sliceutils.Contains(networks, "host")
 	if (useNoNetwork || useHostNetwork) && len(networks) > 1 {
-		return fmt.Errorf("transform: multiple networks are not supported when 'host' or 'none' network supplied")
+		return errors.New("transform: multiple networks are not supported when 'host' or 'none' network supplied")
 	}
 	if len(networks) == 0 {
 		if rootless {
@@ -92,7 +90,7 @@ func (service *Service) ToSpec(res ResourceResolver, rootless bool, prootPath st
 	} else if useNoNetwork || useHostNetwork {
 		networks = []string{}
 	} else if rootless {
-		return fmt.Errorf("transform: no networks supported in rootless mode")
+		return errors.New("transform: no networks supported in rootless mode")
 	}
 
 	// Use host networks by removing 'network' namespace
@@ -141,7 +139,7 @@ func (service *Service) ToSpec(res ResourceResolver, rootless bool, prootPath st
 			return err
 		}
 	} else if len(service.Ports) > 0 {
-		return fmt.Errorf("transform: port mapping only supported with container network - add network or remove port mapping")
+		return errors.New("transform: port mapping only supported with container network - add network or remove port mapping")
 	}
 	// TODO: register healthcheck (as Hook)
 	return nil
@@ -198,7 +196,7 @@ func applyService(service *Service, res ResourceResolver, prootPath string, spec
 	// Add proot
 	if service.PRoot {
 		if prootPath == "" {
-			return fmt.Errorf("proot enabled but no proot path provided")
+			return errors.New("proot enabled but no proot path provided")
 		}
 		spec.SetPRootPath(prootPath)
 	}

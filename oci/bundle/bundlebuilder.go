@@ -2,10 +2,10 @@ package bundle
 
 import (
 	"encoding/base32"
-	"fmt"
 	"strings"
 
 	"github.com/mgoltzsche/cntnr/generate"
+	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"
 )
 
@@ -24,18 +24,17 @@ func Builder(id string) *BundleBuilder {
 	return FromSpec(&spec)
 }
 
-func BuilderFromImage(id string, image BundleImage) (*BundleBuilder, error) {
+func BuilderFromImage(id string, image BundleImage) (b *BundleBuilder, err error) {
 	spec := generate.NewSpecBuilder()
 	spec.SetRootPath("rootfs")
 	conf, err := image.Config()
-	if err != nil {
-		return nil, fmt.Errorf("bundle build from image: %s", err)
+	if err == nil {
+		spec.ApplyImage(conf)
+		spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
+		b = FromSpec(&spec)
+		b.image = image
 	}
-	spec.ApplyImage(conf)
-	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
-	r := FromSpec(&spec)
-	r.image = image
-	return r, nil
+	return b, errors.Wrap(err, "bundle build from image")
 }
 
 func FromSpec(spec *generate.SpecBuilder) *BundleBuilder {
@@ -64,19 +63,10 @@ func (b *BundleBuilder) GetID() string {
 	return b.id
 }
 
-func (b *BundleBuilder) Build(dir string, update bool) (bundle *LockedBundle, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("build bundle: %s", err)
-		}
-	}()
-
+func (b *BundleBuilder) Build(dir string, update bool) (*LockedBundle, error) {
 	// Create bundle directory
-	if bundle, err = CreateLockedBundle(dir, &b.Generator, b.image, update); err != nil {
-		return
-	}
-
-	return
+	bundle, err := CreateLockedBundle(dir, &b.Generator, b.image, update)
+	return bundle, errors.Wrap(err, "build bundle")
 }
 
 func generateId() string {

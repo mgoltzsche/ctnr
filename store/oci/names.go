@@ -36,32 +36,29 @@ func NewKVStore(dir string, enc KeyEncoder, debug log.Logger) *KVStore {
 func (s *KVStore) Get(key string) (d digest.Digest, err error) {
 	file := filepath.Join(s.dir, s.enc.Encode(key))
 	if _, e := os.Stat(file); os.IsNotExist(e) {
-		return d, fmt.Errorf("key %q does not exist", key)
+		return d, errors.Errorf("key %q does not exist", key)
 	}
 	f, err := os.Open(file)
 	if err != nil {
-		return d, fmt.Errorf("get %q: %s", key, err)
+		return d, errors.Wrapf(err, "get %q", key)
 	}
 	defer f.Close()
 	b, err := ioutil.ReadAll(f)
 	if err != nil {
-		return d, fmt.Errorf("get %q: %s", key, err)
+		return d, errors.Wrapf(err, "get %q", key)
 	}
 	if d, err = digest.Parse(string(b)); err != nil {
-		err = fmt.Errorf("get %q: %s", key, err)
+		err = errors.Wrapf(err, "get %q", key)
 	}
 	return
 }
 
 func (s *KVStore) Put(key string, value digest.Digest) error {
 	file := filepath.Join(s.dir, s.enc.Encode(key))
-	if err := os.MkdirAll(filepath.Dir(file), 755); err != nil {
-		return fmt.Errorf("put %q -> %q: %s", key, value, err)
+	if err := os.MkdirAll(filepath.Dir(file), 755); err == nil {
+		_, err := atomic.WriteFile(file, bytes.NewReader([]byte(value.String())))
 	}
-	if _, err := atomic.WriteFile(file, bytes.NewReader([]byte(value.String()))); err != nil {
-		return fmt.Errorf("put %q -> %q: %s", key, value, err)
-	}
-	return nil
+	return errors.Wrapf(err, "put %q -> %q", key, value)
 }
 
 func (s *KVStore) Entries() ([]KVEntry, error) {
@@ -70,7 +67,7 @@ func (s *KVStore) Entries() ([]KVEntry, error) {
 	}
 	fl, err := ioutil.ReadDir(s.dir)
 	if err != nil {
-		return nil, fmt.Errorf("entries: %s", err)
+		return nil, errors.Wrap(err, "entries")
 	}
 	l := make([]KVEntry, 0, len(fl))
 	for _, f := range fl {

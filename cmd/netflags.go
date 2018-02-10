@@ -15,10 +15,10 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/mgoltzsche/cntnr/net"
+	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 )
 
@@ -57,7 +57,7 @@ func (c *fExtraHosts) Set(v string) error {
 	s := strings.SplitN(v, "=", 2)
 	k := strings.Trim(s[0], " ")
 	if len(s) != 2 || k == "" || strings.Trim(s[1], " ") == "" {
-		return fmt.Errorf("Expected option value format: NAME=IP")
+		return errors.New("Expected option value format: NAME=IP")
 	}
 	*c = append(*c, hostsEntry{k, strings.Trim(s[1], " ")})
 	return nil

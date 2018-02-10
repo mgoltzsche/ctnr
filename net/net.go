@@ -4,18 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-
-	"github.com/containernetworking/cni/libcni"
-	"github.com/containernetworking/cni/pkg/types/current"
-	"github.com/containernetworking/cni/pkg/version"
-	//"github.com/vishvananda/netns"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/containernetworking/cni/libcni"
+	"github.com/containernetworking/cni/pkg/types/current"
+	"github.com/containernetworking/cni/pkg/version"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pkg/errors"
+	//"github.com/vishvananda/netns"
 )
 
 type NetConfigs struct {
@@ -31,7 +31,7 @@ func NewNetConfigs(confDir string) (*NetConfigs, error) {
 	}
 	confFiles, err := libcni.ConfFiles(confDir, []string{".conf", ".json"})
 	if err != nil {
-		return nil, fmt.Errorf("Could not find CNI network configuration files: %s", err)
+		return nil, errors.Wrap(err, "read CNI network configuration")
 	}
 	sort.Strings(confFiles)
 	return &NetConfigs{confDir}, nil
@@ -102,7 +102,7 @@ func NewNetManager(state *specs.State) (r *NetManager, err error) {
 	capabilityArgsValue := os.Getenv("CAP_ARGS")
 	if len(capabilityArgsValue) > 0 {
 		if err = json.Unmarshal([]byte(capabilityArgsValue), &capabilityArgs); err != nil {
-			return nil, fmt.Errorf("Cannot read CAP_ARGS: %s", err)
+			return nil, errors.Wrap(err, "read CAP_ARGS")
 		}
 	}
 
@@ -131,7 +131,7 @@ func (m *NetManager) AddNet(ifName string, netConf *libcni.NetworkConfigList) (r
 	}
 	r, err = current.NewResultFromResult(rs)
 	if err != nil {
-		err = fmt.Errorf("CNI result for network %s: %s", netConf.Name, err)
+		err = errors.Wrap(err, "CNI result for network "+netConf.Name)
 	}
 	return
 }
@@ -157,7 +157,7 @@ func parseCniArgs(args string) ([][2]string, error) {
 	for _, pair := range pairs {
 		kv := strings.Split(pair, "=")
 		if len(kv) != 2 || kv[0] == "" || kv[1] == "" {
-			return nil, fmt.Errorf("invalid CNI_ARGS pair %q", pair)
+			return nil, errors.Errorf("invalid CNI_ARGS pair %q", pair)
 		}
 
 		result = append(result, [2]string{kv[0], kv[1]})
@@ -169,7 +169,7 @@ func parseCniArgs(args string) ([][2]string, error) {
 func CreateNetNS(file string) error {
 	// TODO: clean this up
 	if strings.Index(file, "/var/run/netns/") != 0 {
-		return fmt.Errorf("Only named network namespaces in /var/run/netns/ are supported")
+		return errors.New("Only named network namespaces in /var/run/netns/ are supported")
 	}
 	name := file[15:]
 	return runCmd("ip", "netns", "add", name)
@@ -188,7 +188,7 @@ func CreateNetNS(file string) error {
 func DelNetNS(file string) error {
 	// TODO: clean this up
 	if strings.Index(file, "/var/run/netns/") != 0 {
-		return fmt.Errorf("Only named network namespaces in /var/run/netns/ are supported")
+		return errors.New("Only named network namespaces in /var/run/netns/ are supported")
 	}
 	name := file[15:]
 	return runCmd("ip", "netns", "delete", name)
@@ -201,7 +201,7 @@ func runCmd(c string, args ...string) error {
 	cmd.Stderr = &out
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("%s%s: %v", out.String(), strings.Join(append([]string{c}, args...), " "), err)
+		return errors.Wrapf(err, "%s: %s", strings.Join(append([]string{c}, args...), " "), out.String())
 	}
 	return nil
 }

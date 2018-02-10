@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"runtime"
@@ -13,16 +12,17 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 )
 
 func imageIndex(dir string, r *ispecs.Index) error {
 	idxFile := filepath.Join(dir, "index.json")
 	b, err := ioutil.ReadFile(idxFile)
 	if err != nil {
-		return fmt.Errorf("read image index: %s", err)
+		return errors.Wrap(err, "read image index")
 	}
 	if err = json.Unmarshal(b, r); err != nil {
-		return fmt.Errorf("unmarshal image index %s: %s", idxFile, err)
+		return errors.Wrapf(err, "unmarshal image index %s", idxFile)
 	}
 	return nil
 }
@@ -62,16 +62,16 @@ func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err
 			refFound = true
 			if descriptor.Platform.Architecture == runtime.GOARCH && descriptor.Platform.OS == runtime.GOOS {
 				if descriptor.MediaType != ispecs.MediaTypeImageManifest {
-					err = fmt.Errorf("unsupported manifest media type %q", descriptor.MediaType)
+					err = errors.Errorf("unsupported manifest media type %q", descriptor.MediaType)
 				}
 				return descriptor, err
 			}
 		}
 	}
 	if refFound {
-		err = fmt.Errorf("no image manifest for architecture %s and OS %s found in image index!", runtime.GOARCH, runtime.GOOS)
+		err = errors.Errorf("no image manifest for architecture %s and OS %s found in image index!", runtime.GOARCH, runtime.GOOS)
 	} else {
-		err = fmt.Errorf("no image manifest for ref %q found in image index!", ref)
+		err = errors.Errorf("no image manifest for ref %q found in image index!", ref)
 	}
 	return
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/openSUSE/umoci/oci/layer"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 )
 
 type BlobStore struct {
@@ -31,13 +31,13 @@ func NewBlobStore(dir string, debug log.Logger) (r BlobStore) {
 func (s *BlobStore) ImageManifest(manifestDigest digest.Digest) (r ispecs.Manifest, err error) {
 	b, err := s.readBlob(manifestDigest)
 	if err != nil {
-		return r, fmt.Errorf("image manifest: %s", err)
+		return r, errors.Wrap(err, "image manifest")
 	}
 	if err = json.Unmarshal(b, &r); err != nil {
-		return r, fmt.Errorf("unmarshal image manifest %q: %s", manifestDigest.String(), err)
+		return r, errors.Wrapf(err, "unmarshal image manifest %q", manifestDigest.String())
 	}
 	if r.Config.Digest.String() == "" {
-		return r, fmt.Errorf("image manifest: loaded JSON blob %q is not an OCI image manifest", manifestDigest)
+		return r, errors.Errorf("image manifest: loaded JSON blob %q is not an OCI image manifest", manifestDigest)
 	}
 	return
 }
@@ -50,7 +50,7 @@ func (s *BlobStore) PutImageManifest(m ispecs.Manifest) (d ispecs.Descriptor, er
 		OS:           runtime.GOOS,
 	}
 	if err != nil {
-		err = fmt.Errorf("put image manifest: %s", err)
+		err = errors.Wrap(err, "put image manifest")
 	}
 	return
 }
@@ -58,10 +58,10 @@ func (s *BlobStore) PutImageManifest(m ispecs.Manifest) (d ispecs.Descriptor, er
 func (s *BlobStore) ImageConfig(configDigest digest.Digest) (r ispecs.Image, err error) {
 	b, err := s.readBlob(configDigest)
 	if err != nil {
-		return r, fmt.Errorf("image config: %s", err)
+		return r, errors.Wrap(err, "image config")
 	}
 	if err = json.Unmarshal(b, &r); err != nil {
-		err = fmt.Errorf("unmarshal image config: %s", err)
+		err = errors.Wrap(err, "unmarshal image config")
 	}
 	return
 }
@@ -70,7 +70,7 @@ func (s *BlobStore) PutImageConfig(m ispecs.Image) (d ispecs.Descriptor, err err
 	d.Digest, d.Size, err = s.putJsonBlob(m)
 	d.MediaType = ispecs.MediaTypeImageConfig
 	if err != nil {
-		err = fmt.Errorf("put image config: %s", err)
+		err = errors.Wrap(err, "put image config")
 	}
 	return
 }
@@ -87,7 +87,7 @@ func (s *BlobStore) PutLayer(reader io.Reader) (layer ispecs.Descriptor, diffIdD
 	defer gzw.Close()
 	go func() {
 		if _, err := io.Copy(gzw, hashReader); err != nil {
-			pipeWriter.CloseWithError(fmt.Errorf("compressing layer: %s", err))
+			pipeWriter.CloseWithError(errors.Wrap(err, "compressing layer blob"))
 			return
 		}
 		gzw.Close()
@@ -110,9 +110,7 @@ func (s *BlobStore) BlobFileInfo(id digest.Digest) (os.FileInfo, error) {
 
 func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
 	defer func() {
-		if err != nil {
-			err = fmt.Errorf("retain blobs: %s", err)
-		}
+		err = errors.Wrap(err, "retain blobs")
 	}()
 	var al, dl []os.FileInfo
 	if al, err = ioutil.ReadDir(s.blobDir); err != nil {
@@ -146,45 +144,53 @@ func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
 }
 
 func (s *BlobStore) unpackLayers(manifest *ispecs.Manifest, dest string) (err error) {
+	defer func() {
+		err = errors.Wrap(err, "unpack layers")
+	}()
+
 	// Create destination directory
 	if _, err = os.Stat(dest); err != nil {
-		return fmt.Errorf("unpack layers: %s", err)
+		return
 	}
 
 	// Unpack layers
 	for _, l := range manifest.Layers {
-		d := l.Digest
-		s.debug.Printf("Extracting layer %s", d.String())
-		layerFile := filepath.Join(s.blobDir, d.Algorithm().String(), d.Hex())
-		f, err := os.Open(layerFile)
-		if err != nil {
-			return fmt.Errorf("unpack layer: %s", err)
-		}
-		defer f.Close()
-		var reader io.Reader
-		reader, err = gzip.NewReader(f)
-		if err != nil {
-			return fmt.Errorf("unpack layer: %s", err)
-		}
-		if err = layer.UnpackLayer(dest, reader, &layer.MapOptions{Rootless: true}); err != nil {
-			return fmt.Errorf("unpack layer: %s", err)
+		if err = s.unpackLayer(l.Digest, dest); err != nil {
+			return
 		}
 	}
 	return
+}
+
+func (s *BlobStore) unpackLayer(id digest.Digest, dest string) (err error) {
+	s.debug.Println("Extracting layer", id)
+	layerFile := filepath.Join(s.blobDir, id.Algorithm().String(), id.Hex())
+	f, err := os.Open(layerFile)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	reader, err := gzip.NewReader(f)
+	if err != nil {
+		return
+	}
+	return layer.UnpackLayer(dest, reader, &layer.MapOptions{Rootless: true})
 }
 
 func (s *BlobStore) readBlob(id digest.Digest) (b []byte, err error) {
 	if err = id.Validate(); err != nil {
-		return nil, fmt.Errorf("blob digest %q: %s", id.String(), err)
+		return nil, errors.Wrapf(err, "blob digest %q", id.String())
 	}
 	b, err = ioutil.ReadFile(filepath.Join(s.blobDir, id.Algorithm().String(), id.Hex()))
-	if err != nil {
-		err = fmt.Errorf("read blob %s: %s", id, err)
-	}
+	err = errors.Wrapf(err, "read blob %s", id)
 	return
 }
 
 func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err error) {
+	defer func() {
+		err = errors.Wrap(err, "put blob")
+	}()
+
 	// Create blob dir
 	if err = os.MkdirAll(s.blobDir, 0775); err != nil {
 		return
@@ -192,8 +198,7 @@ func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err 
 	// Create temp file to write blob to
 	tmpBlob, err := ioutil.TempFile(s.blobDir, "blob-")
 	if err != nil {
-		err = fmt.Errorf("create temporary blob: %s", err)
-		return
+		return d, size, errors.Wrap(err, "create temporary blob")
 	}
 	tmpPath := tmpBlob.Name()
 	defer tmpBlob.Close()
@@ -202,8 +207,7 @@ func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err 
 	digester := digest.SHA256.Digester()
 	writer := io.MultiWriter(tmpBlob, digester.Hash())
 	if size, err = io.Copy(writer, reader); err != nil {
-		err = fmt.Errorf("copy to temporary blob: %s", err)
-		return
+		return d, size, errors.Wrap(err, "write temporary blob")
 	}
 	tmpBlob.Close()
 
@@ -212,14 +216,10 @@ func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err 
 	blobFile := s.blobFile(d)
 	if _, e := os.Stat(blobFile); os.IsNotExist(e) {
 		// Write blob if not exists
-		if err = os.Rename(tmpPath, blobFile); err != nil {
-			err = fmt.Errorf("rename temp blob: %s", err)
-		}
+		err = errors.Wrap(os.Rename(tmpPath, blobFile), "rename temp blob")
 	} else {
 		// Do not override already existing blob to make hash collisions obvious early
-		if err = os.Remove(tmpPath); err != nil {
-			err = fmt.Errorf("remove temp blob: %s", err)
-		}
+		err = errors.Wrap(os.Remove(tmpPath), "remove temp blob")
 	}
 	return
 }
@@ -227,7 +227,7 @@ func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err 
 func (s *BlobStore) putJsonBlob(o interface{}) (d digest.Digest, size int64, err error) {
 	var buf bytes.Buffer
 	if err = json.NewEncoder(&buf).Encode(o); err != nil {
-		return
+		return d, size, errors.Wrap(err, "put json blob")
 	}
 	return s.putBlob(&buf)
 }

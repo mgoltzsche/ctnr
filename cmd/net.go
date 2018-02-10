@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -25,6 +24,7 @@ import (
 	"github.com/containernetworking/cni/libcni"
 	"github.com/mgoltzsche/cntnr/net"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -157,7 +157,7 @@ func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {
 		return
 	}
 	if len(args) == 0 && len(flagPorts) > 0 {
-		return nil, fmt.Errorf("Cannot publish a port without a container network! Please remove the --publish option or add a network")
+		return nil, errors.New("Cannot publish a port without a container network! Please remove the --publish option or add --network")
 	}
 	r = make([]*libcni.NetworkConfigList, len(args))
 	for i, name := range args {
@@ -182,12 +182,12 @@ func readContainerState() (s *specs.State, err error) {
 	// Read hook data from stdin
 	b, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot read OCI state from stdin: %s", err)
+		return nil, errors.Wrap(err, "read OCI state from stdin")
 	}
 
 	// Unmarshal the hook state
 	if err = json.Unmarshal(b, s); err != nil {
-		err = fmt.Errorf("Cannot unmarshal OCI state from stdin: %s", err)
+		err = errors.Wrap(err, "unmarshal OCI state read from stdin")
 	}
 	return
 }
@@ -196,14 +196,14 @@ func loadBundleSpec(s *specs.State) (*specs.Spec, error) {
 	spec := &specs.Spec{}
 	f, err := os.Open(filepath.Join(s.Bundle, "config.json"))
 	if err != nil {
-		return nil, fmt.Errorf("Cannot open runtime bundle spec: %v", err)
+		return nil, errors.Wrap(err, "open runtime bundle spec")
 	}
 	b, err := ioutil.ReadAll(f)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot read runtime bundle spec: %v", err)
+		return nil, errors.Wrap(err, "read runtime bundle spec")
 	}
-	if err := json.Unmarshal(b, spec); err != nil {
-		return nil, fmt.Errorf("Cannot unmarshal runtime bundle spec: %v", err)
+	if err = json.Unmarshal(b, spec); err != nil {
+		return nil, errors.Wrap(err, "unmarshal runtime bundle spec")
 	}
 
 	return spec, nil

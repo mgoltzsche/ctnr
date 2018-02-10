@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/bundle"
+	"github.com/pkg/errors"
 )
 
 var _ bundle.BundleStore = &BundleStore{}
@@ -19,25 +19,17 @@ type BundleStore struct {
 }
 
 func NewBundleStore(dir string, debugLog log.Logger) (s *BundleStore, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("init bundle store: %s", err)
-		}
-	}()
-	if dir, err = filepath.Abs(dir); err != nil {
-		return
+	if dir, err = filepath.Abs(dir); err == nil {
+		err = os.MkdirAll(dir, 0755)
 	}
-	if err = os.MkdirAll(dir, 0755); err != nil {
-		return
-	}
-	return &BundleStore{dir, debugLog}, err
+	return &BundleStore{dir, debugLog}, errors.Wrap(err, "init bundle store")
 }
 
 func (s *BundleStore) Bundles() (l []bundle.Bundle, err error) {
 	fl, err := ioutil.ReadDir(s.dir)
 	l = make([]bundle.Bundle, 0, len(fl))
 	if err != nil {
-		return l, fmt.Errorf("bundles: %s", err)
+		return l, errors.Wrap(err, "bundles")
 	}
 	for _, f := range fl {
 		if f.IsDir() {
@@ -45,7 +37,7 @@ func (s *BundleStore) Bundles() (l []bundle.Bundle, err error) {
 			if e == nil {
 				l = append(l, c)
 			} else {
-				s.debug.Printf("bundles: %s", e)
+				s.debug.Println("bundles:", e)
 				err = e
 			}
 		}

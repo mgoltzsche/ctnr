@@ -2,8 +2,9 @@ package model
 
 import (
 	"encoding/base64"
-	"fmt"
 	"path/filepath"
+
+	"github.com/pkg/errors"
 )
 
 type PathResolver interface {
@@ -53,7 +54,7 @@ func (self *resourceResolver) ResolveMountSource(m VolumeMount) (src string, err
 func (self *resourceResolver) named(src string) (string, error) {
 	r, ok := self.volumes[src]
 	if !ok {
-		return "", fmt.Errorf("volume %q not found", src)
+		return "", errors.Errorf("volume %q not found", src)
 	}
 	if r.Source == "" {
 		return self.anonymous("!" + src), nil

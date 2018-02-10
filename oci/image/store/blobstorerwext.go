@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -11,6 +10,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pkg/errors"
 	"github.com/vbatts/go-mtree"
 )
 
@@ -33,9 +33,7 @@ func NewBlobStoreExt(blobStore *BlobStore, mtreeStore *MtreeStore, rootless bool
 
 func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string) (err error) {
 	defer func() {
-		if err != nil {
-			err = fmt.Errorf("unpack image layers: %s", err)
-		}
+		err = errors.Wrap(err, "unpack image layers")
 	}()
 	manifest, err := s.ImageManifest(manifestDigest)
 	if err != nil {
@@ -55,6 +53,10 @@ func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string)
 }
 
 func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.Digest, author, comment string) (r *CommitResult, err error) {
+	defer func() {
+		err = errors.Wrap(err, "commit layer blob")
+	}()
+
 	// Load parent
 	var parentMtree *mtree.DirectoryHierarchy
 	var manifest ispecs.Manifest
@@ -62,25 +64,25 @@ func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.D
 	if parentManifestDigest != nil {
 		manifest, err = s.ImageManifest(*parentManifestDigest)
 		if err != nil {
-			return r, fmt.Errorf("commit: %s", err)
+			return
 		}
 		if r.Config, err = s.ImageConfig(manifest.Config.Digest); err != nil {
-			return r, fmt.Errorf("commit: %s", err)
+			return
 		}
 		parentMtree, err = s.mtree.Get(*parentManifestDigest)
 		if err != nil {
-			return r, fmt.Errorf("commit: %s", err)
+			return
 		}
 	}
 
 	// Diff file system
 	containerMtree, err := s.mtree.Create(rootfs)
 	if err != nil {
-		return r, fmt.Errorf("commit: %s", err)
+		return
 	}
 	reader, err := s.diff(parentMtree, containerMtree, rootfs)
 	if err != nil {
-		return r, fmt.Errorf("commit: %s", err)
+		return
 	}
 	defer reader.Close()
 
@@ -88,7 +90,7 @@ func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.D
 	var diffIdDigest digest.Digest
 	layer, diffIdDigest, err := s.PutLayer(reader)
 	if err != nil {
-		return r, fmt.Errorf("commit: %s", err)
+		return
 	}
 
 	// Update config
@@ -111,7 +113,7 @@ func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.D
 	manifest.Layers = append(manifest.Layers, layer)
 	r.Manifest = manifest
 	if r.Descriptor, err = s.PutImageManifest(manifest); err != nil {
-		return r, fmt.Errorf("commit: %s", err)
+		return
 	}
 	r.Descriptor.MediaType = ispecs.MediaTypeImageManifest
 	r.Descriptor.Platform = &ispecs.Platform{
@@ -121,7 +123,7 @@ func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.D
 
 	// Save mtree for new manifest
 	if err = s.mtree.Put(r.Descriptor.Digest, containerMtree); err != nil {
-		return r, fmt.Errorf("commit: %s", err)
+		return
 	}
 	return
 }
@@ -130,11 +132,11 @@ func (s *BlobStoreExt) diff(from, to *mtree.DirectoryHierarchy, rootfs string) (
 	// Read parent/last mtree
 	diffs, err := s.mtree.Diff(from, to)
 	if err != nil {
-		return nil, fmt.Errorf("diff: %s", err)
+		return nil, errors.Wrap(err, "diff")
 	}
 
 	if len(diffs) == 0 {
-		return nil, fmt.Errorf("empty diff")
+		return nil, errors.New("empty diff")
 	}
 
 	// Generate tar layer from mtree diff
@@ -148,7 +150,7 @@ func (s *BlobStoreExt) diff(from, to *mtree.DirectoryHierarchy, rootfs string) (
 	}
 	reader, err := layer.GenerateLayer(rootfs, diffs, opts)
 	if err != nil {
-		return nil, fmt.Errorf("diff: %s", err)
+		return nil, errors.Wrap(err, "diff")
 	}
 
 	return reader, nil

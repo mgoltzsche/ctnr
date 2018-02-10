@@ -2,15 +2,16 @@ package store
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	lock "github.com/mgoltzsche/cntnr/pkg/lock"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 )
 
 type ImageRepo struct {
@@ -23,14 +24,10 @@ type ImageRepo struct {
 func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err error) {
 	dir = filepath.Clean(dir)
 	r = &ImageRepo{extBlobDir: externalBlobDir}
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("open image repo: %s", err)
-		}
-	}()
+	defer exterrors.Wrapd(&err, "open image repo")
 
 	if externalBlobDir != "" && !filepath.IsAbs(externalBlobDir) {
-		return nil, fmt.Errorf("externalBlobDir is not an absolute path: %q", externalBlobDir)
+		return nil, errors.Errorf("externalBlobDir %q is not an absolute path", externalBlobDir)
 	}
 
 	// Lock repo directory
@@ -45,7 +42,7 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 	defer func() {
 		if err != nil {
 			if e := r.lock.Unlock(); e != nil {
-				err = multierror.Append(err, fmt.Errorf("unlock image repo: %s", e))
+				err = multierror.Append(err, errors.Wrap(e, "unlock image repo"))
 			}
 		}
 	}()
@@ -57,7 +54,7 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 				return
 			}
 		} else {
-			return nil, fmt.Errorf("open image repo: repo %s does not exist", dir)
+			return nil, errors.Errorf("repo dir %s does not exist", dir)
 		}
 	}
 
@@ -69,10 +66,10 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 		}
 	} else if _, e := os.Lstat(blobDir); os.IsNotExist(e) {
 		if _, e = os.Stat(externalBlobDir); os.IsNotExist(e) {
-			return r, fmt.Errorf("blob dir: %s", err)
+			return r, errors.Errorf("external blob dir %s does not exist", externalBlobDir)
 		}
 		if err = os.Symlink(externalBlobDir, blobDir); err != nil {
-			return
+			return r, errors.Wrap(err, "link external blob dir")
 		}
 	}
 
@@ -90,13 +87,13 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 		layout := ispecs.ImageLayout{}
 		b, err := ioutil.ReadFile(layoutFile)
 		if err != nil {
-			return nil, fmt.Errorf("read oci-layout: %s", err)
+			return nil, errors.Wrap(err, "read oci-layout")
 		}
 		if err = json.Unmarshal(b, &layout); err != nil {
-			return nil, fmt.Errorf("unmarshal oci-layout: %s", err)
+			return nil, errors.Wrap(err, "unmarshal oci-layout")
 		}
 		if layout.Version != ispecs.ImageLayoutVersion {
-			return nil, fmt.Errorf("unsupported oci-layout version %q", layout.Version)
+			return nil, errors.Errorf("unsupported oci-layout version %q", layout.Version)
 		}
 	}
 
@@ -109,7 +106,7 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 			return
 		}
 		if r.index.SchemaVersion != 2 {
-			return nil, fmt.Errorf("unsupported index schema version %d in %s", r.index.SchemaVersion, r.indexFile)
+			return nil, errors.Errorf("unsupported index schema version %d in %s", r.index.SchemaVersion, r.indexFile)
 		}
 	}
 	return
@@ -119,13 +116,13 @@ func (r *ImageRepo) Close() (err error) {
 	// Unlock image repo dir
 	defer func() {
 		if e := r.lock.Unlock(); e != nil {
-			e = fmt.Errorf("image repo: close: %s", e)
 			if err == nil {
 				err = e
 			} else {
 				err = multierror.Append(err, e)
 			}
 		}
+		err = errors.Wrap(err, "close image repo")
 	}()
 
 	// Delete whole image repo directory if manifest list is empty

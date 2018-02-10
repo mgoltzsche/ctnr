@@ -1,15 +1,11 @@
 package storage
 
 import (
-	"fmt"
-
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
-
 	"time"
-
-	"io"
 
 	"github.com/containers/image/copy"
 	"github.com/containers/image/signature"
@@ -21,6 +17,7 @@ import (
 	"github.com/containers/storage/pkg/idtools"
 	"github.com/mgoltzsche/cntnr/store"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 )
 
 // Deprecated since containers/storage cannot be used by
@@ -47,12 +44,12 @@ func NewContainersStore(dir string, systemContext *types.SystemContext) (*Store,
 	opts.GraphRoot = dir
 	store, err := storage.GetStore(opts)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot open store at %s: %s", dir, err)
+		return nil, errors.Wrap(err, "open store at "+dir)
 	}
 
 	trustPolicy, err := createTrustPolicyContext()
 	if err != nil {
-		return nil, fmt.Errorf("Error loading trust policy: %s", err)
+		return nil, errors.Wrap(err, "loading trust policy")
 	}
 
 	return &Store{store, trustPolicy, systemContext}, nil
@@ -66,7 +63,7 @@ func (s *Store) Close() error {
 func (s *Store) ImportImage(src string) (img *store.Image, err error) {
 	srcRef, err := alltransports.ParseImageName(src)
 	if err != nil {
-		err = fmt.Errorf("Invalid image source %q: %s", src, err)
+		err = errors.Wrapf(err, "invalid image source %q", src)
 		return
 	}
 	imageName := store.ToName(srcRef)
@@ -74,18 +71,19 @@ func (s *Store) ImportImage(src string) (img *store.Image, err error) {
 	// Problem: to much code copy.Image code to rewrite or image metadata is fetched twice.
 	destRef, err := storetransport.Transport.ParseStoreReference(s.store, imageName)
 	if err != nil {
-		err = fmt.Errorf("Invalid image import destination %q: %s", imageName, err)
+		err = errors.Wrapf(err, "invalid image import destination %q", imageName)
 		return
 	}
 
+	reportWriter := os.Stdout
 	err = copy.Image(s.trustPolicy, destRef, srcRef, &copy.Options{
 		RemoveSignatures: false,
 		SignBy:           "",
-		ReportWriter:     os.Stdout,
+		ReportWriter:     reportWriter,
 		SourceCtx:        s.systemContext,
 		DestinationCtx:   &types.SystemContext{},
 	})
-	fmt.Println()
+	reportWriter.WriteString("\n")
 	if err != nil {
 		return
 	}
@@ -112,20 +110,14 @@ func (s *Store) Image(id string) (r *store.Image, err error) {
 }
 
 func (s *Store) ImageByName(name string) (r *store.Image, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("Cannot find image %q in the local store: %s", name, err)
-		}
-	}()
-	if imgRef, err := alltransports.ParseImageName(name); err == nil {
+	if imgRef, e := alltransports.ParseImageName(name); e == nil {
 		name = store.ToName(imgRef)
 	}
-	id, err := s.store.Lookup(name)
-	if err != nil {
-		return
+	var id string
+	if id, err = s.store.Lookup(name); err == nil {
+		r, err = s.Image(id)
 	}
-	r, err = s.Image(id)
-	return
+	return r, errors.Wrapf(err, "store: image %q lookup", name)
 }
 
 func (s *Store) Images() (r []*store.Image, err error) {
@@ -198,7 +190,7 @@ func (s *Store) ImageConfig(imageId string) (r *ispecs.Image, err error) {
 		return
 	}
 	if err = json.Unmarshal(b, r); err != nil {
-		err = fmt.Errorf("Cannot read image %q spec: %s", imageId, err)
+		err = errors.Wrapf(err, "Cannot read image %q spec", imageId)
 	}
 	return
 }
@@ -210,7 +202,7 @@ func (s *Store) imageManifest(imageId string) (m *ispecs.Manifest, err error) {
 	}
 	m = &ispecs.Manifest{}
 	if err = json.Unmarshal(mj, m); err != nil {
-		err = fmt.Errorf("Cannot read image %q manifest: %s", imageId, err)
+		err = errors.Wrapf(err, "read image %q manifest", imageId)
 	}
 	return
 }

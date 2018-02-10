@@ -15,12 +15,12 @@
 package cmd
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/net"
+	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 )
 
@@ -377,7 +377,7 @@ func (c *cExtraHosts) Set(v string) error {
 	s := strings.SplitN(v, "=", 2)
 	k := strings.Trim(s[0], " ")
 	if len(s) != 2 || k == "" || strings.Trim(s[1], " ") == "" {
-		return fmt.Errorf("Expected option value format: NAME=IP")
+		return errors.New("Expected option value format: NAME=IP")
 	}
 	(*c).net.ExtraHosts = append((*c).net.ExtraHosts, model.ExtraHost{k, strings.Trim(s[1], " ")})
 	return nil

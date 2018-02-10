@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"os"
 
 	"io"
@@ -9,6 +8,7 @@ import (
 	"path/filepath"
 
 	digest "github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 	"github.com/vbatts/go-mtree"
 )
 
@@ -38,12 +38,12 @@ func (s *MtreeStore) Get(manifestDigest digest.Digest) (*mtree.DirectoryHierarch
 	file := s.mtreeFile(manifestDigest)
 	f, err := os.Open(file)
 	if err != nil {
-		return nil, fmt.Errorf("read mtree: %s", err)
+		return nil, errors.Wrap(err, "read mtree")
 	}
 	defer f.Close()
 	spec, err := mtree.ParseSpec(f)
 	if err != nil {
-		return nil, fmt.Errorf("read mtree: %s", err)
+		return nil, errors.Wrap(err, "read mtree")
 	}
 	return spec, nil
 }
@@ -57,26 +57,26 @@ func (s *MtreeStore) Put(manifestDigest digest.Digest, spec *mtree.DirectoryHier
 
 	// Create mtree dir
 	if err := os.MkdirAll(filepath.Dir(destFile), 0775); err != nil {
-		return fmt.Errorf("create mtree dir: %s", err)
+		return errors.Wrap(err, "create mtree dir")
 	}
 
 	// Create temp file
 	tmpFile, err := ioutil.TempFile(filepath.Dir(destFile), "tmpmtree-")
 	if err != nil {
-		return fmt.Errorf("create mtree temp file: %s", err)
+		return errors.Wrap(err, "create mtree temp file")
 	}
 	defer tmpFile.Close()
 	tmpName := tmpFile.Name()
 
 	// Write mtree temp file
 	if _, err = spec.WriteTo(io.Writer(tmpFile)); err != nil {
-		return fmt.Errorf("write mtree temp file: %s", err)
+		return errors.Wrap(err, "write mtree temp file")
 	}
 	tmpFile.Close()
 
 	// Rename mtree temp file
 	if err = os.Rename(tmpName, destFile); err != nil {
-		return fmt.Errorf("rename mtree temp file: %s", err)
+		return errors.Wrap(err, "rename mtree temp file")
 	}
 	return nil
 }
@@ -84,7 +84,7 @@ func (s *MtreeStore) Put(manifestDigest digest.Digest, spec *mtree.DirectoryHier
 func (s *MtreeStore) Create(rootfs string) (*mtree.DirectoryHierarchy, error) {
 	dh, err := mtree.Walk(rootfs, nil, mtreeKeywords, s.fsEval)
 	if err != nil {
-		return nil, fmt.Errorf("generate mtree spec: %s", err)
+		return nil, errors.Wrap(err, "generate mtree spec")
 	}
 	return dh, nil
 }
@@ -92,7 +92,7 @@ func (s *MtreeStore) Create(rootfs string) (*mtree.DirectoryHierarchy, error) {
 func (s *MtreeStore) Diff(from, to *mtree.DirectoryHierarchy) (diffs []mtree.InodeDelta, err error) {
 	diffs, err = mtree.Compare(from, to, mtreeKeywords)
 	if err != nil {
-		err = fmt.Errorf("diff mtree: %s", err)
+		err = errors.Wrap(err, "diff mtree")
 	}
 	return
 }

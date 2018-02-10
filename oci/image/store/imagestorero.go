@@ -2,15 +2,16 @@ package store
 
 import (
 	"encoding/base64"
-	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"time"
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/image"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 )
 
 var _ image.ImageStoreRO = &ImageStoreRO{}
@@ -35,43 +36,42 @@ func (s *ImageStoreRO) ImageConfig(id digest.Digest) (ispecs.Image, error) {
 	return s.blobs.ImageConfig(id)
 }
 
-func (s *ImageStoreRO) UnpackImageLayers(imageId digest.Digest, rootfs string) error {
+func (s *ImageStoreRO) UnpackImageLayers(imageId digest.Digest, rootfs string) (err error) {
+	defer exterrors.Wrapd(&err, "unpack image layers")
 	img, err := s.imageIds.ImageID(imageId)
 	if err != nil {
-		return fmt.Errorf("unpack image layers: %s", err)
+		return
 	}
 	if err = s.imageIds.MarkUsed(imageId); err != nil {
-		return fmt.Errorf("unpack image layers: %s", err)
+		return
 	}
 	return s.blobs.UnpackLayers(img.ManifestDigest, rootfs)
 }
 
 func (s *ImageStoreRO) Image(id digest.Digest) (r image.Image, err error) {
 	imgId, err := s.imageIds.ImageID(id)
-	if err != nil {
-		return r, fmt.Errorf("image: %s", err)
+	if err == nil {
+		r, err = s.imageFromManifestDigest(imgId.ManifestDigest, imgId.LastUsed)
 	}
-	return s.imageFromManifestDigest(imgId.ManifestDigest, imgId.LastUsed)
+	err = errors.Wrapf(err, "image %q", id)
+	return
 }
 
 func (s *ImageStoreRO) imageFromManifestDigest(manifestDigest digest.Digest, lastUsed time.Time) (r image.Image, err error) {
+	defer exterrors.Wrapd(&err, "unpack image layers")
 	manifest, err := s.blobs.ImageManifest(manifestDigest)
 	if err != nil {
-		return r, fmt.Errorf("image: %s", err)
+		return
 	}
 	f, err := s.blobs.BlobFileInfo(manifestDigest)
 	if err != nil {
-		return r, fmt.Errorf("image: %s", err)
+		return
 	}
 	return image.NewImage(manifestDigest, "", "", f.ModTime(), lastUsed, manifest, nil, s), err
 }
 
 func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("image %q not found in local store: %s", nameRef, err)
-		}
-	}()
+	defer exterrors.Wrapdf(&err, "image %q not found in local store", nameRef)
 	if id, e := digest.Parse(nameRef); e == nil && id.Validate() == nil {
 		return s.Image(id)
 	}
@@ -88,11 +88,7 @@ func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
 }
 
 func (s *ImageStoreRO) Images() (r []image.Image, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("images: %s", err)
-		}
-	}()
+	defer exterrors.Wrapd(&err, "images")
 
 	// Read all image IDs
 	imgIDs, err := s.imageIds.ImageIDs()
@@ -127,14 +123,14 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 					for _, d := range idx.Manifests {
 						ref := d.Annotations[ispecs.AnnotationRefName]
 						if ref == "" {
-							e = fmt.Errorf("image %q contains manifest descriptor without ref", name, d.Digest)
+							e = errors.Errorf("manifest descriptor %s of image %q has no ref", d.Digest, name)
 						} else {
 							manifest, e = s.blobs.ImageManifest(d.Digest)
 							if e == nil {
 								if img := imgMap[manifest.Config.Digest]; img != nil {
 									r = append(r, image.NewImage(d.Digest, name, ref, img.Created, img.LastUsed, manifest, nil, s.imageReader))
 								} else {
-									e = fmt.Errorf("image %s ID file is missing", manifest.Config.Digest)
+									e = errors.Errorf("image %s ID file is missing", manifest.Config.Digest)
 								}
 							}
 						}
@@ -171,7 +167,7 @@ func (s *ImageStoreRO) dir2name(fileName string) (name string, err error) {
 		name = string(b)
 	} else {
 		name = fileName
-		err = fmt.Errorf("image name: %s", err)
+		err = errors.Wrap(err, "image name")
 	}
 	return
 }

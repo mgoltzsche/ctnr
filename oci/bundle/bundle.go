@@ -3,7 +3,6 @@ package bundle
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -12,7 +11,8 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
-	lock "github.com/mgoltzsche/cntnr/pkg/lock"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/cntnr/pkg/lock"
 	digest "github.com/opencontainers/go-digest"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	gen "github.com/opencontainers/runtime-tools/generate"
@@ -29,10 +29,10 @@ func NewBundle(dir string) (r Bundle, err error) {
 	r.id = filepath.Base(dir)
 	f, err := os.Stat(dir)
 	if err != nil {
-		return r, fmt.Errorf("open bundle: %s", err)
+		return r, errors.Wrap(err, "open bundle")
 	}
 	if !f.IsDir() {
-		return r, fmt.Errorf("open bundle: no directory provided but %s", dir)
+		return r, errors.Errorf("open bundle: no directory provided but %s", dir)
 	}
 	r.dir = dir
 	r.created = f.ModTime()
@@ -55,10 +55,10 @@ func (b *Bundle) loadSpec() (r rspecs.Spec, err error) {
 	file := filepath.Join(b.dir, "config.json")
 	c, err := ioutil.ReadFile(file)
 	if err != nil {
-		return r, fmt.Errorf("bundle %q spec: %s", b.id, err)
+		return r, errors.Wrapf(err, "bundle %q spec", b.id)
 	}
 	if err = json.Unmarshal(c, &r); err != nil {
-		err = fmt.Errorf("bundle %q spec: %s", b.id, err)
+		err = errors.Wrapf(err, "bundle %q spec", b.id)
 	}
 	return
 }
@@ -90,36 +90,33 @@ func (b *Bundle) resetExpiryTime() error {
 }
 
 func (b *Bundle) GC(before time.Time) (r bool, err error) {
+	defer exterrors.Wrapd(&err, "bundle gc check")
 	st, err := os.Stat(b.dir)
 	if err != nil {
-		return false, fmt.Errorf("bundle gc check: %s", err)
+		return
 	}
 	if st.ModTime().Before(before) {
 		var bl *lock.Lockfile
 		bl, err = lockBundle(b)
 		if err != nil {
-			return false, fmt.Errorf("bundle gc check: %s", err)
+			return true, err
 		}
 		defer func() {
 			if e := bl.Unlock(); e != nil {
-				err = multierror.Append(err, fmt.Errorf("bundle gc check: %s", err))
+				err = multierror.Append(err, e)
 			}
 		}()
-		st, err = os.Stat(b.dir)
-		if err != nil {
-			return true, fmt.Errorf("bundle gc check: %s", err)
+		if st, err = os.Stat(b.dir); err != nil {
+			return true, err
 		}
 		if st.ModTime().Before(before) {
 			if err = deleteBundle(b.dir); err != nil {
-				return true, fmt.Errorf("garbage collect: %s", err)
+				return true, err
 			}
-		} else {
-			return false, err
+			return true, err
 		}
-		return true, err
-	} else {
-		return false, nil
 	}
+	return
 }
 
 type LockedBundle struct {
@@ -135,17 +132,13 @@ func OpenLockedBundle(bundle Bundle) (*LockedBundle, error) {
 		return nil, err
 	}
 	if err := bundle.resetExpiryTime(); err != nil {
-		return nil, fmt.Errorf("lock bundle: %s", err)
+		return nil, errors.Wrap(err, "lock bundle")
 	}
 	return &LockedBundle{bundle, nil, nil, lck}, nil
 }
 
 func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage, update bool) (r *LockedBundle, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("create bundle: %s", err)
-		}
-	}()
+	defer exterrors.Wrapd(&err, "create bundle")
 
 	// Create bundle
 	id := ""
@@ -176,7 +169,7 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage, upda
 
 	if exists {
 		if !update {
-			return r, fmt.Errorf("bundle directory %s already exists", dir)
+			return r, errors.Errorf("bundle directory %s already exists", dir)
 		}
 		lastImageId := bundle.Image()
 		if !(lastImageId == nil && image == nil || lastImageId != nil && *lastImageId == image.ID()) {
@@ -259,6 +252,7 @@ func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
 }
 
 func createRootfs(rootfs string, image BundleImage) (err error) {
+	defer exterrors.Wrapd(&err, "create bundle rootfs")
 	if e := os.RemoveAll(rootfs); e != nil && os.IsNotExist(e) {
 		return e
 	}
@@ -266,20 +260,13 @@ func createRootfs(rootfs string, image BundleImage) (err error) {
 		return
 	}
 	if image != nil {
-		// Unpack image
-		if err = image.Unpack(rootfs); err != nil {
-			return
-		}
+		err = image.Unpack(rootfs)
 	}
 	return
 }
 
 func (b *LockedBundle) SetSpec(spec *gen.Generator) (err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("update bundle %q spec: %s", b.ID(), err)
-		}
-	}()
+	defer exterrors.Wrapdf(&err, "update bundle %q spec", b.ID())
 
 	if err = createVolumeDirectories(spec.Spec(), b.Dir()); err != nil {
 		return
@@ -331,9 +318,7 @@ func createVolumeDirectories(spec *rspecs.Spec, dir string) (err error) {
 			}
 		}
 	}
-	if err != nil {
-		err = fmt.Errorf("volume directories from spec: %s", err)
-	}
+	err = errors.Wrap(err, "create volume directories from spec")
 	return
 }
 
@@ -345,16 +330,20 @@ func (b *LockedBundle) Image() *digest.Digest {
 	return b.image
 }
 
-func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) error {
+func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) (err error) {
 	if imageID == nil {
 		if e := os.Remove(b.bundle.imageFile()); e != nil && !os.IsNotExist(e) {
-			return fmt.Errorf("set bundle's parent image id: %s", e)
+			err = e
 		}
-	} else if _, err := atomic.WriteFile(b.bundle.imageFile(), bytes.NewBufferString((*imageID).String())); err != nil {
-		return fmt.Errorf("set bundle's parent image id: %s", err)
+	} else {
+		_, err = atomic.WriteFile(b.bundle.imageFile(), bytes.NewBufferString((*imageID).String()))
 	}
-	b.image = imageID
-	return nil
+	if err == nil {
+		b.image = imageID
+	} else {
+		err = errors.Wrap(err, "set bundle's parent image id")
+	}
+	return
 }
 
 func (b *LockedBundle) Delete() (err error) {
@@ -367,19 +356,12 @@ func (b *LockedBundle) Delete() (err error) {
 
 func lockBundle(bundle *Bundle) (l *lock.Lockfile, err error) {
 	// TODO: use tmpfs for lock file
-	l, err = lock.LockFile(filepath.Clean(bundle.dir) + ".lock")
-	if err != nil {
-		return nil, fmt.Errorf("lock bundle: %s", err)
+	if l, err = lock.LockFile(filepath.Clean(bundle.dir) + ".lock"); err == nil {
+		err = l.Lock()
 	}
-	if err = l.Lock(); err != nil {
-		return nil, fmt.Errorf("lock bundle: %s", err)
-	}
-	return l, err
+	return l, errors.Wrap(err, "lock bundle")
 }
 
-func deleteBundle(dir string) (err error) {
-	if err = os.RemoveAll(dir); err != nil {
-		err = fmt.Errorf("delete bundle: %s", err)
-	}
-	return
+func deleteBundle(dir string) error {
+	return errors.Wrap(os.RemoveAll(dir), "delete bundle")
 }

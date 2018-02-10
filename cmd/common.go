@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -55,11 +55,6 @@ func exitOnError(cmd *cobra.Command, err error) {
 }
 
 func usageError(msg string) UsageError {
-	/*var buf bytes.Buffer
-	cmd.SetOutput(&buf)
-	cmd.HelpFunc()(cmd, args)
-	cmd.SetOutput(nil)
-	return fmt.Errorf("Error: %s\n%s\n%s", msg, buf.String(), msg)*/
 	return UsageError(msg)
 }
 
@@ -156,7 +151,7 @@ func createContainer(model *model.Service, res model.ResourceResolver, manager r
 
 func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b *bundle.LockedBundle, err error) {
 	if service.Image == "" {
-		return nil, fmt.Errorf("service %q has no image", service.Name)
+		return nil, errors.Errorf("service %q has no image", service.Name)
 	}
 
 	istore, err := openImageStore()

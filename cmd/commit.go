@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -60,7 +61,7 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	if spec.Root == nil {
-		return fmt.Errorf("bundle %q has no root path", bundleId)
+		return errors.Errorf("bundle %q has no root path", bundleId)
 	}
 	img, err := lockedStore.AddImageLayer(filepath.Join(b.Dir(), spec.Root.Path), lockedBundle.Image(), flagAuthor, flagComment)
 	if err != nil {

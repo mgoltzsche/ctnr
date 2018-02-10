@@ -20,13 +20,13 @@ import (
 	"strings"
 
 	shellwords "github.com/mattn/go-shellwords"
-	//"github.com/mgoltzsche/cntnr/generate"
+	"github.com/pkg/errors"
 )
 
 func parseBool(s string) (bool, error) {
 	b, err := strconv.ParseBool(s)
 	if err != nil {
-		err = fmt.Errorf("Only 'true' or 'false' are accepted values")
+		err = errors.New("Only 'true' or 'false' are valid values")
 	}
 	return b, err
 }
@@ -71,7 +71,7 @@ func addMapEntries(s string, r *map[string]string) error {
 		sp := strings.SplitN(e, "=", 2)
 		k := strings.Trim(sp[0], " ")
 		if len(sp) != 2 || k == "" || strings.Trim(sp[1], " ") == "" {
-			return fmt.Errorf("Expected option value format: NAME=VALUE")
+			return errors.New("Expected option value format: NAME=VALUE")
 		}
 		(*r)[k] = strings.Trim(sp[1], " ")
 	}

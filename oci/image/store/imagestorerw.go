@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -16,9 +15,11 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/image"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 )
 
 const AnnotationParentImage = "com.github.mgoltzsche.cntnr.image.parent"
@@ -36,7 +37,7 @@ type ImageStoreRW struct {
 
 func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, warn log.Logger) (r *ImageStoreRW, err error) {
 	if err = locker.Lock(); err != nil {
-		err = fmt.Errorf("open image store: %s", err)
+		err = errors.Wrap(err, "open read/write image store")
 	}
 	return &ImageStoreRW{roStore.WithNonAtomicAccess(), systemContext, trustPolicy, locker, warn}, err
 }
@@ -54,14 +55,10 @@ func (s *ImageStoreRW) Close() (err error) {
 
 // Creates a new image ref. Overwrites existing refs.
 func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Image, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("tag image: %s", err)
-		}
-	}()
+	defer exterrors.Wrapd(&err, "tag image")
 
 	if tag == "" {
-		return img, fmt.Errorf("no tag provided")
+		return img, errors.New("no tag provided")
 	}
 	imgId, err := s.imageIds.ImageID(imageId)
 	if err != nil {
@@ -101,7 +98,7 @@ func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Im
 func (s *ImageStoreRW) UntagImage(tag string) (err error) {
 	tag, ref := normalizeImageName(tag)
 	if _, e := os.Stat(s.name2dir(tag)); os.IsNotExist(e) {
-		return fmt.Errorf("image %q does not exist", tag)
+		return errors.Errorf("untag: image %q does not exist", tag)
 	}
 	err = s.updateImageIndex(tag, false, func(repo *ImageRepo) error {
 		idx := &repo.index
@@ -119,29 +116,22 @@ func (s *ImageStoreRW) UntagImage(tag string) (err error) {
 			}
 			idx.Manifests = manifests
 			if !deleted {
-				return fmt.Errorf("image %q has no ref %q", tag, ref)
+				return errors.Errorf("image %q has no ref %q", tag, ref)
 			}
 		}
 		return nil
 	})
-	if err != nil {
-		err = fmt.Errorf("delete image: %s", err)
-	}
-	return err
+	return errors.Wrap(err, "untag")
 }
 
 func (s *ImageStoreRW) AddImageLayer(rootfs string, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("commit image: %s", err)
-		}
-	}()
+	defer exterrors.Wrapd(&err, "commit image layer")
 
 	var parentManifest *digest.Digest
 	if parentImageId != nil {
 		parent, err := s.imageIds.ImageID(*parentImageId)
 		if err != nil {
-			return r, fmt.Errorf("resolve base image: %s", err)
+			return r, errors.Wrap(err, "resolve base image")
 		}
 		parentManifest = &parent.ManifestDigest
 	}
@@ -156,16 +146,12 @@ func (s *ImageStoreRW) AddImageLayer(rootfs string, parentImageId *digest.Digest
 }
 
 func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("import: %s", err)
-		}
-	}()
+	defer exterrors.Wrapd(&err, "import")
 
 	// Parse source
 	srcRef, err := alltransports.ParseImageName(src)
 	if err != nil {
-		err = fmt.Errorf("invalid source %q: %s", src, err)
+		err = errors.Wrapf(err, "invalid source %q", src)
 		return
 	}
 
@@ -190,7 +176,7 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	// Parse destination
 	destRef, err := ocitransport.Transport.ParseReference(imgDir + ":" + ref)
 	if err != nil {
-		err = fmt.Errorf("invalid destination %q: %s", imgDir, err)
+		err = errors.Wrapf(err, "invalid destination %q", imgDir)
 		return
 	}
 
@@ -240,7 +226,7 @@ func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.D
 	} else {
 		parent, err := s.Image(*parentImageId)
 		if err != nil {
-			return img, fmt.Errorf("parent image: %s", err)
+			return img, errors.Wrap(err, "parent image")
 		}
 		manifest = parent.Manifest
 
@@ -281,18 +267,18 @@ func (s *ImageStoreRW) addImages(name string, manifestDescriptors []ispecs.Descr
 	}
 	for _, manifestDescriptor := range manifestDescriptors {
 		if manifestDescriptor.Annotations[ispecs.AnnotationRefName] == "" {
-			return fmt.Errorf("no image ref defined in manifest descriptor (%s annotation)", ispecs.AnnotationRefName)
+			return errors.Errorf("no image ref defined in manifest descriptor (%s annotation)", ispecs.AnnotationRefName)
 		}
 		if manifestDescriptor.Digest == digest.Digest("") || manifestDescriptor.Size < 1 || manifestDescriptor.Platform.Architecture == "" || manifestDescriptor.Platform.OS == "" {
 			str := ""
 			if b, e := json.Marshal(&manifestDescriptor); e == nil {
 				str = string(b)
 			}
-			return fmt.Errorf("incomplete manifest descriptor %s", str)
+			return errors.Errorf("incomplete manifest descriptor %s", str)
 		}
 		manifest, err := s.blobs.ImageManifest(manifestDescriptor.Digest)
 		if err != nil {
-			return fmt.Errorf("add images: %s", err)
+			return errors.Wrap(err, "add image")
 		}
 		if err = s.imageIds.Add(manifest.Config.Digest, manifestDescriptor.Digest); err != nil {
 			return err
@@ -310,7 +296,7 @@ func (s *ImageStoreRW) addImages(name string, manifestDescriptors []ispecs.Descr
 func (s *ImageStoreRW) updateImageIndex(name string, create bool, transform func(*ImageRepo) error) (err error) {
 	repo, err := OpenImageRepo(s.name2dir(name), s.blobs.blobDir, create)
 	if err != nil {
-		return fmt.Errorf("update image index: %s", err)
+		return errors.Wrap(err, "update image index")
 	}
 	defer func() {
 		if e := repo.Close(); e != nil {

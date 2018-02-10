@@ -25,6 +25,7 @@ import (
 	humanize "github.com/dustin/go-humanize"
 	"github.com/mgoltzsche/cntnr/oci/image/builder"
 	"github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -182,7 +183,7 @@ func runImageUntag(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 	if err != nil {
-		err = fmt.Errorf("Failed to untag all images")
+		err = errors.New("Failed to untag all images")
 	}
 	return
 }
