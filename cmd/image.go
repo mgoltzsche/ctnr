@@ -53,6 +53,12 @@ var (
 		Long:  `Untags one or many images in the local store.`,
 		Run:   wrapRun(runImageUntag),
 	}
+	imageRmCmd = &cobra.Command{
+		Use:   "rm IMAGEID",
+		Short: "Removes the image from the store",
+		Long:  `Removes the image as well as all tags referencing it from the store.`,
+		Run:   wrapRun(runImageRm),
+	}
 	imageGcCmd = &cobra.Command{
 		Use:   "gc",
 		Short: "Garbage collects image blobs",
@@ -98,6 +104,7 @@ func init() {
 	imageCmd.AddCommand(imageListCmd)
 	imageCmd.AddCommand(imageTagCmd)
 	imageCmd.AddCommand(imageUntagCmd)
+	imageCmd.AddCommand(imageRmCmd)
 	imageCmd.AddCommand(imageGcCmd)
 	imageCmd.AddCommand(imageImportCmd)
 	imageCmd.AddCommand(imageExportCmd)
@@ -117,7 +124,7 @@ func runImageList(cmd *cobra.Command, args []string) (err error) {
 	f := "%-35s %-15s  %-71s  %-15s  %8s\n"
 	fmt.Printf(f, "REPO", "REF", "ID", "CREATED", "SIZE")
 	for _, img := range imgs {
-		fmt.Printf(f, img.Repo, img.Ref, img.ID(), humanize.Time(img.Created), humanize.Bytes(img.Size))
+		fmt.Printf(f, img.Repo, img.Ref, img.ID(), humanize.Time(img.Created), humanize.Bytes(img.Size()))
 	}
 	return
 }
@@ -129,9 +136,24 @@ func runImageGc(cmd *cobra.Command, args []string) error {
 	return store.ImageGC(time.Now().Add(-flagImageTTL))
 }
 
+func runImageRm(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return usageError("No IMAGEID provided")
+	}
+	ids := make([]digest.Digest, len(args))
+	for i, a := range args {
+		if d, e := digest.Parse(a); e == nil && d.Validate() == nil {
+			ids[i] = d
+		} else {
+			return errors.Errorf("invalid IMAGEID %q provided", a)
+		}
+	}
+	return store.DelImage(ids...)
+}
+
 func runImageImport(cmd *cobra.Command, args []string) (err error) {
 	if len(args) != 1 {
-		return usageError("No image provided to import")
+		return usageError("No image provided")
 	}
 	lockedStore, err := openImageStore()
 	if err != nil {

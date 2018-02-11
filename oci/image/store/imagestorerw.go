@@ -55,7 +55,7 @@ func (s *ImageStoreRW) Close() (err error) {
 
 // Creates a new image ref. Overwrites existing refs.
 func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Image, err error) {
-	defer exterrors.Wrapd(&err, "tag image")
+	defer exterrors.Wrapd(&err, "tag")
 
 	if tag == "" {
 		return img, errors.New("no tag provided")
@@ -96,11 +96,9 @@ func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Im
 }
 
 func (s *ImageStoreRW) UntagImage(tag string) (err error) {
-	tag, ref := normalizeImageName(tag)
-	if _, e := os.Stat(s.name2dir(tag)); os.IsNotExist(e) {
-		return errors.Errorf("untag: image %q does not exist", tag)
-	}
-	err = s.updateImageIndex(tag, false, func(repo *ImageRepo) error {
+	defer exterrors.Wrapd(&err, "untag")
+	repo, ref := normalizeImageName(tag)
+	err = s.updateImageIndex(repo, false, func(repo *ImageRepo) error {
 		idx := &repo.index
 		if ref == "" {
 			idx.Manifests = nil
@@ -116,12 +114,12 @@ func (s *ImageStoreRW) UntagImage(tag string) (err error) {
 			}
 			idx.Manifests = manifests
 			if !deleted {
-				return errors.Errorf("image %q has no ref %q", tag, ref)
+				return errors.Errorf("image repo %q has no ref %q", repo, ref)
 			}
 		}
 		return nil
 	})
-	return errors.Wrap(err, "untag")
+	return
 }
 
 func (s *ImageStoreRW) AddImageLayer(rootfs string, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
@@ -160,7 +158,7 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	if err = os.MkdirAll(s.repoDir, 0775); err != nil {
 		return
 	}
-	imgDir, err := ioutil.TempDir(s.repoDir, "tmpimg-")
+	imgDir, err := ioutil.TempDir(s.repoDir, ".tmp-img-")
 	if err != nil {
 		return
 	}
@@ -261,7 +259,7 @@ func (s *ImageStoreRW) putImageManifest(manifest ispecs.Manifest) (r image.Image
 }
 
 // Adds manifests to an image repo. This is an atomic operation
-func (s *ImageStoreRW) addImages(name string, manifestDescriptors []ispecs.Descriptor) (err error) {
+func (s *ImageStoreRW) addImages(repoName string, manifestDescriptors []ispecs.Descriptor) (err error) {
 	if len(manifestDescriptors) == 0 {
 		return nil
 	}
@@ -274,18 +272,18 @@ func (s *ImageStoreRW) addImages(name string, manifestDescriptors []ispecs.Descr
 			if b, e := json.Marshal(&manifestDescriptor); e == nil {
 				str = string(b)
 			}
-			return errors.Errorf("incomplete manifest descriptor %s", str)
+			return errors.Errorf("add image: incomplete manifest descriptor %s", str)
 		}
 		manifest, err := s.blobs.ImageManifest(manifestDescriptor.Digest)
 		if err != nil {
 			return errors.Wrap(err, "add image")
 		}
 		if err = s.imageIds.Add(manifest.Config.Digest, manifestDescriptor.Digest); err != nil {
-			return err
+			return errors.Wrap(err, "add image")
 		}
 	}
 
-	return s.updateImageIndex(name, true, func(repo *ImageRepo) error {
+	return s.updateImageIndex(repoName, true, func(repo *ImageRepo) error {
 		for _, ref := range manifestDescriptors {
 			repo.AddRef(ref)
 		}
@@ -293,20 +291,23 @@ func (s *ImageStoreRW) addImages(name string, manifestDescriptors []ispecs.Descr
 	})
 }
 
-func (s *ImageStoreRW) updateImageIndex(name string, create bool, transform func(*ImageRepo) error) (err error) {
-	repo, err := OpenImageRepo(s.name2dir(name), s.blobs.blobDir, create)
-	if err != nil {
-		return errors.Wrap(err, "update image index")
-	}
-	defer func() {
-		if e := repo.Close(); e != nil {
-			if err == nil {
-				err = e
-			} else {
-				err = multierror.Append(err, e)
-			}
+func (s *ImageStoreRW) updateImageIndex(repoName string, create bool, transform func(*ImageRepo) error) (err error) {
+	dir, err := s.name2dir(repoName)
+	if err == nil {
+		var repo *ImageRepo
+		repo, err = OpenImageRepo(dir, s.blobs.blobDir, create)
+		if err == nil {
+			defer func() {
+				if e := repo.Close(); e != nil {
+					if err == nil {
+						err = e
+					} else {
+						err = multierror.Append(err, e)
+					}
+				}
+			}()
+			err = transform(repo)
 		}
-	}()
-
-	return transform(repo)
+	}
+	return errors.Wrapf(err, "update image repo %q index", repoName)
 }

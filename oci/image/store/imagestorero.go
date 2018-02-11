@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/base64"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -76,8 +77,12 @@ func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
 		return s.Image(id)
 	}
 	name, ref := normalizeImageName(nameRef)
+	dir, err := s.name2dir(name)
+	if err != nil {
+		return
+	}
 	var idx ispecs.Index
-	if err = imageIndex(s.name2dir(name), &idx); err != nil {
+	if err = imageIndex(dir, &idx); err != nil {
 		return
 	}
 	d, err := findManifestDigest(&idx, ref)
@@ -107,19 +112,26 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 	}
 
 	// Read image repos
-	fl, err := ioutil.ReadDir(s.repoDir)
-	if err != nil {
-		return
+	var fl []os.FileInfo
+	if _, e := os.Stat(s.repoDir); e == nil || !os.IsNotExist(e) {
+		if fl, err = ioutil.ReadDir(s.repoDir); err != nil {
+			return
+		}
 	}
 	r = make([]image.Image, 0, len(fl))
 	var idx ispecs.Index
 	var manifest ispecs.Manifest
 	for _, f := range fl {
-		if f.IsDir() {
+		if f.IsDir() && f.Name()[0] != '.' {
 			name := f.Name()
 			name, e := s.dir2name(name)
 			if e == nil {
-				if e = imageIndex(s.name2dir(name), &idx); e == nil {
+				dir, e := s.name2dir(name)
+				if e != nil {
+					s.warn.Println(e)
+					continue
+				}
+				if e = imageIndex(dir, &idx); e == nil {
 					for _, d := range idx.Manifests {
 						ref := d.Annotations[ispecs.AnnotationRefName]
 						if ref == "" {
@@ -139,9 +151,6 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 			}
 			if e != nil {
 				s.warn.Printf("image %q: %s", name, e)
-				if err == nil {
-					err = e
-				}
 			}
 		}
 	}
@@ -156,18 +165,20 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 	return
 }
 
-func (s *ImageStoreRO) name2dir(name string) string {
+func (s *ImageStoreRO) name2dir(name string) (string, error) {
+	if name == "" {
+		return name, errors.New("no repo name provided")
+	}
 	name = base64.RawStdEncoding.EncodeToString([]byte(name))
-	return filepath.Join(s.repoDir, name)
+	return filepath.Join(s.repoDir, name), nil
 }
 
 func (s *ImageStoreRO) dir2name(fileName string) (name string, err error) {
 	b, err := base64.RawStdEncoding.DecodeString(fileName)
-	if err == nil {
-		name = string(b)
-	} else {
+	name = string(b)
+	if err != nil {
 		name = fileName
-		err = errors.Wrap(err, "image name")
+		err = errors.Wrapf(err, "repo name from dir")
 	}
 	return
 }

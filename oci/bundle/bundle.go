@@ -277,7 +277,7 @@ func (b *LockedBundle) SetSpec(spec *gen.Generator) (err error) {
 		spec.Spec().Root.Path = "rootfs"
 	}
 	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, b.ID())
-	tmpConfFile, err := ioutil.TempFile(b.Dir(), "tmp-conf-")
+	tmpConfFile, err := ioutil.TempFile(b.Dir(), ".tmp-conf-")
 	if err != nil {
 		return
 	}

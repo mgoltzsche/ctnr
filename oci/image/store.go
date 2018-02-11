@@ -25,6 +25,7 @@ type ImageStore interface {
 	ImageStoreRO
 	OpenLockedImageStore() (ImageStoreRW, error)
 	ImageGC(before time.Time) error
+	DelImage(id ...digest.Digest) error
 }
 
 type ImageStoreRO interface {

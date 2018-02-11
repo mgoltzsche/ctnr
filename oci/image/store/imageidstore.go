@@ -9,13 +9,10 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/oci/image"
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
-
-var _ image.ImageTagStore = &ImageTagStore{}
 
 type ImageIdStore struct {
 	dir string

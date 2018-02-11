@@ -148,7 +148,7 @@ cntnr uses [runc/libcontainer](https://github.com/opencontainers/runc/blob/v1.0.
 ## Roadmap
 
 - separate OCI hook binary
-- CLI improvements: `image rm`, `image create`, `compose`, `--mount`
+- CLI improvements: `image create`, `compose`, `--mount`
 - Improved docker compose support
 - Improved container, bundle and image garbage collection
 - health check

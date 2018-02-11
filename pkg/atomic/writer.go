@@ -28,7 +28,7 @@ import (
 // Writes a file atomically by first writing into a temp file before moving it to its final destination
 func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 	// Create temp file to write blob to
-	tmpFile, err := ioutil.TempFile(filepath.Dir(dest), "tmp-")
+	tmpFile, err := ioutil.TempFile(filepath.Dir(dest), ".tmp-")
 	if err != nil {
 		return
 	}

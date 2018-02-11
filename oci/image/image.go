@@ -18,7 +18,6 @@ type Image struct {
 	Ref            string
 	//TODO: Tag      TagName
 	Manifest ispecs.Manifest
-	Size     uint64
 	Created  time.Time
 	LastUsed time.Time
 	config   *ispecs.Image
@@ -36,17 +35,20 @@ type Tag struct {
 }
 
 func NewImage(manifestDigest digest.Digest, repo, ref string, created, lastUsed time.Time, manifest ispecs.Manifest, config *ispecs.Image, reader ImageReader) Image {
-	var size uint64
-	for _, l := range manifest.Layers {
-		if l.Size > 0 {
-			size += uint64(l.Size)
-		}
-	}
-	return Image{manifestDigest, repo, ref, manifest, size, created, lastUsed, config, reader}
+	return Image{manifestDigest, repo, ref, manifest, created, lastUsed, config, reader}
 }
 
 func (img *Image) ID() digest.Digest {
 	return img.Manifest.Config.Digest
+}
+
+func (img *Image) Size() (size uint64) {
+	for _, l := range img.Manifest.Layers {
+		if l.Size > 0 {
+			size += uint64(l.Size)
+		}
+	}
+	return
 }
 
 func (img *Image) Config() (cfg ispecs.Image, err error) {

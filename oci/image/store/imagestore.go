@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/containers/image/types"
+	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/oci/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
@@ -44,14 +45,50 @@ func (s *ImageStore) openLockedImageStore(locker lock.Locker) (image.ImageStoreR
 	return NewImageStoreRW(locker, s.ImageStoreRO, s.systemContext, s.trustPolicy, s.warn)
 }
 
+func (s *ImageStore) DelImage(ids ...digest.Digest) (err error) {
+	defer exterrors.Wrapd(&err, "del image")
+	lockedStore, err := s.openLockedImageStore(s.lock)
+	if err != nil {
+		return
+	}
+	defer func() {
+		if e := lockedStore.Close(); e != nil {
+			err = multierror.Append(err, e)
+		}
+	}()
+
+	imgs, err := lockedStore.Images()
+	if err != nil {
+		return
+	}
+	for _, id := range ids {
+		for _, img := range imgs {
+			if id == img.ID() && img.Repo != "" {
+				// TODO: Use TagName struct as argument
+				// TODO: single delete batch per repository
+				if err = lockedStore.UntagImage(img.Repo + ":" + img.Ref); err != nil {
+					return
+				}
+			}
+		}
+		if err = s.imageIds.Del(id); err != nil {
+			return
+		}
+	}
+	return
+}
+
 func (s *ImageStore) ImageGC(before time.Time) (err error) {
 	defer exterrors.Wrapd(&err, "image gc")
 	lockedStore, err := s.openLockedImageStore(s.lock)
 	if err != nil {
 		return
 	}
-	// TODO: close safely
-	defer lockedStore.Close()
+	defer func() {
+		if e := lockedStore.Close(); e != nil {
+			err = multierror.Append(err, e)
+		}
+	}()
 
 	// Collect all image IDs and delete
 	keep := map[digest.Digest]bool{}

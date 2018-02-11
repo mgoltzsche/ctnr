@@ -89,7 +89,7 @@ func init() {
 	logger.Level = logrus.DebugLevel
 	loggers.Info = logrusadapt.NewInfoLogger(logger)
 	loggers.Warn = logrusadapt.NewWarnLogger(logger)
-	loggers.Error = logrusadapt.NewInfoLogger(logger)
+	loggers.Error = logrusadapt.NewErrorLogger(logger)
 	loggers.Debug = log.NewNopLogger()
 
 	uid := os.Geteuid()
