@@ -196,7 +196,7 @@ func applyService(service *Service, res ResourceResolver, prootPath string, spec
 	// Add proot
 	if service.PRoot {
 		if prootPath == "" {
-			return errors.New("proot enabled but no proot path provided")
+			return errors.New("proot enabled but no proot path configured")
 		}
 		spec.SetPRootPath(prootPath)
 	}

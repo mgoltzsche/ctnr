@@ -30,7 +30,7 @@ func initImageBuildFlags(f *pflag.FlagSet, imageBuilder *builder.ImageBuilder) {
 	f.Var((*iCmd)(imageBuilder), "cmd", "Sets the new image's command")
 	f.Var((*iRun)(imageBuilder), "run", "Creates a new image by running the provided command in the current image")
 	f.Var((*iTag)(imageBuilder), "tag", "Tags the image")
-	f.BoolVar(&flagProot, "proot", flagRootless && flagPRootPath != "", "enables PRoot")
+	f.BoolVar(&flagProot, "proot", false, "enables PRoot")
 }
 
 type iRun builder.ImageBuilder

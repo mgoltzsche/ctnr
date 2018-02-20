@@ -64,7 +64,7 @@ func (c *bundleFlags) InitFlags(f *pflag.FlagSet) {
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.BoolVar(&c.readonly, "readonly", false, "mounts the root file system in read only mode")
 	f.BoolVarP(&c.tty, "tty", "t", false, "binds a terminal to the container")
-	f.BoolVar(&c.proot, "proot", flagRootless && flagPRootPath != "", "enables PRoot")
+	f.BoolVar(&c.proot, "proot", false, "enables PRoot")
 	initNetConfFlags(f, &c.netCfg)
 	// Stop parsing after first non flag argument (which is the image)
 	f.SetInterspersed(false)
