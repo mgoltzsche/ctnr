@@ -29,8 +29,9 @@ type Service struct {
 	Build        *ImageBuild       `json:"build,omitempty"`
 	Entrypoint   []string          `json:"entrypoint,omitempty"`
 	Command      []string          `json:"command,omitempty"`
-	Environment  map[string]string `json:"environment,omitempty"`
 	Cwd          string            `json:"working_dir,omitempty"`
+	Environment  map[string]string `json:"environment,omitempty"`
+	User         *User             `json:"user,omitempty"`
 	CapAdd       []string          `json:"cap_add,omitempty"`
 	CapDrop      []string          `json:"cap_drop,omitempty"`
 	Seccomp      string            `json:"seccomp,omitempty"`
@@ -45,6 +46,13 @@ type Service struct {
 	HealthCheck     *Check        `json:"healthcheck,omitempty"`
 	StopSignal      string        `json:"stop_signal,omitempty"`
 	StopGracePeriod time.Duration `json:"stop_grace_period"`
+
+	// TODO: uid/gid mapping: spec.AddLinuxUIDMapping(hostid, containerid, size), ... AddLinuxGIDMapping
+}
+
+type User struct {
+	User  string `json:"uid"`
+	Group string `json:"gid,omitempty"`
 }
 
 type NetConf struct {

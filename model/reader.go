@@ -169,6 +169,14 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, p *
 	if s.WorkingDir != "" {
 		d.Cwd = toString(s.WorkingDir, sub, l+".working_dir")
 	}
+	if s.User != "" {
+		ug := strings.SplitN(toString(s.User, sub, l+".user"), ":", 2)
+		if len(ug) == 2 {
+			d.User = &User{ug[0], ug[1]}
+		} else {
+			d.User = &User{ug[0], ug[0]}
+		}
+	}
 	if s.CapAdd != nil {
 		d.CapAdd = append(d.CapAdd, s.CapAdd...)
 	}
@@ -640,6 +648,7 @@ type dcService struct {
 	Entrypoint      interface{}    `yaml:"entrypoint"` // string or array
 	Command         interface{}    `yaml:"command"`    // string or array
 	WorkingDir      string         `yaml:"working_dir"`
+	User            string         `yaml:"user"`
 	CapAdd          []string       `yaml:"cap_add"`
 	CapDrop         []string       `yaml:"cap_drop"`
 	StdinOpen       string         `yaml:"stdin_open"`

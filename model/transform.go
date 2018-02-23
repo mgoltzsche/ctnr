@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mgoltzsche/cntnr/generate"
@@ -245,13 +246,30 @@ func applyService(service *Service, res ResourceResolver, prootPath string, spec
 		}
 	}
 
-	// TODO: apply user (username must be parsed from rootfs/etc/passwd and mapped to uid/gid)
-	//       which is not possible here since filesystem is not yet populated. => Resolve in bundle builder
-
 	spec.SetRootReadonly(service.ReadOnly)
 
 	if err = toMounts(service.Volumes, res, spec); err != nil {
 		return
+	}
+
+	// User
+	if service.User != nil && service.User.User != "" {
+		// TODO: eventually map username using rootfs/etc/passwd to uid/gid
+		//       (not possible here since filesystem is not yet populated. => Could be moved into bundle builder)
+		usr, e := strconv.Atoi(service.User.User)
+		if e == nil && usr >= 0 && usr < (1<<32) {
+			spec.SetProcessUID(uint32(usr))
+		} else {
+			err = errors.Errorf("uid expected but was %q", service.User.User)
+		}
+		if service.User.Group != "" {
+			grp, e := strconv.Atoi(service.User.Group)
+			if e == nil && grp >= 0 && grp < (1<<32) {
+				spec.SetProcessGID(uint32(grp))
+			} else {
+				err = errors.Errorf("gid expected but was %q", service.User.Group)
+			}
+		}
 	}
 
 	// Capabilities

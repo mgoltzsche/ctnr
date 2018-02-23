@@ -51,11 +51,12 @@ type bundleFlags struct {
 
 func (c *bundleFlags) InitFlags(f *pflag.FlagSet) {
 	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
-	f.BoolVarP(&c.update, "update", "u", false, "Updates an existing bundle's configuration and rootfs if changed")
+	f.BoolVar(&c.update, "update", false, "Updates an existing bundle's configuration and rootfs if changed")
 	f.VarP((*cBundle)(c), "bundle", "b", "bundle name or directory")
 	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
 	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
 	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
+	f.VarP((*cUser)(c), "user", "u", "process user: UID[:GID]")
 	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
 	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
 	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default' or 'unconfined'")
@@ -188,6 +189,34 @@ func (c *cEnvironment) Type() string {
 
 func (c *cEnvironment) String() string {
 	return mapToString((*bundleFlags)(c).curr().Environment)
+}
+
+type cUser bundleFlags
+
+func (c *cUser) Set(s string) error {
+	u := &(*bundleFlags)(c).curr().User
+	ug := strings.SplitN(s, ":", 2)
+	if len(ug) == 2 {
+		*u = &model.User{ug[0], ug[1]}
+	} else {
+		*u = &model.User{ug[0], ug[0]}
+	}
+	return nil
+}
+
+func (c *cUser) Type() string {
+	return "string"
+}
+
+func (c *cUser) String() string {
+	u := (*bundleFlags)(c).curr().User
+	if u == nil || u.User == "" {
+		return ""
+	} else if u.Group == "" {
+		return u.User
+	} else {
+		return u.User + ":" + u.Group
+	}
 }
 
 type cCapAdd bundleFlags
