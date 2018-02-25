@@ -11,12 +11,12 @@ Besides cntnr is a platform to try out new runc features.
 ## Features
 - OCI bundle and container preparation as well as execution as unprivileged user using [runc](https://github.com/opencontainers/runc)
 - OCI image build as unprivileged user
-- Simple concurrently accessible portable POSIX-based image and bundle store
+- Simple concurrently accessible image and bundle store
 - Image and bundle file system creation using [umoci](https://github.com/openSUSE/umoci)
 - Various image formats and transports supported by [containers/image](https://github.com/containers/image)
-- Optional container networking using [CNI](https://github.com/containernetworking/cni) (as OCI runtime hook)
-- Partial [Docker Compose 3](https://docs.docker.com/compose/compose-file/) support using [docker/cli](https://github.com/docker/cli/)
-- Simple CLI partially compatible with [docker](https://www.docker.com/)'s
+- Container networking using [CNI](https://github.com/containernetworking/cni) (optional, as OCI runtime hook)
+- [Docker Compose 3](https://docs.docker.com/compose/compose-file/) support (subset) using [docker/cli](https://github.com/docker/cli/)
+- Easy to learn: [docker](https://www.docker.com/)-like CLI
 - Easy installation: single statically linked binary (plus optional binaries: CNI plugins, proot) and convention over configuration
 
 

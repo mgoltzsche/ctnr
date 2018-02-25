@@ -357,7 +357,7 @@ func (b *LockedBundle) Delete() (err error) {
 func lockBundle(bundle *Bundle) (l *lock.Lockfile, err error) {
 	// TODO: use tmpfs for lock file
 	if l, err = lock.LockFile(filepath.Clean(bundle.dir) + ".lock"); err == nil {
-		err = l.Lock()
+		err = l.TryLock()
 	}
 	return l, errors.Wrap(err, "lock bundle")
 }

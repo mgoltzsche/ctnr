@@ -1,7 +1,6 @@
 package lock
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -9,6 +8,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/nightlyone/lockfile"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 type Lockfile struct {
@@ -27,11 +27,25 @@ func LockFile(file string) (*Lockfile, error) {
 	return lck, err
 }
 
+func (l *Lockfile) TryLock() (err error) {
+	lock(l.file)
+
+	defer func() {
+		if err != nil {
+			err = errors.Wrap(err, "trylock")
+			unlock(l.file)
+		}
+	}()
+
+	return l.lockfile.TryLock()
+}
+
 func (l *Lockfile) Lock() (err error) {
 	lock(l.file)
 
 	defer func() {
 		if err != nil {
+			err = errors.Wrap(err, "lock")
 			unlock(l.file)
 		}
 	}()
@@ -82,17 +96,18 @@ func awaitFileChange(files ...string) (err error) {
 			return
 		}
 	}
+	log := logrus.WithField("files", files)
 	timer := time.NewTimer(5 * time.Second)
 	select {
 	case event := <-watcher.Events:
-		log.Println("watch event:", event)
+		log.Debugln("watch lockfile:", event)
 		return
 	case err = <-watcher.Errors:
-		log.Println("watch err:", err)
+		log.Debugln("watch lockfile:", err)
 		return
 	case <-timer.C:
 		// Timeout to prevent deadlock after other process dies without deleting its lockfile
-		log.Println("watch time expired")
+		log.Debugln("lockfile watch time expired")
 		return
 	}
 }

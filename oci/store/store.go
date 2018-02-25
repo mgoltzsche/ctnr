@@ -62,7 +62,7 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 		rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), loggers.Warn)
 		r.ImageStore, err = istore.NewImageStore(rostore, systemContext, trustPolicy, loggers.Warn)
 		if err == nil {
-			r.BundleStore, err = bstore.NewBundleStore(bundleDir, loggers.Debug)
+			r.BundleStore, err = bstore.NewBundleStore(bundleDir, loggers.Info, loggers.Debug)
 		}
 	}
 	return r, errors.Wrap(err, "init store")
