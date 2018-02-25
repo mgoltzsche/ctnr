@@ -1,0 +1,241 @@
+{
+  "services": {
+    "foo": {
+      "image": "docker://redis",
+      "build": {
+        "context": "./dir",
+        "dockerfile": "Dockerfile",
+        "args": {
+          "foo": "bar"
+        }
+      },
+      "entrypoint": [
+        "/code/entrypoint.sh",
+        "-p",
+        "3000"
+      ],
+      "command": [
+        "bundle",
+        "exec",
+        "thin",
+        "-p",
+        "3000"
+      ],
+      "working_dir": "/code",
+      "environment": {
+        "BAR": "bar_from_env_file_2",
+        "BAZ": "baz_from_service_def",
+        "FOO": "foo_from_env_file",
+        "QUX": ""
+      },
+      "user": {
+        "uid": "someone",
+        "gid": "someone"
+      },
+      "cap_add": [
+        "ALL"
+      ],
+      "cap_drop": [
+        "NET_ADMIN",
+        "SYS_ADMIN"
+      ],
+      "seccomp": "default",
+      "hostname": "my-web-container",
+      "domainname": "foo.com",
+      "dns": [
+        "8.8.8.8",
+        "9.9.9.9"
+      ],
+      "dns_search": [
+        "dc1.example.com",
+        "dc2.example.com"
+      ],
+      "extra_hosts": [
+        {
+          "name": "somehost",
+          "ip": "162.242.195.82"
+        },
+        {
+          "name": "otherhost",
+          "ip": "50.31.209.229"
+        }
+      ],
+      "ports": [
+        {
+          "target": 3000,
+          "protocol": "tcp"
+        },
+        {
+          "target": 3000,
+          "protocol": "tcp"
+        },
+        {
+          "target": 3001,
+          "protocol": "tcp"
+        },
+        {
+          "target": 3002,
+          "protocol": "tcp"
+        },
+        {
+          "target": 3003,
+          "protocol": "tcp"
+        },
+        {
+          "target": 3004,
+          "protocol": "tcp"
+        },
+        {
+          "target": 3005,
+          "protocol": "tcp"
+        },
+        {
+          "target": 8000,
+          "published": 8000,
+          "protocol": "tcp"
+        },
+        {
+          "target": 8080,
+          "published": 9090,
+          "protocol": "tcp"
+        },
+        {
+          "target": 8081,
+          "published": 9091,
+          "protocol": "tcp"
+        },
+        {
+          "target": 22,
+          "published": 49100,
+          "protocol": "tcp"
+        },
+        {
+          "target": 8001,
+          "published": 8001,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5000,
+          "published": 5000,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5001,
+          "published": 5001,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5002,
+          "published": 5002,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5003,
+          "published": 5003,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5004,
+          "published": 5004,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5005,
+          "published": 5005,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5006,
+          "published": 5006,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5007,
+          "published": 5007,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5008,
+          "published": 5008,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5009,
+          "published": 5009,
+          "protocol": "tcp"
+        },
+        {
+          "target": 5010,
+          "published": 5010,
+          "protocol": "tcp"
+        }
+      ],
+      "stdin_open": true,
+      "tty": true,
+      "read_only": true,
+      "expose": [
+        "3000",
+        "8000"
+      ],
+      "volumes": [
+        {
+          "type": "volume",
+          "target": "/var/lib/mysql"
+        },
+        {
+          "type": "bind",
+          "source": "/opt/data",
+          "target": "/var/lib/mysql"
+        },
+        {
+          "type": "bind",
+          "source": "../../vendor/github.com/docker/cli/cli/compose/loader",
+          "target": "/code"
+        },
+        {
+          "type": "bind",
+          "source": "../../vendor/github.com/docker/cli/cli/compose/loader/static",
+          "target": "/var/www/html"
+        },
+        {
+          "type": "bind",
+          "source": "/home/user/configs",
+          "target": "/etc/configs/",
+          "options": [
+            "ro"
+          ]
+        },
+        {
+          "type": "volume",
+          "source": "datavolume",
+          "target": "/var/lib/mysql"
+        },
+        {
+          "type": "bind",
+          "source": "../../vendor/github.com/docker/cli/cli/compose/loader/opt",
+          "target": "/opt"
+        },
+        {
+          "type": "tmpfs",
+          "target": "/opt"
+        }
+      ],
+      "stop_signal": "SIGUSR1",
+      "stop_grace_period": 20000000000
+    }
+  },
+  "volumes": {
+    "another-volume": {},
+    "external-volume": {
+      "external": "external-volume"
+    },
+    "external-volume3": {
+      "external": "this-is-volume3"
+    },
+    "other-external-volume": {
+      "external": "my-cool-volume"
+    },
+    "other-volume": {},
+    "some-volume": {}
+  }
+}

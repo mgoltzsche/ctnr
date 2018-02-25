@@ -15,7 +15,7 @@ Besides cntnr is a platform to try out new runc features.
 - Image and bundle file system creation using [umoci](https://github.com/openSUSE/umoci)
 - Various image formats and transports supported by [containers/image](https://github.com/containers/image)
 - Optional container networking using [CNI](https://github.com/containernetworking/cni) (as OCI runtime hook)
-- Partial [docker compose](https://docs.docker.com/compose/compose-file/) file format support
+- Partial [Docker Compose 3](https://docs.docker.com/compose/compose-file/) support using [docker/cli](https://github.com/docker/cli/)
 - Simple CLI partially compatible with [docker](https://www.docker.com/)'s
 - Easy installation: single statically linked binary (plus optional binaries: CNI plugins, proot) and convention over configuration
 
@@ -136,15 +136,16 @@ cntnr uses [runc/libcontainer](https://github.com/opencontainers/runc/blob/v1.0.
 
 ## Related tools
 
-- [docker](https://www.docker.com/)
-- [rkt](https://rkt.io)
-- [runc](https://github.com/opencontainers/runc), [skopeo](https://github.com/projectatomic/skopeo), [umoci](https://github.com/openSUSE/umoci)
-- [lxc](https://linuxcontainers.org/lxc/introduction/)
 - [cri-o](https://github.com/kubernetes-incubator/cri-o)
-- [udocker](https://github.com/indigo-dc/udocker)
+- [docker](https://www.docker.com/)
+- [lxc](https://linuxcontainers.org/lxc/introduction/)
+- [rkt](https://rkt.io)
+- [rkt-compose](https://github.com/mgoltzsche/rkt-compose)
+- [runc](https://github.com/opencontainers/runc)
 - [runrootless](https://github.com/AkihiroSuda/runrootless)
 - [singularity](http://singularity.lbl.gov/)
-- [orca-build](https://github.com/cyphar/orca-build)
+- [skopeo](https://github.com/projectatomic/skopeo), [umoci](https://github.com/openSUSE/umoci), [orca-build](https://github.com/cyphar/orca-build)
+- [udocker](https://github.com/indigo-dc/udocker)
 
 
 ## Roadmap

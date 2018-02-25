@@ -19,12 +19,12 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func LoadProject(file string, warn log.Logger) (r *Project, err error) {
+func LoadProject(file string, warn log.Logger) (r *CompoundServices, err error) {
 	file, err = filepath.Abs(file)
 	if err != nil {
 		return
 	}
-	r = &Project{Dir: filepath.Dir(file)}
+	r = &CompoundServices{Dir: filepath.Dir(file)}
 	env, err := readEnvironment()
 	if err != nil {
 		return
@@ -34,7 +34,7 @@ func LoadProject(file string, warn log.Logger) (r *Project, err error) {
 	return
 }
 
-func loadFromJSON(file string, r *Project) error {
+func loadFromJSON(file string, r *CompoundServices) error {
 	b, err := ioutil.ReadFile(filepath.FromSlash(file))
 	if err != nil {
 		return err
@@ -42,7 +42,7 @@ func loadFromJSON(file string, r *Project) error {
 	return json.Unmarshal(b, r)
 }
 
-func loadFromComposeYAML(file string, sub Substitution, r *Project) error {
+func loadFromComposeYAML(file string, sub Substitution, r *CompoundServices) error {
 	c, err := readComposeYAML(file)
 	if err != nil {
 		return err
@@ -61,7 +61,7 @@ func readComposeYAML(file string) (*dockerCompose, error) {
 	return dc, err
 }
 
-func convertCompose(c *dockerCompose, sub Substitution, r *Project) error {
+func convertCompose(c *dockerCompose, sub Substitution, r *CompoundServices) error {
 	if c.Services == nil || len(c.Services) == 0 {
 		return errors.New("no services defined in: " + c.Dir)
 	}
@@ -70,7 +70,7 @@ func convertCompose(c *dockerCompose, sub Substitution, r *Project) error {
 	for k, v := range c.Services {
 		s := NewService(k)
 		envFileEnv := map[string]string{}
-		err := convertComposeService(c, v, sub, r, s, envFileEnv)
+		err := convertComposeService(c, v, sub, r, &s, envFileEnv)
 		if err != nil {
 			return err
 		}
@@ -82,7 +82,7 @@ func convertCompose(c *dockerCompose, sub Substitution, r *Project) error {
 			}
 		}
 
-		r.Services[k] = *s
+		r.Services[k] = s
 	}
 	return nil
 }
@@ -117,7 +117,7 @@ func toVolumes(c *dockerCompose, sub Substitution, rp *map[string]Volume, path s
 	return nil
 }
 
-func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, p *Project, d *Service, envFileEnv map[string]string) (err error) {
+func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, p *CompoundServices, d *Service, envFileEnv map[string]string) (err error) {
 	l := "service." + d.Name
 
 	// Extend service (convert recursively)
@@ -332,7 +332,7 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, baseFile, destBaseFi
 
 		switch t := e.(type) {
 		case string:
-			if err = ParseVolumeMount(sub(e.(string)), &v); err != nil {
+			if err = ParseBindMount(sub(e.(string)), &v); err != nil {
 				return errors.Wrap(err, path)
 			}
 		case map[interface{}]interface{}:
@@ -372,8 +372,9 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, baseFile, destBaseFi
 	return nil
 }
 
-func ParseVolumeMount(expr string, r *VolumeMount) (err error) {
+func ParseBindMount(expr string, r *VolumeMount) (err error) {
 	r.Options = []string{}
+	r.Type = MOUNT_TYPE_BIND
 	s := strings.Split(expr, ":")
 	switch len(s) {
 	case 0:
@@ -386,7 +387,7 @@ func ParseVolumeMount(expr string, r *VolumeMount) (err error) {
 		r.Options = s[2:]
 	}
 	if r.Target == "" {
-		err = errors.Errorf("no volume mount target specified but %v", expr)
+		err = errors.Errorf("no volume mount target specified but %q", expr)
 	}
 	return
 }
@@ -523,19 +524,19 @@ func toStringMap(v interface{}, sub Substitution, r map[string]string, path stri
 	}
 }
 
-func toDuration(v, defaultVal string, sub Substitution, p string) (time.Duration, error) {
+func toDuration(v, defaultVal string, sub Substitution, p string) (*time.Duration, error) {
 	v = sub(v)
 	if v == "" {
 		v = defaultVal
 	}
 	if v == "" {
-		return 0, nil
+		return nil, nil
 	}
 	d, e := time.ParseDuration(v)
 	if e != nil {
-		return 0, errors.Errorf("%s: duration expected but found %q", p, v)
+		return nil, errors.Errorf("%s: duration expected but found %q", p, v)
 	}
-	return d, nil
+	return &d, nil
 }
 
 func toBool(v interface{}, sub Substitution, path string) (bool, error) {

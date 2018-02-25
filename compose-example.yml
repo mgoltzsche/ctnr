@@ -1,7 +1,7 @@
-version: '2'
+version: '3.6'
 services:
   myservice:
-    image: alpine:3.6
+    image: alpine:3.7
     tty: true
     volumes:
       - "./build/testvol:/data"

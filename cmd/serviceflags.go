@@ -79,7 +79,8 @@ func (c *bundleFlags) InitRunFlags(f *pflag.FlagSet) {
 
 func (c *bundleFlags) curr() *model.Service {
 	if c.app == nil {
-		c.app = model.NewService("")
+		s := model.NewService("")
+		c.app = &s
 	}
 	return c.app
 }
@@ -300,7 +301,7 @@ type cVolumeMount bundleFlags
 
 func (c *cVolumeMount) Set(s string) (err error) {
 	v := model.VolumeMount{}
-	if err = model.ParseVolumeMount(s, &v); err != nil {
+	if err = model.ParseBindMount(s, &v); err != nil {
 		return
 	}
 	v.Source, err = filepath.Abs(v.Source)

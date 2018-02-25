@@ -41,10 +41,10 @@ func NewResourceResolver(paths PathResolver, vols map[string]Volume) ResourceRes
 }
 
 func (self *resourceResolver) ResolveMountSource(m VolumeMount) (src string, err error) {
-	if m.IsNamedVolume() {
-		src, err = self.named(m.Source)
-	} else if m.Source == "" {
+	if m.Source == "" && m.Type != MOUNT_TYPE_TMPFS {
 		src = self.anonymous(m.Target)
+	} else if m.Type == MOUNT_TYPE_VOLUME {
+		src, err = self.named(m.Source)
 	} else {
 		src = self.path(m.Source)
 	}

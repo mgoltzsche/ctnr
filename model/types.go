@@ -5,16 +5,32 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
-type Project struct {
+const (
+	MOUNT_TYPE_VOLUME = MountType("volume")
+	MOUNT_TYPE_BIND   = MountType("bind")
+	MOUNT_TYPE_TMPFS  = MountType("tmpfs")
+)
+
+func FromJSON(b []byte) (r CompoundServices, err error) {
+	if err = json.Unmarshal(b, &r); err != nil {
+		err = errors.Wrap(err, "unmarshal CompoundServices")
+	}
+	for k, s := range r.Services {
+		// TODO: better use slice instead of map for services to avoid copying service struct in such cases
+		s.Name = k
+		r.Services[k] = s
+	}
+	return
+}
+
+type CompoundServices struct {
 	Dir      string             `json:"-"`
 	Services map[string]Service `json:"services"`
 	Volumes  map[string]Volume  `json:"volumes,omitempty"`
-}
-
-func NewProject() *Project {
-	return &Project{"", map[string]Service{}, map[string]Volume{}}
 }
 
 type Service struct {
@@ -43,15 +59,15 @@ type Service struct {
 	Expose    []string      `json:"expose,omitempty"`
 	Volumes   []VolumeMount `json:"volumes,omitempty"`
 	// TODO: handle check
-	HealthCheck     *Check        `json:"healthcheck,omitempty"`
-	StopSignal      string        `json:"stop_signal,omitempty"`
-	StopGracePeriod time.Duration `json:"stop_grace_period"`
+	HealthCheck     *Check         `json:"healthcheck,omitempty"`
+	StopSignal      string         `json:"stop_signal,omitempty"`
+	StopGracePeriod *time.Duration `json:"stop_grace_period,omitempty"`
 
 	// TODO: uid/gid mapping: spec.AddLinuxUIDMapping(hostid, containerid, size), ... AddLinuxGIDMapping
 }
 
 type User struct {
-	User  string `json:"uid"`
+	User  string `json:"uid,omitempty"`
 	Group string `json:"gid,omitempty"`
 }
 
@@ -103,11 +119,13 @@ func (p PortBinding) String() string {
 }
 
 type VolumeMount struct {
-	Type    string   `json:"type,omitempty"`
-	Source  string   `json:"source,omitempty"`
-	Target  string   `json:"target,omitempty"`
-	Options []string `json:"options,omitempty"`
+	Type    MountType `json:"type,omitempty"`
+	Source  string    `json:"source,omitempty"`
+	Target  string    `json:"target,omitempty"`
+	Options []string  `json:"options,omitempty"`
 }
+
+type MountType string
 
 func (m VolumeMount) String() string {
 	if m.Source == "" {
@@ -131,17 +149,17 @@ type Volume struct {
 type Check struct {
 	Command []string `json:"cmd"`
 	//Http     string        `json:"http"`
-	Interval time.Duration `json:"interval"`
-	Timeout  time.Duration `json:"timeout"`
-	Retries  uint          `json:"retries,omitempty"`
-	Disable  bool          `json:"disable,omitempty"`
+	Interval *time.Duration `json:"interval"`
+	Timeout  *time.Duration `json:"timeout"`
+	Retries  uint           `json:"retries,omitempty"`
+	Disable  bool           `json:"disable,omitempty"`
 }
 
-func NewService(name string) *Service {
-	return &Service{Name: name, Seccomp: "default", StopGracePeriod: time.Duration(10000000000)}
+func NewService(name string) Service {
+	return Service{Name: name, Seccomp: "default"}
 }
 
-func (c *Project) JSON() string {
+func (c *CompoundServices) JSON() string {
 	return toJSON(c)
 }
 
