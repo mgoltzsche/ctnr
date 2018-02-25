@@ -140,6 +140,7 @@ cntnr uses [runc/libcontainer](https://github.com/opencontainers/runc/blob/v1.0.
 - [rkt](https://rkt.io)
 - [runc](https://github.com/opencontainers/runc), [skopeo](https://github.com/projectatomic/skopeo), [umoci](https://github.com/openSUSE/umoci)
 - [lxc](https://linuxcontainers.org/lxc/introduction/)
+- [cri-o](https://github.com/kubernetes-incubator/cri-o)
 - [udocker](https://github.com/indigo-dc/udocker)
 - [runrootless](https://github.com/AkihiroSuda/runrootless)
 - [singularity](http://singularity.lbl.gov/)
