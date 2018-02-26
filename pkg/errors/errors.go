@@ -9,5 +9,5 @@ func Wrapd(err *error, msg string) {
 }
 
 func Wrapdf(err *error, fmt string, args ...interface{}) {
-	*err = orgerrors.Wrapf(*err, fmt, args)
+	*err = orgerrors.Wrapf(*err, fmt, args...)
 }
