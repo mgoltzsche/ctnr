@@ -310,15 +310,19 @@ func createVolumeDirectories(spec *rspecs.Spec, dir string) (err error) {
 				if !filepath.IsAbs(src) {
 					src = filepath.Join(dir, src)
 				}
-				if _, err = os.Stat(src); os.IsNotExist(err) {
+				relsrc := filepath.Clean(mount.Source)
+				if _, err = os.Stat(src); os.IsNotExist(err) && !filepath.IsAbs(relsrc) && strings.Index(relsrc, "..") != 0 {
+					err = errors.Errorf("bind mount source %q does not exist", mount.Source)
 					if err = os.MkdirAll(src, 0755); err != nil {
 						break
 					}
+				} else if err != nil {
+					break
 				}
 			}
 		}
 	}
-	err = errors.Wrap(err, "create volume directories from spec")
+	err = errors.Wrap(err, "volume directories")
 	return
 }
 

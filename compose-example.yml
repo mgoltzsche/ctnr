@@ -4,6 +4,6 @@ services:
     image: alpine:3.7
     tty: true
     volumes:
-      - "./build/testvol:/data"
-      - "./vendor.conf:/vendor.conf"
+      - "./build:/build"
+      - "./vendor.conf:/custom/vendor.conf"
       - "/anon"
