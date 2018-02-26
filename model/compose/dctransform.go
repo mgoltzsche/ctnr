@@ -3,6 +3,7 @@ package compose
 import (
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/docker/cli/cli/compose/loader"
@@ -24,6 +25,11 @@ import (
 // TODO: use project
 func Load(file, cwd string, env map[string]string, warn log.Logger) (r *model.CompoundServices, err error) {
 	defer exterrors.Wrapd(&err, "load docker compose file")
+	if filepath.Clean(cwd) == "." {
+		if cwd, err = os.Getwd(); err != nil {
+			return
+		}
+	}
 	b, err := ioutil.ReadFile(file)
 	if err != nil {
 		return
@@ -33,7 +39,7 @@ func Load(file, cwd string, env map[string]string, warn log.Logger) (r *model.Co
 		return
 	}
 	cfg, err := loader.Load(types.ConfigDetails{
-		WorkingDir:  cwd,
+		WorkingDir:  ".",
 		ConfigFiles: []types.ConfigFile{types.ConfigFile{file, dcyml}},
 		Environment: env,
 	})

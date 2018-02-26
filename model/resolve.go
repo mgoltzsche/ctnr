@@ -1,7 +1,7 @@
 package model
 
 import (
-	"encoding/base64"
+	"encoding/base32"
 	"path/filepath"
 
 	"github.com/pkg/errors"
@@ -52,19 +52,25 @@ func (self *resourceResolver) ResolveMountSource(m VolumeMount) (src string, err
 }
 
 func (self *resourceResolver) named(src string) (string, error) {
-	r, ok := self.volumes[src]
+	var (
+		v  Volume
+		ok bool
+	)
+	if self.volumes != nil {
+		v, ok = self.volumes[src]
+	}
 	if !ok {
 		return "", errors.Errorf("volume %q not found", src)
 	}
-	if r.Source == "" {
+	if v.Source == "" {
 		return self.anonymous("!" + src), nil
 	}
-	return r.Source, nil
+	return v.Source, nil
 }
 
 func (self *resourceResolver) anonymous(id string) string {
 	id = filepath.Clean(id)
-	return filepath.Join("volumes", base64.RawStdEncoding.EncodeToString([]byte(id)))
+	return filepath.Join("volumes", base32.StdEncoding.EncodeToString([]byte(id)))
 }
 
 func (self *resourceResolver) path(file string) string {

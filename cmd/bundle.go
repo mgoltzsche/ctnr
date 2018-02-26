@@ -24,7 +24,6 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/oci/bundle"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
@@ -100,9 +99,7 @@ func runBundleCreate(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	paths := model.NewPathResolver("")
-	res := model.NewResourceResolver(paths, map[string]model.Volume{})
-	c, err := createRuntimeBundle(service, res)
+	c, err := createRuntimeBundle(service, resourceResolver("", nil))
 	if err != nil {
 		return
 	}

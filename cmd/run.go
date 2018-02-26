@@ -63,7 +63,7 @@ func runRun(cmd *cobra.Command, args []string) (err error) {
 		services = append(services, *service)
 	}
 
-	return runServices(services, resourceResolver("", map[string]model.Volume{}))
+	return runServices(services, resourceResolver("", nil))
 }
 
 func split(args []string, sep string) [][]string {

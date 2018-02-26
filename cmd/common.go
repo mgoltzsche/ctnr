@@ -25,11 +25,22 @@ import (
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 func wrapRun(cf func(cmd *cobra.Command, args []string) error) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
+		defer func() {
+			if err := recover(); err != nil {
+				msg := "\n  |"
+				msg += "\n  | This should not happen!"
+				msg += "\n  | If you think this is a bug please search for an already"
+				msg += "\n  | existing issue at https://github.com/mgoltzsche/cntnr/issues"
+				msg += "\n  | or report it at https://github.com/mgoltzsche/cntnr/issues/new"
+				logrus.Panicf("%s%s\n", err, msg)
+			}
+		}()
 		err := cf(cmd, args)
 		closeLockedImageStore()
 		exitOnError(cmd, err)
