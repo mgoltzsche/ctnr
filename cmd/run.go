@@ -34,7 +34,7 @@ var (
 )
 
 func init() {
-	flagsBundle.InitFlags(runCmd.Flags())
+	flagsBundle.InitContainerFlags(runCmd.Flags())
 	flagsBundle.InitRunFlags(runCmd.Flags())
 }
 

@@ -30,14 +30,52 @@ func (service *Service) ToSpec(res ResourceResolver, rootless bool, prootPath st
 		spec.ToRootless()
 	}
 
+	if err = toProcess(&service.Process, res, prootPath, spec); err != nil {
+		return
+	}
+
+	// Readonly rootfs, mounts
+	spec.SetRootReadonly(service.ReadOnly)
+
+	if err = toMounts(service.Volumes, res, spec); err != nil {
+		return
+	}
+
 	if service.MountCgroups != "" {
 		if err = spec.AddCgroupsMount(service.MountCgroups); err != nil {
 			return
 		}
 	}
 
-	if err = applyService(service, res, prootPath, spec); err != nil {
-		return
+	// Annotations
+	if service.StopSignal != "" {
+		spec.AddAnnotation("org.opencontainers.image.stopSignal", service.StopSignal)
+	}
+	if service.Expose != nil {
+		// Merge exposedPorts annotation
+		exposedPortsAnn := ""
+		if spec.Spec().Annotations != nil {
+			exposedPortsAnn = spec.Spec().Annotations["org.opencontainers.image.exposedPorts"]
+		}
+		exposed := map[string]bool{}
+		if exposedPortsAnn != "" {
+			for _, exposePortStr := range strings.Split(exposedPortsAnn, ",") {
+				exposed[strings.Trim(exposePortStr, " ")] = true
+			}
+		}
+		for _, e := range service.Expose {
+			exposed[strings.Trim(e, " ")] = true
+		}
+		if len(exposed) > 0 {
+			exposecsv := make([]string, len(exposed))
+			i := 0
+			for k := range exposed {
+				exposecsv[i] = k
+				i++
+			}
+			sort.Strings(exposecsv)
+			spec.AddAnnotation("org.opencontainers.image.exposedPorts", strings.Join(exposecsv, ","))
+		}
 	}
 
 	// Seccomp
@@ -184,8 +222,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 	return nil
 }
 
-// See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func applyService(service *Service, res ResourceResolver, prootPath string, spec *generate.SpecBuilder) (err error) {
+func toProcess(service *Process, res ResourceResolver, prootPath string, spec *generate.SpecBuilder) (err error) {
 	// Entrypoint & command
 	if service.Entrypoint != nil {
 		spec.SetProcessEntrypoint(service.Entrypoint)
@@ -214,43 +251,6 @@ func applyService(service *Service, res ResourceResolver, prootPath string, spec
 
 	// Terminal
 	spec.SetProcessTerminal(service.Tty)
-
-	// Annotations
-	if service.StopSignal != "" {
-		spec.AddAnnotation("org.opencontainers.image.stopSignal", service.StopSignal)
-	}
-	if service.Expose != nil {
-		// Merge exposedPorts annotation
-		exposedPortsAnn := ""
-		if spec.Spec().Annotations != nil {
-			exposedPortsAnn = spec.Spec().Annotations["org.opencontainers.image.exposedPorts"]
-		}
-		exposed := map[string]bool{}
-		if exposedPortsAnn != "" {
-			for _, exposePortStr := range strings.Split(exposedPortsAnn, ",") {
-				exposed[strings.Trim(exposePortStr, " ")] = true
-			}
-		}
-		for _, e := range service.Expose {
-			exposed[strings.Trim(e, " ")] = true
-		}
-		if len(exposed) > 0 {
-			exposecsv := make([]string, len(exposed))
-			i := 0
-			for k := range exposed {
-				exposecsv[i] = k
-				i++
-			}
-			sort.Strings(exposecsv)
-			spec.AddAnnotation("org.opencontainers.image.exposedPorts", strings.Join(exposecsv, ","))
-		}
-	}
-
-	spec.SetRootReadonly(service.ReadOnly)
-
-	if err = toMounts(service.Volumes, res, spec); err != nil {
-		return
-	}
 
 	// User
 	if service.User != nil && service.User.User != "" {

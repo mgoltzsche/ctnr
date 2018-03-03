@@ -39,31 +39,56 @@ type Service struct {
 	BundleUpdate bool   `json:"bundle_update,omitempty"`
 	NoPivot      bool   `json:"no_pivot,omitempty"`
 	NoNewKeyring bool   `json:"no_new_keyring,omitempty"`
-	PRoot        bool   `json:"proot,omitempty"`
 
-	Image        string            `json:"image,omitempty"`
-	Build        *ImageBuild       `json:"build,omitempty"`
-	Entrypoint   []string          `json:"entrypoint,omitempty"`
-	Command      []string          `json:"command,omitempty"`
-	Cwd          string            `json:"working_dir,omitempty"`
-	Environment  map[string]string `json:"environment,omitempty"`
-	User         *User             `json:"user,omitempty"`
-	CapAdd       []string          `json:"cap_add,omitempty"`
-	CapDrop      []string          `json:"cap_drop,omitempty"`
-	Seccomp      string            `json:"seccomp,omitempty"`
-	MountCgroups string            `json:"cgroups_mount_option,omitempty"` // Not read from compose file. TODO: move to CLI only
+	Image string      `json:"image,omitempty"`
+	Build *ImageBuild `json:"build,omitempty"`
+	Process
+	Seccomp      string `json:"seccomp,omitempty"`
+	MountCgroups string `json:"cgroups_mount_option,omitempty"` // Not read from compose file. TODO: move to CLI only
 	NetConf
-	StdinOpen bool          `json:"stdin_open,omitempty"`
-	Tty       bool          `json:"tty,omitempty"`
-	ReadOnly  bool          `json:"read_only,omitempty"`
-	Expose    []string      `json:"expose,omitempty"`
-	Volumes   []VolumeMount `json:"volumes,omitempty"`
+	ReadOnly bool          `json:"read_only,omitempty"`
+	Expose   []string      `json:"expose,omitempty"`
+	Volumes  []VolumeMount `json:"volumes,omitempty"`
 	// TODO: handle check
 	HealthCheck     *Check         `json:"healthcheck,omitempty"`
 	StopSignal      string         `json:"stop_signal,omitempty"`
 	StopGracePeriod *time.Duration `json:"stop_grace_period,omitempty"`
 
 	// TODO: uid/gid mapping: spec.AddLinuxUIDMapping(hostid, containerid, size), ... AddLinuxGIDMapping
+}
+
+type Process struct {
+	Entrypoint  []string          `json:"entrypoint,omitempty"`
+	Command     []string          `json:"command,omitempty"`
+	Cwd         string            `json:"working_dir,omitempty"`
+	Environment map[string]string `json:"environment,omitempty"`
+	User        *User             `json:"user,omitempty"`
+	CapAdd      []string          `json:"cap_add,omitempty"`
+	CapDrop     []string          `json:"cap_drop,omitempty"`
+	StdinOpen   bool              `json:"stdin_open,omitempty"`
+	Tty         bool              `json:"tty,omitempty"`
+	PRoot       bool              `json:"proot,omitempty"`
+	// TODO: console socket
+
+	// TODO: expose in CLI
+	AppArmorProfile  string   `json:"app_armor_profile,omitempty"`
+	ProcessLabel     string   `json:"process_label"`
+	NoNewPrivileges  bool     `json:"no_new_privileges,omitempty"`
+	AdditionalGroups []string `json:"additional_groups,omitempty"`
+	Rlimits          []Rlimit `json:"rlimit,omitempty"`
+
+	// AdditionalGroups specifies the gids that should be added to supplementary groups
+	// in addition to those that the user belongs to.
+	//AdditionalGroups []string
+
+	// ExtraFiles specifies additional open files to be inherited by the container
+	//ExtraFiles []*os.File
+}
+
+type Rlimit struct {
+	Type string `json:"type"`
+	Hard uint64 `json:"hard"`
+	Soft uint64 `json:"soft"`
 }
 
 type User struct {

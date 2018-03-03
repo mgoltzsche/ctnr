@@ -66,7 +66,7 @@ func init() {
 	bundleCmd.AddCommand(bundleDeleteCmd)
 	bundleCmd.AddCommand(bundleCreateCmd)
 	bundleCmd.AddCommand(bundleRunCmd)
-	flagsBundle.InitFlags(bundleCreateCmd.Flags())
+	flagsBundle.InitContainerFlags(bundleCreateCmd.Flags())
 	flagsBundle.InitRunFlags(bundleRunCmd.Flags())
 }
 

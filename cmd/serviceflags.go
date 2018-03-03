@@ -26,17 +26,6 @@ import (
 
 var flagsBundle = bundleFlags{}
 
-func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
-	f.Var((*cHostname)(c), "hostname", "container hostname")
-	f.Var((*cDomainname)(c), "domainname", "container domainname")
-	f.Var((*cDns)(c), "dns", "DNS nameservers to write in container's /etc/resolv.conf")
-	f.Var((*cDnsSearch)(c), "dns-search", "DNS search domains to write in container's /etc/resolv.conf")
-	f.Var((*cDnsOptions)(c), "dns-opts", "DNS search options to write in container's /etc/resolv.conf")
-	f.Var((*cExtraHosts)(c), "hosts-entry", "additional entries to write in container's /etc/hosts")
-	f.VarP((*cPortBinding)(c), "publish", "p", "container ports to be published on the host: [[HOSTIP:]HOSTPORT:]PORT[/PROT]")
-	f.Var((*cNetworks)(c), "network", "add CNI network to container's network namespace")
-}
-
 type bundleFlags struct {
 	netCfg
 	update       bool
@@ -49,22 +38,16 @@ type bundleFlags struct {
 	app          *model.Service
 }
 
-func (c *bundleFlags) InitFlags(f *pflag.FlagSet) {
+func (c *bundleFlags) InitContainerFlags(f *pflag.FlagSet) {
 	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
 	f.BoolVar(&c.update, "update", false, "Updates an existing bundle's configuration and rootfs if changed")
 	f.VarP((*cBundle)(c), "bundle", "b", "bundle name or directory")
-	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
-	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
-	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
-	f.VarP((*cUser)(c), "user", "u", "process user: UID[:GID]")
-	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
-	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
+	c.initProcessFlags(f)
 	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default' or 'unconfined'")
 	f.Var((*cMountCgroups)(c), "mount-cgroups", "Mounts the host's cgroups with the given option: ro|rw|no")
 	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.BoolVar(&c.readonly, "readonly", false, "mounts the root file system in read only mode")
-	f.BoolVarP(&c.tty, "tty", "t", false, "binds a terminal to the container")
 	f.BoolVar(&c.proot, "proot", false, "enables PRoot")
 	initNetConfFlags(f, &c.netCfg)
 	// Stop parsing after first non flag argument (which is the image)
@@ -75,6 +58,27 @@ func (c *bundleFlags) InitRunFlags(f *pflag.FlagSet) {
 	f.BoolVarP(&c.stdin, "stdin", "i", false, "binds stdin to the container")
 	f.BoolVar(&c.noNewKeyring, "no-new-keyring", false, "do not create a new session keyring for the container. This will cause the container to inherit the calling processes session key")
 	f.BoolVar(&c.noPivot, "no-pivot", false, "do not use pivot root to jail process inside rootfs. This should be used whenever the rootfs is on top of a ramdisk")
+}
+
+func (c *bundleFlags) initProcessFlags(f *pflag.FlagSet) {
+	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
+	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
+	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
+	f.VarP((*cUser)(c), "user", "u", "process user: UID[:GID]")
+	f.BoolVarP(&c.tty, "tty", "t", false, "binds a terminal to the container")
+	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
+	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
+}
+
+func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
+	f.Var((*cHostname)(c), "hostname", "container hostname")
+	f.Var((*cDomainname)(c), "domainname", "container domainname")
+	f.Var((*cDns)(c), "dns", "DNS nameservers to write in container's /etc/resolv.conf")
+	f.Var((*cDnsSearch)(c), "dns-search", "DNS search domains to write in container's /etc/resolv.conf")
+	f.Var((*cDnsOptions)(c), "dns-opts", "DNS search options to write in container's /etc/resolv.conf")
+	f.Var((*cExtraHosts)(c), "hosts-entry", "additional entries to write in container's /etc/hosts")
+	f.VarP((*cPortBinding)(c), "publish", "p", "container ports to be published on the host: [[HOSTIP:]HOSTPORT:]PORT[/PROT]")
+	f.Var((*cNetworks)(c), "network", "add CNI network to container's network namespace")
 }
 
 func (c *bundleFlags) curr() *model.Service {

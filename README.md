@@ -137,6 +137,7 @@ cntnr uses [runc/libcontainer](https://github.com/opencontainers/runc/blob/v1.0.
 ## Related tools
 
 - [cri-o](https://github.com/kubernetes-incubator/cri-o)
+- [containerd](https://containerd.io/)
 - [docker](https://www.docker.com/)
 - [lxc](https://linuxcontainers.org/lxc/introduction/)
 - [rkt](https://rkt.io)
