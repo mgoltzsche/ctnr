@@ -21,6 +21,7 @@ CNIGOPATH=${GOPATH}/cni
 
 COBRA=${GOPATH}/bin/cobra
 
+export PATH := dist/bin:$(PATH)
 
 all: binary-static cni-plugins-static
 

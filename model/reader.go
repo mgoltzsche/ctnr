@@ -172,9 +172,9 @@ func convertComposeService(c *dockerCompose, s *dcService, sub Substitution, p *
 	if s.User != "" {
 		ug := strings.SplitN(toString(s.User, sub, l+".user"), ":", 2)
 		if len(ug) == 2 {
-			d.User = &User{ug[0], ug[1]}
+			d.User = &User{ug[0], ug[1], nil}
 		} else {
-			d.User = &User{ug[0], ug[0]}
+			d.User = &User{ug[0], ug[0], nil}
 		}
 	}
 	if s.CapAdd != nil {

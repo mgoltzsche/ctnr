@@ -51,6 +51,7 @@ type Container interface {
 	Start() error
 	Stop()
 	Wait() error
+	Delete() error
 	Close() error
 }
 

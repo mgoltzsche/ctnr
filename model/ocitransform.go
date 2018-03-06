@@ -253,21 +253,32 @@ func toProcess(service *Process, res ResourceResolver, prootPath string, spec *g
 	spec.SetProcessTerminal(service.Tty)
 
 	// User
-	if service.User != nil && service.User.User != "" {
-		// TODO: eventually map username using rootfs/etc/passwd to uid/gid
-		//       (not possible here since filesystem is not yet populated. => Could be moved into bundle builder)
-		usr, e := strconv.Atoi(service.User.User)
-		if e == nil && usr >= 0 && usr < (1<<32) {
-			spec.SetProcessUID(uint32(usr))
-		} else {
-			err = errors.Errorf("uid expected but was %q", service.User.User)
-		}
-		if service.User.Group != "" {
-			grp, e := strconv.Atoi(service.User.Group)
-			if e == nil && grp >= 0 && grp < (1<<32) {
-				spec.SetProcessGID(uint32(grp))
+	if service.User != nil {
+		if service.User.User != "" {
+			// TODO: eventually map username using rootfs/etc/passwd to uid/gid
+			//       (not possible here since filesystem is not yet populated. => Could be moved into bundle builder)
+			usr, e := strconv.Atoi(service.User.User)
+			if e == nil && usr >= 0 && usr < (1<<32) {
+				spec.SetProcessUID(uint32(usr))
 			} else {
-				err = errors.Errorf("gid expected but was %q", service.User.Group)
+				return errors.Errorf("uid expected but was %q", service.User.User)
+			}
+			if service.User.Group != "" {
+				grp, e := strconv.Atoi(service.User.Group)
+				if e == nil && grp >= 0 && grp < (1<<32) {
+					spec.SetProcessGID(uint32(grp))
+				} else {
+					return errors.Errorf("gid expected but was %q", service.User.Group)
+				}
+			}
+		}
+		if service.User.AdditionalGroups != nil {
+			for _, gidstr := range service.User.AdditionalGroups {
+				gid, err := strconv.Atoi(gidstr)
+				if err != nil || gid < 0 || gid > 1<<32 {
+					return errors.Errorf("additional gid expected but was %q", gidstr)
+				}
+				spec.AddProcessAdditionalGid(uint32(gid))
 			}
 		}
 	}
@@ -287,6 +298,13 @@ func toProcess(service *Process, res ResourceResolver, prootPath string, spec *g
 				return
 			}
 		}
+	}
+
+	spec.SetProcessApparmorProfile(service.ApparmorProfile)
+	spec.SetProcessNoNewPrivileges(service.NoNewPrivileges)
+	spec.SetProcessSelinuxLabel(service.SelinuxLabel)
+	if service.OOMScoreAdj != nil {
+		spec.SetProcessOOMScoreAdj(*service.OOMScoreAdj)
 	}
 
 	return nil

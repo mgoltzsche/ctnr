@@ -200,11 +200,13 @@ type cUser bundleFlags
 
 func (c *cUser) Set(s string) error {
 	u := &(*bundleFlags)(c).curr().User
+	if *u == nil {
+		*u = &model.User{}
+	}
 	ug := strings.SplitN(s, ":", 2)
+	(*u).User = ug[0]
 	if len(ug) == 2 {
-		*u = &model.User{ug[0], ug[1]}
-	} else {
-		*u = &model.User{ug[0], ug[0]}
+		(*u).Group = ug[1]
 	}
 	return nil
 }

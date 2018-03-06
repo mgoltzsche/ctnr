@@ -1,8 +1,10 @@
 package runcrunner
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -64,7 +66,7 @@ func (c *RuncContainer) Start() (err error) {
 	}
 
 	c.err = nil
-	args := append(make([]string, 0, 5), "--root="+c.rootDir)
+	args := append(make([]string, 0, 5), "--root", c.rootDir)
 	if c.noPivot {
 		args = append(args, "--no-pivot")
 	}
@@ -149,6 +151,23 @@ func (c *RuncContainer) stop() {
 func (c *RuncContainer) Wait() error {
 	c.wait.Wait()
 	return c.err
+}
+
+func (c *RuncContainer) Delete() (err error) {
+	var stdout, stderr bytes.Buffer
+	err = c.Close()
+	cmd := exec.Command("runc", "--root", c.rootDir, c.ID()) // TODO: Add --force option
+	cmd.Dir = c.bundle.Dir()
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if e := cmd.Run(); e != nil {
+		err = run.WrapExitError(e, err)
+	}
+	if err != nil {
+		outStr, errStr := strings.Trim(string(stdout.Bytes()), "\n"), strings.Trim(string(stderr.Bytes()), "\n")
+		err = run.WrapExitError(err, errors.Errorf("runc delete:\n  out: %s\n  err: %s", outStr, errStr))
+	}
+	return
 }
 
 func (c *RuncContainer) Close() error {

@@ -60,6 +60,7 @@ type Service struct {
 type Process struct {
 	Entrypoint  []string          `json:"entrypoint,omitempty"`
 	Command     []string          `json:"command,omitempty"`
+	PRoot       bool              `json:"proot,omitempty"`
 	Cwd         string            `json:"working_dir,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
 	User        *User             `json:"user,omitempty"`
@@ -67,21 +68,15 @@ type Process struct {
 	CapDrop     []string          `json:"cap_drop,omitempty"`
 	StdinOpen   bool              `json:"stdin_open,omitempty"`
 	Tty         bool              `json:"tty,omitempty"`
-	PRoot       bool              `json:"proot,omitempty"`
-	// TODO: console socket
+	// TODO: ConsoleSocket string            `json:"console_socket,omitempty"`
 
 	// TODO: expose in CLI
-	AppArmorProfile  string   `json:"app_armor_profile,omitempty"`
-	ProcessLabel     string   `json:"process_label"`
-	NoNewPrivileges  bool     `json:"no_new_privileges,omitempty"`
-	AdditionalGroups []string `json:"additional_groups,omitempty"`
-	Rlimits          []Rlimit `json:"rlimit,omitempty"`
-
-	// AdditionalGroups specifies the gids that should be added to supplementary groups
-	// in addition to those that the user belongs to.
-	//AdditionalGroups []string
-
-	// ExtraFiles specifies additional open files to be inherited by the container
+	ApparmorProfile string `json:"app_armor_profile,omitempty"`
+	SelinuxLabel    string `json:"process_label"`
+	NoNewPrivileges bool   `json:"no_new_privileges,omitempty"`
+	OOMScoreAdj     *int   `json:"oom_score_adj,omitempty"`
+	//TODO:
+	//Rlimits         []Rlimit `json:"rlimit,omitempty"`
 	//ExtraFiles []*os.File
 }
 
@@ -94,6 +89,8 @@ type Rlimit struct {
 type User struct {
 	User  string `json:"uid,omitempty"`
 	Group string `json:"gid,omitempty"`
+	// TODO: expose in CLI
+	AdditionalGroups []string `json:"additional_groups,omitempty"`
 }
 
 type NetConf struct {

@@ -221,9 +221,9 @@ func toUser(s string) (u *model.User) {
 	}
 	ug := strings.SplitN(s, ":", 2)
 	if len(ug) == 2 {
-		u = &model.User{ug[0], ug[1]}
+		u = &model.User{ug[0], ug[1], nil}
 	} else {
-		u = &model.User{ug[0], ug[0]}
+		u = &model.User{ug[0], ug[0], nil}
 	}
 	return
 }
