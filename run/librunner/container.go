@@ -14,6 +14,7 @@ import (
 	"github.com/opencontainers/runc/libcontainer"
 	_ "github.com/opencontainers/runc/libcontainer/nsenter"
 	"github.com/opencontainers/runc/libcontainer/specconv"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
@@ -40,7 +41,6 @@ type Container struct {
 }
 
 // TODO: Add to ContainerManager interface
-// TODO: Add method to create process to Container interface
 func LoadContainer(id string, factory libcontainer.Factory, loggers log.Loggers) (r *Container, err error) {
 	c, err := factory.Load(id)
 	return &Container{
@@ -142,6 +142,14 @@ func (c *Container) Stop() {
 	}
 }
 
+func (c *Container) Exec(process *specs.Process, io run.ContainerIO) (err error) {
+	p, err := NewProcess(c, process, io, c.log)
+	if err = p.Start(); err == nil {
+		err = p.Wait()
+	}
+	return
+}
+
 // Waits for the container process to terminate and returns the process' error if any
 func (c *Container) Wait() (err error) {
 	if p := c.process; p != nil {
@@ -150,9 +158,9 @@ func (c *Container) Wait() (err error) {
 	return
 }
 
-func (c *Container) Delete() (err error) {
+func (c *Container) Destroy() (err error) {
 	err = c.Close()
-	c.log.Debug.Println("Deleting container")
+	c.log.Debug.Println("Destroying container")
 	cc := c.container
 	if cc != nil {
 		if e := cc.Destroy(); e != nil {

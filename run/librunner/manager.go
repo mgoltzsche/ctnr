@@ -43,6 +43,10 @@ func (m *ContainerManager) NewContainer(cfg *run.ContainerConfig) (c run.Contain
 	return c, errors.Wrap(err, "new container")
 }
 
+func (m *ContainerManager) Get(id string) (run.Container, error) {
+	return LoadContainer(id, m.factory, m.loggers)
+}
+
 func (m *ContainerManager) Kill(id, signal string, all bool) error {
 	panic("TODO: kill any container that might not be controlled by this process")
 }

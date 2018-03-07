@@ -42,7 +42,7 @@ func (c *bundleFlags) InitContainerFlags(f *pflag.FlagSet) {
 	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
 	f.BoolVar(&c.update, "update", false, "Updates an existing bundle's configuration and rootfs if changed")
 	f.VarP((*cBundle)(c), "bundle", "b", "bundle name or directory")
-	c.initProcessFlags(f)
+	c.InitProcessFlags(f)
 	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default' or 'unconfined'")
 	f.Var((*cMountCgroups)(c), "mount-cgroups", "Mounts the host's cgroups with the given option: ro|rw|no")
 	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
@@ -60,7 +60,7 @@ func (c *bundleFlags) InitRunFlags(f *pflag.FlagSet) {
 	f.BoolVar(&c.noPivot, "no-pivot", false, "do not use pivot root to jail process inside rootfs. This should be used whenever the rootfs is on top of a ramdisk")
 }
 
-func (c *bundleFlags) initProcessFlags(f *pflag.FlagSet) {
+func (c *bundleFlags) InitProcessFlags(f *pflag.FlagSet) {
 	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
 	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
 	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")

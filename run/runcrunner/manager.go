@@ -33,6 +33,11 @@ func (m *ContainerManager) NewContainer(cfg *run.ContainerConfig) (run.Container
 	return NewRuncContainer(cfg, m.rootDir, m.debug), nil
 }
 
+func (m *ContainerManager) Get(id string) (run.Container, error) {
+	panic("TODO: runcmanager.Get(id)")
+	return nil, nil
+}
+
 func (m *ContainerManager) Kill(id, signal string, all bool) error {
 	var args []string
 	if all {

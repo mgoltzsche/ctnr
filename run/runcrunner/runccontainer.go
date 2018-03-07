@@ -11,6 +11,7 @@ import (
 
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/run"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
@@ -153,7 +154,7 @@ func (c *RuncContainer) Wait() error {
 	return c.err
 }
 
-func (c *RuncContainer) Delete() (err error) {
+func (c *RuncContainer) Destroy() (err error) {
 	var stdout, stderr bytes.Buffer
 	err = c.Close()
 	cmd := exec.Command("runc", "--root", c.rootDir, c.ID()) // TODO: Add --force option
@@ -168,6 +169,11 @@ func (c *RuncContainer) Delete() (err error) {
 		err = run.WrapExitError(err, errors.Errorf("runc delete:\n  out: %s\n  err: %s", outStr, errStr))
 	}
 	return
+}
+
+// TODO: implement model to runc parameter transformation
+func (c *RuncContainer) Exec(process *specs.Process, io run.ContainerIO) (err error) {
+	panic("TODO: implement")
 }
 
 func (c *RuncContainer) Close() error {

@@ -22,10 +22,11 @@ import (
 type Process struct {
 	args      []string
 	container *Container
-	process   *libcontainer.Process
+	process   libcontainer.Process
 	io        run.ContainerIO
 	tty       *tty
-	started   bool
+	terminal  bool
+	running   bool
 	mutex     *sync.Mutex
 	wait      *sync.WaitGroup
 	log       log.Loggers
@@ -34,18 +35,28 @@ type Process struct {
 
 func NewProcess(container *Container, p *specs.Process, io run.ContainerIO, loggers log.Loggers) (r *Process, err error) {
 	// Create container process (see https://github.com/opencontainers/runc/blob/v1.0.0-rc4/utils_linux.go: startContainer->runner.run->newProcess)
-	lp := libcontainer.Process{
-		Args:            p.Args,
-		Env:             p.Env,
-		User:            fmt.Sprintf("%d:%d", p.User.UID, p.User.GID),
-		Cwd:             p.Cwd,
-		Stdout:          io.Stdout,
-		Stderr:          io.Stderr,
-		Stdin:           io.Stdin,
-		AppArmorProfile: p.ApparmorProfile,
-		Label:           p.SelinuxLabel,
-		NoNewPrivileges: &p.NoNewPrivileges,
+	r = &Process{
+		args:      p.Args,
+		container: container,
+		io:        io,
+		terminal:  p.Terminal,
+		mutex:     &sync.Mutex{},
+		wait:      &sync.WaitGroup{},
+		log:       loggers,
+		process: libcontainer.Process{
+			Args:            p.Args,
+			Env:             p.Env,
+			User:            fmt.Sprintf("%d:%d", p.User.UID, p.User.GID),
+			Cwd:             p.Cwd,
+			Stdout:          io.Stdout,
+			Stderr:          io.Stderr,
+			Stdin:           io.Stdin,
+			AppArmorProfile: p.ApparmorProfile,
+			Label:           p.SelinuxLabel,
+			NoNewPrivileges: &p.NoNewPrivileges,
+		},
 	}
+	lp := r.process
 	for _, gid := range p.User.AdditionalGids {
 		lp.AdditionalGroups = append(lp.AdditionalGroups, strconv.FormatUint(uint64(gid), 10))
 	}
@@ -71,23 +82,7 @@ func NewProcess(container *Container, p *specs.Process, io run.ContainerIO, logg
 		// Add systemd file descriptors
 		lp.ExtraFiles = activation.Files(false)
 	}
-
-	// Configure stdIO/terminal
-	tty, err := setupIO(&lp, container.container, p.Terminal, false, "")
-	if err != nil {
-		return
-	}
-
-	return &Process{
-		args:      p.Args,
-		container: container,
-		io:        io,
-		mutex:     &sync.Mutex{},
-		wait:      &sync.WaitGroup{},
-		process:   &lp,
-		tty:       tty,
-		log:       loggers,
-	}, nil
+	return
 }
 
 func (p *Process) Start() (err error) {
@@ -97,16 +92,22 @@ func (p *Process) Start() (err error) {
 	defer p.mutex.Unlock()
 	defer exterrors.Wrapd(&err, "run process")
 
-	if p.started {
+	if p.running {
 		return errors.New("process already started")
 	}
 
-	// Run container process
-	if err = p.container.container.Run(p.process); err != nil {
-		p.tty.Close()
-		return errors.Wrap(err, "spawn process")
+	// Configure stdIO/terminal
+	p.tty, err = setupIO(&p.process, p.container.container, p.terminal, false, "")
+	if err != nil {
+		return
 	}
-	p.started = true
+
+	// Run container process
+	if err = p.container.container.Run(&p.process); err != nil {
+		p.tty.Close()
+		return
+	}
+	p.running = true
 
 	p.wait.Add(1)
 	go p.handleTermination()
@@ -131,17 +132,17 @@ func (p *Process) handleTermination() {
 
 	// Register process error
 	p.err = err
-	p.process = nil
 
 	// Release TTY
-	// TODO: reject tty CLI option when process is detached
+	// TODO: reject tty CLI option when process is detached and no console socket provided
 	err = p.tty.Close() // ATTENTION: call hangs when detached process and tty enabled
 	p.err = run.WrapExitError(p.err, err)
 	p.tty = nil
+	p.running = false
 }
 
 func (c *Process) Stop() {
-	if c.process == nil {
+	if c.running {
 		return
 	}
 
@@ -152,7 +153,7 @@ func (p *Process) stop() bool {
 	// Terminate container orderly
 	p.mutex.Lock()
 
-	if p.process == nil {
+	if !p.running {
 		p.mutex.Unlock()
 		return false
 	}
@@ -172,8 +173,7 @@ func (p *Process) stop() bool {
 	select {
 	case <-time.After(time.Duration(10000000)): // TODO: read value from OCI runtime configuration
 		// Kill container after timeout
-		process := p.process
-		if process != nil {
+		if p.running {
 			p.log.Warn.WithField("args", p.args).Println("Killing process (stop timeout exceeded)")
 			if err := p.process.Signal(syscall.SIGKILL); err != nil {
 				errlog := p.log.Error
@@ -187,7 +187,6 @@ func (p *Process) stop() bool {
 		<-quit
 	case <-quit:
 	}
-	p.started = false
 	close(quit)
 	return true
 }
@@ -206,9 +205,8 @@ func (p *Process) Close() (err error) {
 	p.stop()
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	if p.process != nil {
+	if p.running {
 		err = p.err
-		p.process = nil
 		p.err = nil
 		if p.tty != nil {
 			if e := p.tty.Close(); e != nil {

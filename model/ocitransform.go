@@ -30,7 +30,7 @@ func (service *Service) ToSpec(res ResourceResolver, rootless bool, prootPath st
 		spec.ToRootless()
 	}
 
-	if err = toProcess(&service.Process, res, prootPath, spec); err != nil {
+	if err = service.Process.ToSpecProcess(prootPath, spec); err != nil {
 		return
 	}
 
@@ -222,17 +222,17 @@ func mountHostFile(spec *specs.Spec, file string) error {
 	return nil
 }
 
-func toProcess(service *Process, res ResourceResolver, prootPath string, spec *generate.SpecBuilder) (err error) {
+func (p *Process) ToSpecProcess(prootPath string, spec *generate.SpecBuilder) (err error) {
 	// Entrypoint & command
-	if service.Entrypoint != nil {
-		spec.SetProcessEntrypoint(service.Entrypoint)
+	if p.Entrypoint != nil {
+		spec.SetProcessEntrypoint(p.Entrypoint)
 		spec.SetProcessCmd([]string{})
 	}
-	if service.Command != nil {
-		spec.SetProcessCmd(service.Command)
+	if p.Command != nil {
+		spec.SetProcessCmd(p.Command)
 	}
 	// Add proot
-	if service.PRoot {
+	if p.PRoot {
 		if prootPath == "" {
 			return errors.New("proot enabled but no proot path configured")
 		}
@@ -240,40 +240,40 @@ func toProcess(service *Process, res ResourceResolver, prootPath string, spec *g
 	}
 
 	// Env
-	for k, v := range service.Environment {
+	for k, v := range p.Environment {
 		spec.AddProcessEnv(k, v)
 	}
 
 	// Working dir
-	if service.Cwd != "" {
-		spec.SetProcessCwd(service.Cwd)
+	if p.Cwd != "" {
+		spec.SetProcessCwd(p.Cwd)
 	}
 
 	// Terminal
-	spec.SetProcessTerminal(service.Tty)
+	spec.SetProcessTerminal(p.Tty)
 
 	// User
-	if service.User != nil {
-		if service.User.User != "" {
+	if p.User != nil {
+		if p.User.User != "" {
 			// TODO: eventually map username using rootfs/etc/passwd to uid/gid
 			//       (not possible here since filesystem is not yet populated. => Could be moved into bundle builder)
-			usr, e := strconv.Atoi(service.User.User)
+			usr, e := strconv.Atoi(p.User.User)
 			if e == nil && usr >= 0 && usr < (1<<32) {
 				spec.SetProcessUID(uint32(usr))
 			} else {
-				return errors.Errorf("uid expected but was %q", service.User.User)
+				return errors.Errorf("uid expected but was %q", p.User.User)
 			}
-			if service.User.Group != "" {
-				grp, e := strconv.Atoi(service.User.Group)
+			if p.User.Group != "" {
+				grp, e := strconv.Atoi(p.User.Group)
 				if e == nil && grp >= 0 && grp < (1<<32) {
 					spec.SetProcessGID(uint32(grp))
 				} else {
-					return errors.Errorf("gid expected but was %q", service.User.Group)
+					return errors.Errorf("gid expected but was %q", p.User.Group)
 				}
 			}
 		}
-		if service.User.AdditionalGroups != nil {
-			for _, gidstr := range service.User.AdditionalGroups {
+		if p.User.AdditionalGroups != nil {
+			for _, gidstr := range p.User.AdditionalGroups {
 				gid, err := strconv.Atoi(gidstr)
 				if err != nil || gid < 0 || gid > 1<<32 {
 					return errors.Errorf("additional gid expected but was %q", gidstr)
@@ -284,8 +284,8 @@ func toProcess(service *Process, res ResourceResolver, prootPath string, spec *g
 	}
 
 	// Capabilities
-	if service.CapAdd != nil {
-		for _, addCap := range service.CapAdd {
+	if p.CapAdd != nil {
+		for _, addCap := range p.CapAdd {
 			if strings.ToUpper(addCap) == "ALL" {
 				spec.AddAllProcessCapabilities()
 				break
@@ -293,18 +293,18 @@ func toProcess(service *Process, res ResourceResolver, prootPath string, spec *g
 				return
 			}
 		}
-		for _, dropCap := range service.CapDrop {
+		for _, dropCap := range p.CapDrop {
 			if err = spec.DropProcessCapability("CAP_" + dropCap); err != nil {
 				return
 			}
 		}
 	}
 
-	spec.SetProcessApparmorProfile(service.ApparmorProfile)
-	spec.SetProcessNoNewPrivileges(service.NoNewPrivileges)
-	spec.SetProcessSelinuxLabel(service.SelinuxLabel)
-	if service.OOMScoreAdj != nil {
-		spec.SetProcessOOMScoreAdj(*service.OOMScoreAdj)
+	spec.SetProcessApparmorProfile(p.ApparmorProfile)
+	spec.SetProcessNoNewPrivileges(p.NoNewPrivileges)
+	spec.SetProcessSelinuxLabel(p.SelinuxLabel)
+	if p.OOMScoreAdj != nil {
+		spec.SetProcessOOMScoreAdj(*p.OOMScoreAdj)
 	}
 
 	return nil

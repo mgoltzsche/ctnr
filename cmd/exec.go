@@ -1,0 +1,69 @@
+// Copyright © 2017 Max Goltzsche
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cmd
+
+import (
+	"github.com/mgoltzsche/cntnr/generate"
+	"github.com/mgoltzsche/cntnr/run"
+	"github.com/spf13/cobra"
+)
+
+var (
+	execCmd = &cobra.Command{
+		Use:   "exec [flags] CONTAINERID COMMAND",
+		Short: "Executes a process in a container",
+		Long:  `Executes a process in a container.`,
+		Run:   wrapRun(runExec),
+	}
+
+/*
+	TODO:
+	flagHealthCheck     *Check
+	flagStopGracePeriod time.Duration*/
+)
+
+func init() {
+	flagsBundle.InitProcessFlags(execCmd.Flags())
+	flagsBundle.InitRunFlags(execCmd.Flags())
+}
+
+func runExec(cmd *cobra.Command, args []string) (err error) {
+	if len(args) < 1 {
+		return usageError("No CONTAINERID argument specified")
+	}
+	if len(args) < 2 {
+		return usageError("No COMMAND argument specified")
+	}
+	if err := flagsBundle.SetBundleArgs(args); err != nil {
+		return err
+	}
+	service, err := flagsBundle.Read()
+	if err != nil {
+		return
+	}
+	spec := generate.NewSpecBuilder()
+	if err = service.ToSpecProcess(flagPRootPath, &spec); err != nil {
+		return
+	}
+	manager, err := newContainerManager()
+	if err != nil {
+		return
+	}
+	container, err := manager.Get(args[0]) // TODO: get id as args[0]
+	if err != nil {
+		return
+	}
+	return container.Exec(spec.Spec().Process, run.NewStdContainerIO())
+}

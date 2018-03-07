@@ -8,14 +8,14 @@ import (
 	"syscall"
 
 	"github.com/hashicorp/go-multierror"
-	rspecs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
 type ContainerBundle interface {
 	ID() string
 	Dir() string
-	Spec() (*rspecs.Spec, error)
+	Spec() (*specs.Spec, error)
 	Close() error
 }
 
@@ -42,6 +42,7 @@ func NewStdContainerIO() ContainerIO {
 
 type ContainerManager interface {
 	NewContainer(cfg *ContainerConfig) (Container, error)
+	Get(id string) (Container, error)
 	List() ([]ContainerInfo, error)
 	Kill(id, signal string, all bool) error
 }
@@ -51,7 +52,8 @@ type Container interface {
 	Start() error
 	Stop()
 	Wait() error
-	Delete() error
+	Exec(*specs.Process, ContainerIO) error
+	Destroy() error
 	Close() error
 }
 
