@@ -12,14 +12,19 @@ import (
 )
 
 func TestLoad(t *testing.T) {
-	dcFile := "../../vendor/github.com/docker/cli/cli/compose/loader/full-example.yml"
 	b, err := ioutil.ReadFile("full-example.json")
+
+	/*if err = os.Chdir("../../vendor/github.com/docker/cli/cli/compose/loader"); err != nil {
+		t.Fatal(err)
+		t.FailNow()
+	}*/
+
 	require.NoError(t, err)
 	expected, err := model.FromJSON(b)
 	require.NoError(t, err)
 	env := map[string]string{}
 	env["HOME"] = "/home/user"
-	actual, err := Load(dcFile, "../../vendor/github.com/docker/cli/cli/compose/loader", env, log.NewNopLogger())
+	actual, err := Load("../../vendor/github.com/docker/cli/cli/compose/loader/full-example.yml", "../../vendor/github.com/docker/cli/cli/compose/loader", env, log.NewNopLogger())
 	require.NoError(t, err)
 	fmt.Println(actual.JSON())
 	assert.Equal(t, expected.Services, actual.Services)

@@ -332,7 +332,7 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, baseFile, destBaseFi
 
 		switch t := e.(type) {
 		case string:
-			if err = ParseBindMount(sub(e.(string)), &v); err != nil {
+			if v, err = ParseBindMount(sub(e.(string))); err != nil {
 				return errors.Wrap(err, path)
 			}
 		case map[interface{}]interface{}:
@@ -370,26 +370,6 @@ func toVolumeMounts(dcVols []interface{}, sub Substitution, baseFile, destBaseFi
 	}
 	*rp = r
 	return nil
-}
-
-func ParseBindMount(expr string, r *VolumeMount) (err error) {
-	r.Options = []string{}
-	r.Type = MOUNT_TYPE_BIND
-	s := strings.Split(expr, ":")
-	switch len(s) {
-	case 0:
-	case 1:
-		r.Source = ""
-		r.Target = s[0]
-	default:
-		r.Source = s[0]
-		r.Target = s[1]
-		r.Options = s[2:]
-	}
-	if r.Target == "" {
-		err = errors.Errorf("no volume mount target specified but %q", expr)
-	}
-	return
 }
 
 func toImageBuild(s interface{}, sub Substitution, rp **ImageBuild, baseFile, destBaseFile, path string) (err error) {

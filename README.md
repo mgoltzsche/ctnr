@@ -154,7 +154,7 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 ## Roadmap
 
 - separate OCI hook binary
-- CLI improvements: `image create`, `compose`, `--mount`, `--user`
+- CLI improvements: `image create`, `compose start|stop`
 - Improved docker compose support
 - Improved container, bundle and image garbage collection
 - health check

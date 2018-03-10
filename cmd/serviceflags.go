@@ -44,8 +44,10 @@ func (c *bundleFlags) InitContainerFlags(f *pflag.FlagSet) {
 	f.VarP((*cBundle)(c), "bundle", "b", "bundle name or directory")
 	c.InitProcessFlags(f)
 	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default' or 'unconfined'")
-	f.Var((*cMountCgroups)(c), "mount-cgroups", "Mounts the host's cgroups with the given option: ro|rw|no")
-	f.Var((*cVolumeMount)(c), "mount", "container volume mounts: TARGET|SOURCE:TARGET[:OPTIONS]")
+	f.Var((*cMountCgroups)(c), "mount-cgroups", "mounts the host's cgroups with the given option: ro|rw|no")
+	f.Var((*cVolumeMount)(c), "mount", "mounts a volume: type=T,src=S,dst=D,opt=O")
+	f.VarP((*cVolumeMount)(c), "volume", "v", "mounts a volume: TARGET|SOURCE:TARGET[:OPTIONS]")
+	f.MarkHidden("volume")
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.BoolVar(&c.readonly, "readonly", false, "mounts the root file system in read only mode")
 	f.BoolVar(&c.proot, "proot", false, "enables PRoot")
@@ -65,6 +67,7 @@ func (c *bundleFlags) InitProcessFlags(f *pflag.FlagSet) {
 	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
 	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
 	f.VarP((*cUser)(c), "user", "u", "process user: UID[:GID]")
+	f.Var((*cAdditionalGroups)(c), "additional-groups", "additional groups")
 	f.BoolVarP(&c.tty, "tty", "t", false, "binds a terminal to the container")
 	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
 	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
@@ -226,6 +229,28 @@ func (c *cUser) String() string {
 	}
 }
 
+type cAdditionalGroups bundleFlags
+
+func (c *cAdditionalGroups) Set(s string) error {
+	u := &(*bundleFlags)(c).curr().User
+	if *u == nil {
+		*u = &model.User{}
+	}
+	return addStringEntries(s, &(*u).AdditionalGroups)
+}
+
+func (c *cAdditionalGroups) Type() string {
+	return "string..."
+}
+
+func (c *cAdditionalGroups) String() string {
+	u := &(*bundleFlags)(c).curr().User
+	if *u == nil {
+		return ""
+	}
+	return entriesToString((*u).AdditionalGroups)
+}
+
 type cCapAdd bundleFlags
 
 func (c *cCapAdd) Set(s string) error {
@@ -306,8 +331,8 @@ func (c *cExpose) String() string {
 type cVolumeMount bundleFlags
 
 func (c *cVolumeMount) Set(s string) (err error) {
-	v := model.VolumeMount{}
-	if err = model.ParseBindMount(s, &v); err != nil {
+	v, err := model.ParseMount(s)
+	if err != nil {
 		return
 	}
 	v.Source, err = filepath.Abs(v.Source)

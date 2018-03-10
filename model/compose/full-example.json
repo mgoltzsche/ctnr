@@ -217,7 +217,8 @@
         },
         {
           "type": "tmpfs",
-          "target": "/opt"
+          "target": "/opt",
+		  "options": ["size=10000"]
         }
       ],
       "stop_signal": "SIGUSR1",

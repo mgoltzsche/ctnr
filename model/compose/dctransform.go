@@ -1,13 +1,16 @@
 package compose
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	//	"runtime"
 	"strings"
 
 	"github.com/docker/cli/cli/compose/loader"
 	"github.com/docker/cli/cli/compose/types"
+	//"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/log"
 	"github.com/mgoltzsche/cntnr/model"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
@@ -22,13 +25,11 @@ import (
 // and containers/image updated their github.com/docker/docker dependency
 //
 
-// TODO: use project
 func Load(file, cwd string, env map[string]string, warn log.Logger) (r *model.CompoundServices, err error) {
 	defer exterrors.Wrapd(&err, "load docker compose file")
-	if filepath.Clean(cwd) == "." {
-		if cwd, err = os.Getwd(); err != nil {
-			return
-		}
+	absCwd := cwd
+	if absCwd, err = filepath.Abs(cwd); err != nil {
+		return
 	}
 	b, err := ioutil.ReadFile(file)
 	if err != nil {
@@ -39,14 +40,14 @@ func Load(file, cwd string, env map[string]string, warn log.Logger) (r *model.Co
 		return
 	}
 	cfg, err := loader.Load(types.ConfigDetails{
-		WorkingDir:  ".",
+		WorkingDir:  cwd,
 		ConfigFiles: []types.ConfigFile{types.ConfigFile{file, dcyml}},
 		Environment: env,
 	})
 	if err != nil {
 		return
 	}
-	return transform(cfg, cwd, warn)
+	return transform(cfg, absCwd, warn)
 }
 
 func GetEnv() map[string]string {
@@ -238,12 +239,15 @@ func toVolumeMounts(vols []types.ServiceVolumeConfig) []model.VolumeMount {
 		if vol.ReadOnly {
 			sliceutils.AddToSet(&opts, "ro")
 		}
+		if vol.Tmpfs != nil {
+			opts = append(opts, fmt.Sprintf("size=%d", vol.Tmpfs.Size))
+		}
+		// TODO: Consistency
 		r = append(r, model.VolumeMount{
 			Type:    model.MountType(vol.Type), // 'volume', 'bind' or 'tmpfs'
 			Source:  vol.Source,
 			Target:  vol.Target,
 			Options: opts,
-			// TODO: Tmpfs, Consistency
 		})
 	}
 	return r
