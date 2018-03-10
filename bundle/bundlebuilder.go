@@ -4,7 +4,7 @@ import (
 	"encoding/base32"
 	"strings"
 
-	"github.com/mgoltzsche/cntnr/generate"
+	"github.com/mgoltzsche/cntnr/pkg/generate"
 	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"
 )

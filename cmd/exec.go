@@ -15,7 +15,7 @@
 package cmd
 
 import (
-	"github.com/mgoltzsche/cntnr/generate"
+	"github.com/mgoltzsche/cntnr/pkg/generate"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
 )

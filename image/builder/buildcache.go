@@ -3,7 +3,7 @@ package builder
 import (
 	"path/filepath"
 
-	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

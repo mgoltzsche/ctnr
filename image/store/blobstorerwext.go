@@ -5,7 +5,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/openSUSE/umoci/oci/layer"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"

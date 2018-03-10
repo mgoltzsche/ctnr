@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/oci/bundle"
-	"github.com/mgoltzsche/cntnr/oci/image"
+	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/cntnr/bundle"
+	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/opencontainers/go-digest"

@@ -17,7 +17,7 @@ package cmd
 import (
 	"github.com/spf13/pflag"
 
-	"github.com/mgoltzsche/cntnr/oci/image/builder"
+	"github.com/mgoltzsche/cntnr/image/builder"
 )
 
 var flagProot bool

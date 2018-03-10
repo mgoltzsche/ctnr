@@ -18,8 +18,8 @@ import (
 	"os/exec"
 	"strconv"
 
-	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/log/logrusadapt"
+	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/cntnr/pkg/log/logrusadapt"
 	"github.com/spf13/cobra"
 	//homedir "github.com/mitchellh/go-homedir"
 	//"github.com/spf13/viper"
@@ -27,9 +27,9 @@ import (
 	"path/filepath"
 
 	"github.com/containers/image/types"
-	image "github.com/mgoltzsche/cntnr/oci/image"
-	istore "github.com/mgoltzsche/cntnr/oci/image/store"
-	storepkg "github.com/mgoltzsche/cntnr/oci/store"
+	image "github.com/mgoltzsche/cntnr/image"
+	istore "github.com/mgoltzsche/cntnr/image/store"
+	storepkg "github.com/mgoltzsche/cntnr/store"
 	"github.com/mitchellh/go-homedir"
 	"github.com/sirupsen/logrus"
 )

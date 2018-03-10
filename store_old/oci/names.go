@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	digest "github.com/opencontainers/go-digest"
 )

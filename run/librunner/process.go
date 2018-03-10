@@ -10,7 +10,7 @@ import (
 
 	"github.com/coreos/go-systemd/activation"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/opencontainers/runc/libcontainer"

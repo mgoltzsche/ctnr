@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/oci/bundle"
+	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/pkg/errors"
 )
 

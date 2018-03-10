@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/log"
-	"github.com/mgoltzsche/cntnr/oci/image"
+	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"

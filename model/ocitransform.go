@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mgoltzsche/cntnr/generate"
+	"github.com/mgoltzsche/cntnr/pkg/generate"
 	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"

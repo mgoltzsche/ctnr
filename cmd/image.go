@@ -23,7 +23,7 @@ import (
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
-	"github.com/mgoltzsche/cntnr/oci/image/builder"
+	"github.com/mgoltzsche/cntnr/image/builder"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"

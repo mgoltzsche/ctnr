@@ -20,8 +20,8 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/oci/bundle"
-	"github.com/mgoltzsche/cntnr/oci/image"
+	"github.com/mgoltzsche/cntnr/bundle"
+	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/pkg/errors"

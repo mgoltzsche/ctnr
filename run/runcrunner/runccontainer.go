@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/log"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"

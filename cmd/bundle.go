@@ -24,7 +24,7 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/oci/bundle"
+	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
 )
