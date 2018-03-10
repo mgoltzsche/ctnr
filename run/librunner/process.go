@@ -10,8 +10,8 @@ import (
 
 	"github.com/coreos/go-systemd/activation"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/pkg/log"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/opencontainers/runc/libcontainer"
 	"github.com/opencontainers/runc/libcontainer/configs"
@@ -135,7 +135,7 @@ func (p *Process) handleTermination() {
 
 	// Release TTY
 	// TODO: reject tty CLI option when process is detached and no console socket provided
-	err = p.tty.Close() // ATTENTION: call hangs when detached process and tty enabled
+	err = p.tty.Close() // ATTENTION: deadlock when detached process and tty enabled
 	p.err = run.WrapExitError(p.err, err)
 	p.tty = nil
 	p.running = false

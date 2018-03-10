@@ -36,6 +36,7 @@ func NewRuncContainer(cfg *run.ContainerConfig, rootDir string, debug log.FieldL
 			panic("no container ID provided and bundle ID is empty")
 		}
 	}
+	// TODO: handle config option destroyOnClose
 	return &RuncContainer{
 		id:           id,
 		io:           cfg.Io,

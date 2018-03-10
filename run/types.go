@@ -20,11 +20,12 @@ type ContainerBundle interface {
 }
 
 type ContainerConfig struct {
-	Id           string
-	Bundle       ContainerBundle
-	Io           ContainerIO
-	NoPivotRoot  bool
-	NoNewKeyring bool
+	Id             string
+	Bundle         ContainerBundle
+	Io             ContainerIO
+	NoPivotRoot    bool
+	NoNewKeyring   bool
+	DestroyOnClose bool
 }
 
 type ContainerIO struct {

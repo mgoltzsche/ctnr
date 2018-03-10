@@ -8,8 +8,8 @@ import (
 	"runtime"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/pkg/log"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/opencontainers/runc/libcontainer"
 	_ "github.com/opencontainers/runc/libcontainer/nsenter"
@@ -33,11 +33,12 @@ func init() {
 }
 
 type Container struct {
-	process   *Process
-	container libcontainer.Container
-	id        string
-	bundle    io.Closer
-	log       log.Loggers
+	process        *Process
+	container      libcontainer.Container
+	id             string
+	destroyOnClose bool
+	bundle         io.Closer
+	log            log.Loggers
 }
 
 // TODO: Add to ContainerManager interface
@@ -116,10 +117,11 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 	}
 
 	r = &Container{
-		container: container,
-		id:        id,
-		bundle:    cfg.Bundle,
-		log:       loggers,
+		container:      container,
+		id:             id,
+		bundle:         cfg.Bundle,
+		destroyOnClose: cfg.DestroyOnClose,
+		log:            loggers,
 	}
 	r.process, err = NewProcess(r, spec.Process, cfg.Io, loggers)
 	return
@@ -159,7 +161,6 @@ func (c *Container) Wait() (err error) {
 }
 
 func (c *Container) Destroy() (err error) {
-	err = c.Close()
 	c.log.Debug.Println("Destroying container")
 	cc := c.container
 	if cc != nil {
@@ -173,13 +174,22 @@ func (c *Container) Destroy() (err error) {
 
 func (c *Container) Close() (err error) {
 	c.log.Debug.Println("Closing container")
-	c.Stop()
-	c.Wait()
+
+	// Close process
 	p := c.process
 	if p != nil {
 		err = p.Close()
 		c.process = nil
 	}
+
+	// Destroy container
+	if c.destroyOnClose {
+		if e := c.Destroy(); e != nil {
+			err = multierror.Append(err, e)
+		}
+	}
+
+	// Release bundle
 	b := c.bundle
 	if b != nil {
 		if e := b.Close(); e != nil {

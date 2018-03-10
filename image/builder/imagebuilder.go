@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/mgoltzsche/cntnr/image"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/opencontainers/go-digest"
@@ -248,9 +248,10 @@ func (b *BuildState) Run(cmd string) (err error) {
 		}
 		// TODO: move container creation into bundle init method and update the process here only
 		container, err := manager.NewContainer(&run.ContainerConfig{
-			Id:     b.bundle.ID(),
-			Bundle: b.bundle,
-			Io:     run.NewStdContainerIO(),
+			Id:             b.bundle.ID(),
+			Bundle:         b.bundle,
+			Io:             run.NewStdContainerIO(),
+			DestroyOnClose: true,
 		})
 		if err != nil {
 			return

@@ -122,7 +122,7 @@ func runServices(services []model.Service, res model.ResourceResolver) (err erro
 	for _, s := range services {
 		var c run.Container
 		loggers.Debug.Println(s.JSON())
-		if c, err = createContainer(&s, res, manager); err != nil {
+		if c, err = createContainer(&s, res, manager, true); err != nil {
 			return
 		}
 		containers.Add(c)
@@ -134,7 +134,7 @@ func runServices(services []model.Service, res model.ResourceResolver) (err erro
 	return
 }
 
-func createContainer(model *model.Service, res model.ResourceResolver, manager run.ContainerManager) (c run.Container, err error) {
+func createContainer(model *model.Service, res model.ResourceResolver, manager run.ContainerManager, destroyOnClose bool) (c run.Container, err error) {
 	var bundle *bundle.LockedBundle
 	if bundle, err = createRuntimeBundle(model, res); err != nil {
 		return
@@ -153,11 +153,12 @@ func createContainer(model *model.Service, res model.ResourceResolver, manager r
 	}
 
 	return manager.NewContainer(&run.ContainerConfig{
-		Id:           "",
-		Bundle:       bundle,
-		Io:           ioe,
-		NoNewKeyring: model.NoNewKeyring,
-		NoPivotRoot:  model.NoPivot,
+		Id:             "",
+		Bundle:         bundle,
+		Io:             ioe,
+		NoNewKeyring:   model.NoNewKeyring,
+		NoPivotRoot:    model.NoPivot,
+		DestroyOnClose: destroyOnClose,
 	})
 }
 
