@@ -1,4 +1,4 @@
-package model
+package oci
 
 import (
 	"encoding/json"
@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/pkg/generate"
 	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -21,7 +22,7 @@ const (
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.cntnr.bundle.id"
 )
 
-func (service *Service) ToSpec(res ResourceResolver, rootless bool, prootPath string, spec *generate.SpecBuilder) (err error) {
+func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, prootPath string, spec *generate.SpecBuilder) (err error) {
 	defer func() {
 		err = errors.Wrap(err, "generate OCI bundle spec")
 	}()
@@ -30,7 +31,7 @@ func (service *Service) ToSpec(res ResourceResolver, rootless bool, prootPath st
 		spec.ToRootless()
 	}
 
-	if err = service.Process.ToSpecProcess(prootPath, spec); err != nil {
+	if err = ToSpecProcess(&service.Process, prootPath, spec); err != nil {
 		return
 	}
 
@@ -222,7 +223,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 	return nil
 }
 
-func (p *Process) ToSpecProcess(prootPath string, spec *generate.SpecBuilder) (err error) {
+func ToSpecProcess(p *model.Process, prootPath string, spec *generate.SpecBuilder) (err error) {
 	// Entrypoint & command
 	if p.Entrypoint != nil {
 		spec.SetProcessEntrypoint(p.Entrypoint)
@@ -310,7 +311,7 @@ func (p *Process) ToSpecProcess(prootPath string, spec *generate.SpecBuilder) (e
 	return nil
 }
 
-func toMounts(mounts []VolumeMount, res ResourceResolver, spec *generate.SpecBuilder) error {
+func toMounts(mounts []model.VolumeMount, res model.ResourceResolver, spec *generate.SpecBuilder) error {
 	for _, m := range mounts {
 		src, err := res.ResolveMountSource(m)
 		if err != nil {
@@ -318,8 +319,8 @@ func toMounts(mounts []VolumeMount, res ResourceResolver, spec *generate.SpecBui
 		}
 
 		t := m.Type
-		if t == "" || t == MOUNT_TYPE_VOLUME {
-			t = MOUNT_TYPE_BIND
+		if t == "" || t == model.MOUNT_TYPE_VOLUME {
+			t = model.MOUNT_TYPE_BIND
 		}
 		opts := m.Options
 		if len(opts) == 0 {

@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"github.com/mgoltzsche/cntnr/model/oci"
 	"github.com/mgoltzsche/cntnr/pkg/generate"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
@@ -54,7 +55,7 @@ func runExec(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	spec := generate.NewSpecBuilder()
-	if err = service.ToSpecProcess(flagPRootPath, &spec); err != nil {
+	if err = oci.ToSpecProcess(&service.Process, flagPRootPath, &spec); err != nil {
 		return
 	}
 	manager, err := newContainerManager()

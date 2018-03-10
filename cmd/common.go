@@ -19,9 +19,10 @@ import (
 	"path/filepath"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/mgoltzsche/cntnr/image"
+	"github.com/mgoltzsche/cntnr/model"
+	"github.com/mgoltzsche/cntnr/model/oci"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/pkg/errors"
@@ -192,7 +193,7 @@ func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b 
 	}
 
 	// Generate config.json
-	if err = service.ToSpec(res, flagRootless, flagPRootPath, builder.SpecBuilder); err != nil {
+	if err = oci.ToSpec(service, res, flagRootless, flagPRootPath, builder.SpecBuilder); err != nil {
 		return
 	}
 
