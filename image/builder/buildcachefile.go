@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/pkg/errors"
 )
@@ -39,7 +40,7 @@ func NewCacheFile(file string, warn log.Logger) CacheFile {
 func (s *CacheFile) Get(key string) (child string, err error) {
 	if s.cache == nil {
 		if s.cache, err = s.read(); err != nil {
-			return
+			return "", errors.Wrapf(err, "get cache key %q", key)
 		}
 	}
 	child, ok := s.cache[key]
@@ -51,12 +52,12 @@ func (s *CacheFile) Get(key string) (child string, err error) {
 
 func (s *CacheFile) read() (idx map[string]string, err error) {
 	idx = map[string]string{}
-	f, err := os.OpenFile(s.file, os.O_RDONLY, 0664)
+	f, err := os.OpenFile(s.file, os.O_RDONLY, 0660)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if _, e := os.Stat(s.file); os.IsNotExist(e) {
 			return idx, nil
 		} else {
-			return nil, errors.Wrap(err, "read build cache")
+			return nil, errors.Wrap(err, "read cache")
 		}
 	}
 	defer f.Close()
@@ -67,7 +68,7 @@ func (s *CacheFile) read() (idx map[string]string, err error) {
 		if line := scanner.Text(); line != "" {
 			entry := cacheEntry{}
 			if e := json.Unmarshal([]byte(line), &entry); e != nil {
-				s.warn.Printf("read build cache line %d: %s", i, err)
+				s.warn.Printf("read cache file %s line %d: %s", s.file, i, err)
 			} else {
 				idx[entry.Key] = entry.Value
 			}
@@ -75,26 +76,30 @@ func (s *CacheFile) read() (idx map[string]string, err error) {
 		}
 	}
 	if err = scanner.Err(); err != nil {
-		return nil, errors.Wrap(err, "read build cache")
+		return nil, errors.Wrap(err, "read cache")
 	}
 	return
 }
 
 func (s *CacheFile) Put(key, value string) (err error) {
+	defer exterrors.Wrapdf(&err, "put cache %q => %q", key, value)
 	if err = os.MkdirAll(filepath.Dir(s.file), 0775); err != nil {
-		return errors.Wrap(err, "put build cache")
+		return
 	}
-	f, err := os.OpenFile(s.file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0664)
+	f, err := os.OpenFile(s.file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0660)
 	if err != nil {
-		return errors.Wrap(err, "put build cache")
+		return
 	}
 	defer f.Close()
 	b, err := json.Marshal(cacheEntry{key, value})
 	if err != nil {
-		return errors.Wrap(err, "put build cache")
+		return
 	}
 	if _, err = f.Write([]byte(string(b) + "\n")); err != nil {
-		return errors.Wrap(err, "put build cache")
+		return
+	}
+	if err = f.Sync(); err != nil {
+		return
 	}
 	if s.cache != nil {
 		s.cache[key] = value

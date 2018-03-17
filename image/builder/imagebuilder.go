@@ -28,46 +28,50 @@ func NewImageBuilder() *ImageBuilder {
 }
 
 func (b *ImageBuilder) FromImage(image string) {
-	b.steps = append(b.steps, func(builder *BuildState) error {
+	b.addBuildStep(func(builder *BuildState) error {
 		return builder.FromImage(image)
 	})
 }
 
 func (b *ImageBuilder) SetAuthor(image string) {
-	b.steps = append(b.steps, func(builder *BuildState) error {
+	b.addBuildStep(func(builder *BuildState) error {
 		builder.SetAuthor(image)
 		return nil
 	})
 }
 
 func (b *ImageBuilder) SetWorkingDir(dir string) {
-	b.steps = append(b.steps, func(builder *BuildState) error {
+	b.addBuildStep(func(builder *BuildState) error {
 		return builder.SetWorkingDir(dir)
 	})
 }
 
 func (b *ImageBuilder) SetEntrypoint(entrypoint []string) {
-	b.steps = append(b.steps, func(builder *BuildState) error {
+	b.addBuildStep(func(builder *BuildState) error {
 		return builder.SetEntrypoint(entrypoint)
 	})
 }
 
 func (b *ImageBuilder) SetCmd(cmd []string) {
-	b.steps = append(b.steps, func(builder *BuildState) error {
+	b.addBuildStep(func(builder *BuildState) error {
 		return builder.SetCmd(cmd)
 	})
 }
 
 func (b *ImageBuilder) Run(cmd string) {
-	b.steps = append(b.steps, func(builder *BuildState) error {
+	b.addBuildStep(func(builder *BuildState) error {
 		return builder.Run(cmd)
 	})
 }
 
 func (b *ImageBuilder) Tag(tag string) {
-	b.steps = append(b.steps, func(builder *BuildState) error {
+	b.addBuildStep(func(builder *BuildState) error {
 		return builder.Tag(tag)
 	})
+}
+
+func (b *ImageBuilder) addBuildStep(step func(*BuildState) error) {
+	b.steps = append(b.steps, step)
 }
 
 func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, loggers log.Loggers) (img image.Image, err error) {
@@ -172,7 +176,7 @@ func (b *BuildState) SetAuthor(author string) {
 func (b *BuildState) SetWorkingDir(dir string) (err error) {
 	dir = absFile(dir, b.config.Config.WorkingDir)
 	b.config.Config.WorkingDir = dir
-	return b.cached("WORK "+dir, b.commitConfig)
+	return b.cached("WORKDIR "+dir, b.commitConfig)
 }
 
 // TODO: move into some shared package since this is a duplicate
@@ -207,7 +211,7 @@ func (b *BuildState) FromImage(image string) (err error) {
 		return errors.New("base image must be defined as first build step")
 	}
 	img, e := b.images.ImageByName(image)
-	// TODO: distiguish between 'image not found' and serious error
+	// TODO: distinguish between 'image not found' and serious error
 	if e != nil {
 		if img, err = b.images.ImportImage(image); err != nil {
 			return
@@ -397,27 +401,28 @@ func (b *BuildState) AddTag(name string) (err error) {
 
 func (b *BuildState) cached(uniqComment string, call func(comment string) error) (err error) {
 	b.loggers.Info.Println(uniqComment)
-	var parentImgId digest.Digest
+	var parentImgId *digest.Digest
 	if b.image != nil {
-		parentImgId = (*b.image).ID()
-		var cachedImgId digest.Digest
-		cachedImgId, err = b.cache.Get(parentImgId, uniqComment)
-		if err == nil {
-			var cachedImg image.Image
-			if cachedImg, err = b.images.Image(cachedImgId); err == nil {
-				// TODO: distiguish between image not found and serious error
-				if err = b.setImage(&cachedImg); err != nil {
-					return errors.Wrap(err, "cached image")
-				}
-				b.loggers.Info.Printf("  -> using cached image %s", cachedImg.ID())
-				return
+		pImgId := b.image.ID()
+		parentImgId = &pImgId
+	}
+	var cachedImgId digest.Digest
+	cachedImgId, err = b.cache.Get(parentImgId, uniqComment)
+	if err == nil {
+		var cachedImg image.Image
+		if cachedImg, err = b.images.Image(cachedImgId); err == nil {
+			// TODO: distinguish between image not found and serious error
+			if err = b.setImage(&cachedImg); err != nil {
+				return errors.Wrap(err, "cached image")
 			}
-		} else if e, ok := err.(CacheError); !ok || !e.Temporary() {
-			// if no entry not found error
-			return err
-		} else {
-			err = nil
+			b.loggers.Info.Printf("  -> using cached image %s", cachedImg.ID())
+			return
 		}
+	} else if e, ok := err.(CacheError); !ok || !e.Temporary() {
+		// if no "entry not found" error
+		return err
+	} else {
+		err = nil
 	}
 
 	b.loggers.Info.Println("  -> building ...")
@@ -436,9 +441,7 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 		return
 	}
 
-	if string(parentImgId) != "" {
-		err = b.cache.Put(parentImgId, uniqComment, (*b.image).ID())
-	}
+	err = b.cache.Put(parentImgId, uniqComment, (*b.image).ID())
 
 	b.loggers.Info.Printf("  -> built image %s", (*b.image).ID())
 

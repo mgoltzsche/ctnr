@@ -9,8 +9,8 @@ import (
 )
 
 type ImageBuildCache interface {
-	Get(parent digest.Digest, uniqHistoryEntry string) (digest.Digest, error)
-	Put(parent digest.Digest, uniqHistoryEntry string, child digest.Digest) error
+	Get(parent *digest.Digest, uniqHistoryEntry string) (digest.Digest, error)
+	Put(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) error
 }
 
 type imageBuildCache struct {
@@ -22,8 +22,8 @@ func NewImageBuildCache(dir string, warn log.FieldLogger) ImageBuildCache {
 	return &imageBuildCache{dir, warn}
 }
 
-func (s *imageBuildCache) Get(parent digest.Digest, uniqHistoryEntry string) (child digest.Digest, err error) {
-	c := s.cache(parent)
+func (s *imageBuildCache) Get(parent *digest.Digest, uniqHistoryEntry string) (child digest.Digest, err error) {
+	c := s.cache(parent, uniqHistoryEntry)
 	cached, err := c.Get(uniqHistoryEntry)
 	if err != nil {
 		if e, ok := err.(CacheError); ok && e.Temporary() {
@@ -39,15 +39,21 @@ func (s *imageBuildCache) Get(parent digest.Digest, uniqHistoryEntry string) (ch
 	return
 }
 
-func (s *imageBuildCache) Put(parent digest.Digest, uniqHistoryEntry string, child digest.Digest) (err error) {
-	c := s.cache(parent)
-	if err = c.Put(uniqHistoryEntry, child.String()); err != nil {
-		err = errors.Wrap(err, "image build cache")
-	}
-	return
+func (s *imageBuildCache) Put(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) (err error) {
+	c := s.cache(parent, uniqHistoryEntry)
+	err = c.Put(uniqHistoryEntry, child.String())
+	return errors.Wrap(err, "image build cache")
 }
 
-func (s *imageBuildCache) cache(image digest.Digest) CacheFile {
-	file := filepath.Join(s.dir, image.Algorithm().String(), image.Hex())
-	return NewCacheFile(file, s.warn.WithField("image", image.String()))
+func (s *imageBuildCache) cache(image *digest.Digest, uniqHistoryEntry string) CacheFile {
+	var file string
+	d := digest.SHA256.FromString(uniqHistoryEntry)
+	warn := s.warn
+	if image == nil {
+		file = filepath.Join(s.dir, "default", uniqHistoryEntry, d.Algorithm().String(), d.Hex())
+	} else {
+		warn = s.warn.WithField("image", image.String())
+		file = filepath.Join(s.dir, (*image).Algorithm().String(), (*image).Hex(), d.Algorithm().String(), d.Hex())
+	}
+	return NewCacheFile(file, warn)
 }
