@@ -89,7 +89,6 @@ func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleSto
 
 	now := time.Now()
 	state.config.Created = &now
-	state.config.Author = state.author
 	state.config.Architecture = runtime.GOARCH
 	state.config.OS = runtime.GOOS
 
@@ -113,7 +112,6 @@ type BuildState struct {
 	image    *image.Image
 	cache    ImageBuildCache
 	bundle   *bundle.LockedBundle
-	author   string
 	rootless bool
 	proot    string
 	loggers  log.Loggers
@@ -168,23 +166,23 @@ func (b *BuildState) initBundle(cmd string) (err error) {
 	return
 }
 
-func (b *BuildState) SetAuthor(author string) {
-	b.author = author
+func (b *BuildState) SetAuthor(author string) error {
 	b.config.Author = author
+	return b.cached("AUTHOR "+author, b.commitConfig)
 }
 
-func (b *BuildState) SetWorkingDir(dir string) (err error) {
+func (b *BuildState) SetWorkingDir(dir string) error {
 	dir = absFile(dir, b.config.Config.WorkingDir)
 	b.config.Config.WorkingDir = dir
 	return b.cached("WORKDIR "+dir, b.commitConfig)
 }
 
 // TODO: move into some shared package since this is a duplicate
-func absFile(p, base string) string {
+func absFile(p, baseDir string) string {
 	if filepath.IsAbs(p) {
 		return p
 	} else {
-		return filepath.Join(base, p)
+		return filepath.Join(baseDir, p)
 	}
 }
 
@@ -224,7 +222,6 @@ func (b *BuildState) FromImage(image string) (err error) {
 func (b *BuildState) setImage(img *image.Image) (err error) {
 	b.image = img
 	b.config, err = img.Config()
-	b.config.Author = b.author
 	return
 }
 
@@ -272,8 +269,7 @@ func (b *BuildState) Run(cmd string) (err error) {
 		if err = container.Wait(); err != nil {
 			return
 		}
-		b.commitLayer(comment)
-		return
+		return b.commitLayer(comment)
 	})
 }
 
@@ -288,18 +284,15 @@ func (b *BuildState) Tag(tag string) (err error) {
 	return
 }
 
-/*type FileEntry struct {
+type FileEntry struct {
 	Source      string
 	Destination string
 	// TODO: add mode
 }
 
-func (b *ImageBuilder) AddFile(src, dest string) {
-	// TODO: build mtree diffs, merge them and let BlobStoreExt.diff create the layer (without touching the bundle)
-	if b.err != nil {
-		return
-	}
-	var err error
+func (b *BuildState) CopyFile(contextDir string, patterns []string, dest, root string) (err error) {
+	// TODO: build mtree diffs, merge them and let BlobStoreExt.diff create the layer without touching the bundle
+	// => not possible with umoci's GenerateLayer/tarGenerator.AddFile methods
 	defer func() {
 		if err != nil {
 			// Release bundle when operation failed
@@ -307,42 +300,23 @@ func (b *ImageBuilder) AddFile(src, dest string) {
 				err = multierror.Append(err, b.bundle.Close())
 				b.bundle = nil
 			}
-			err = errors.Wrap(err, "add file to image")
-			b.err = multierror.Append(b.err, err)
+			err = errors.Wrap(err, "copy file into image")
 		}
 	}()
 
-	if err = b.initBundle(nil); err != nil {
+	if err = b.initBundle(""); err != nil {
 		return
 	}
-	var srcFile, destFile *os.File
-	dest = filepath.Join(b.bundle.Dir(), "rootfs", dest)
-	// TODO: if dir copy directory
-	if srcFile, err = os.Open(src); err != nil {
-		return
-	}
-	defer srcFile.Close()
-
-	if err = os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+	// TODO: use empty temp directory if bundle does not already exist
+	fs := NewFileSystemBuilder(filepath.Join(b.bundle.Dir(), "rootfs"), b.loggers.Debug)
+	if err = fs.Add(contextDir, patterns, dest); err != nil {
 		return
 	}
 
-	if destFile, err = os.Create(dest); err != nil {
-		return
-	}
-	defer destFile.Close()
-
-	if _, err = io.Copy(destFile, srcFile); err != nil {
-		return
-	}
-
-	if err = destFile.Sync(); err != nil {
-		return
-	}
-
-	// TODO: comment
-	b.CommitLayer("add file to image")
-}*/
+	// TODO: Commit with exclusion rule for mtree
+	// TODO: unique comment with hash sum from added files
+	return b.commitLayer("add file to image")
+}
 
 func (b *BuildState) commitLayer(comment string) (err error) {
 	defer func() {
@@ -355,7 +329,7 @@ func (b *BuildState) commitLayer(comment string) (err error) {
 
 	rootfs := filepath.Join(b.bundle.Dir(), "rootfs")
 	parentImageId := b.bundle.Image()
-	img, err := b.images.AddImageLayer(rootfs, parentImageId, b.author, comment)
+	img, err := b.images.AddImageLayer(rootfs, parentImageId, b.config.Author, comment)
 	if err != nil {
 		return
 	}
@@ -373,9 +347,8 @@ func (b *BuildState) commitConfig(comment string) (err error) {
 		}
 	}()
 
-	b.config.Author = b.author
 	b.config.History = append(b.config.History, ispecs.History{
-		CreatedBy:  b.author,
+		CreatedBy:  b.config.Author,
 		Comment:    comment,
 		EmptyLayer: false,
 	})

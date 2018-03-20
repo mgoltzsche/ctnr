@@ -155,6 +155,7 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 
 - separate OCI hook binary
 - CLI improvements: `image create`, daemon mode
+- Dockerfile support
 - Improved docker compose support
 - Improved container, bundle, image and build cache garbage collection
 - health check
