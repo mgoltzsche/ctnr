@@ -1,4 +1,4 @@
-package builder
+package files
 
 import (
 	"bytes"
@@ -30,17 +30,17 @@ func TestFileSystemBuilder(t *testing.T) {
 	ctxDir, rootfs := createFiles(t)
 	defer deleteFiles(ctxDir, rootfs)
 	testee := NewFileSystemBuilder(rootfs, log.New(os.Stdout, "", 0))
-	err := testee.Add(ctxDir, []string{"/dir2"}, "dirx")
+	err := testee.Add(ctxDir, []string{"dir2"}, "dirx")
 	require.NoError(t, err)
-	err = testee.Add(ctxDir, []string{"/dir1/file1"}, "/bin/fn")
+	err = testee.Add(ctxDir, []string{"dir1/file1"}, "/bin/fn")
 	require.NoError(t, err)
-	err = testee.Add(ctxDir, []string{"/dir1/file2"}, "/")
+	err = testee.Add(ctxDir, []string{"dir1/file2"}, "/")
 	require.NoError(t, err)
-	err = testee.Add(ctxDir, []string{"/dir1/file*"}, "/bin/")
+	err = testee.Add(ctxDir, []string{"dir1/file*"}, "/bin/")
 	require.NoError(t, err)
-	err = testee.Add(ctxDir, []string{"/dir1", "/link*"}, "dirp/")
+	err = testee.Add(ctxDir, []string{"dir1", "link*"}, "dirp/")
 	require.NoError(t, err)
-	err = testee.Add(ctxDir, []string{"/dir1", "/link*"}, "dirp/")
+	err = testee.Add(ctxDir, []string{"dir1", "link*"}, "dirp/")
 	require.NoError(t, err)
 	expectedStr := `
 		# .
@@ -87,17 +87,27 @@ func TestFileSystemBuilderRootfsBoundsViolatingLink(t *testing.T) {
 	ctxDir, rootfs := createFiles(t)
 	defer deleteFiles(ctxDir, rootfs)
 	testee := NewFileSystemBuilder(rootfs, log.New(os.Stdout, "", 0))
-	err := testee.Add(ctxDir, []string{"/dir1/sdir1/linkInvalid"}, "dirx")
+	err := testee.Add(ctxDir, []string{"dir1/sdir1/linkInvalid"}, "dirx")
 	if err == nil {
 		t.Errorf("linking outside rootfs directory was not rejected")
 	}
 }
 
-func TestFileSystemBuilderContextPathBounds(t *testing.T) {
+func TestFileSystemBuilderContextPathBoundsAbs(t *testing.T) {
 	ctxDir, rootfs := createFiles(t)
 	defer deleteFiles(ctxDir, rootfs)
 	testee := NewFileSystemBuilder(rootfs, log.New(os.Stdout, "", 0))
-	err := testee.Add(ctxDir, []string{"/dir1/../.."}, "dirx")
+	err := testee.Add(ctxDir, []string{"/dir2"}, "dirx")
+	if err == nil {
+		t.Errorf("source path outside context directory was not rejected")
+	}
+}
+
+func TestFileSystemBuilderContextPathBoundsRel(t *testing.T) {
+	ctxDir, rootfs := createFiles(t)
+	defer deleteFiles(ctxDir, rootfs)
+	testee := NewFileSystemBuilder(rootfs, log.New(os.Stdout, "", 0))
+	err := testee.Add(ctxDir, []string{"dir1/../.."}, "dirx")
 	if err == nil {
 		t.Errorf("source pattern /dir1/../.. was not rejected")
 	}

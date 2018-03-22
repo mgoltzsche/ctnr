@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/mgoltzsche/cntnr/image"
+	"github.com/mgoltzsche/cntnr/pkg/files"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
@@ -290,7 +291,7 @@ type FileEntry struct {
 	// TODO: add mode
 }
 
-func (b *BuildState) CopyFile(contextDir string, patterns []string, dest, root string) (err error) {
+func (b *BuildState) CopyFile(contextDir string, srcPattern []string, dest, root string) (err error) {
 	// TODO: build mtree diffs, merge them and let BlobStoreExt.diff create the layer without touching the bundle
 	// => not possible with umoci's GenerateLayer/tarGenerator.AddFile methods
 	defer func() {
@@ -304,12 +305,22 @@ func (b *BuildState) CopyFile(contextDir string, patterns []string, dest, root s
 		}
 	}()
 
+	if len(srcPattern) == 0 {
+		return
+	}
 	if err = b.initBundle(""); err != nil {
 		return
 	}
 	// TODO: use empty temp directory if bundle does not already exist
-	fs := NewFileSystemBuilder(filepath.Join(b.bundle.Dir(), "rootfs"), b.loggers.Debug)
-	if err = fs.Add(contextDir, patterns, dest); err != nil {
+	fs := files.NewFileSystemBuilder(filepath.Join(b.bundle.Dir(), "rootfs"), b.loggers.Debug)
+	cfg, err := b.image.Config()
+	if err != nil {
+		return
+	}
+	if !filepath.IsAbs(dest) {
+		dest = filepath.Join(cfg.Config.WorkingDir)
+	}
+	if err = fs.Add(contextDir, srcPattern, dest); err != nil {
 		return
 	}
 

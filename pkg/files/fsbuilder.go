@@ -1,4 +1,4 @@
-package builder
+package files
 
 import (
 	"io"
@@ -29,13 +29,15 @@ func NewFileSystemBuilder(root string, logger Logger) *FileSystemBuilder {
 	}
 }
 
-func (s *FileSystemBuilder) Add(root string, srcPattern []string, dest string) (err error) {
+// Adds all files that match glob pattern within root directory to dest.
+// To treat dest as parent directory it must end with the path separator character.
+func (s *FileSystemBuilder) Add(root string, pattern []string, dest string) (err error) {
 	destc := filepath.Clean(dest)
 	if strings.Index(destc, "../") == 0 || strings.Index(destc, "/../") == 0 || destc == ".." || destc == "/.." {
 		return errors.Errorf("destination %q is outside root directory", dest)
 	}
 
-	files, err := resolveFilePatterns(root, srcPattern)
+	files, err := glob(root, pattern)
 	if err == nil {
 		// TODO: eventually sort file so that dirs come first to make sure their file attributes get applied properly (e.g. check if Glob() output requires parent dir entry extraction, sort by depth)
 		for _, file := range files {
@@ -106,7 +108,7 @@ func (s *FileSystemBuilder) copyLink(src string, si os.FileInfo, dest string) (e
 		return
 	}
 	target = filepath.Clean(target)
-	if !filepath.IsAbs(target) && !s.isWithinRoot(filepath.Join(filepath.Dir(dest), target)) {
+	if !filepath.IsAbs(target) && !within(filepath.Join(filepath.Dir(dest), target), s.root) {
 		return errors.Errorf("link %s target %q outside root directory", dest, target)
 	}
 	s.log.Printf("l    %s => %s (%s)", src, dest, target)
@@ -123,29 +125,6 @@ func (s *FileSystemBuilder) copyLink(src string, si os.FileInfo, dest string) (e
 		err = os.Lchown(dest, int(st.Uid), int(st.Gid))
 	}
 	return
-}
-
-func (s *FileSystemBuilder) checkWithinRoot(file string) error {
-	file, err := realPath(file)
-	if err == nil && !s.isWithinRoot(file) {
-		err = errors.Errorf("path %q is outside rootfs", file)
-	}
-	return err
-}
-
-func realPath(file string) (f string, err error) {
-	f, err = filepath.EvalSymlinks(file)
-	if err != nil && os.IsNotExist(err) {
-		fileName := filepath.Base(file)
-		file, err = realPath(filepath.Dir(file))
-		f = filepath.Join(file, fileName)
-	}
-	return
-}
-
-func (s *FileSystemBuilder) isWithinRoot(file string) bool {
-	a := string(filepath.Separator)
-	return strings.Index(file+a, s.root+a) == 0
 }
 
 func (s *FileSystemBuilder) copyFile(src string, si os.FileInfo, dest string) (err error) {
@@ -182,7 +161,7 @@ func (s *FileSystemBuilder) createAllDirs(src, dest string) (err error) {
 		return
 	}
 	if dest == s.root || src == string(filepath.Separator) {
-		if err = s.checkWithinRoot(dest); err != nil {
+		if err = checkWithin(dest, s.root); err != nil {
 			return
 		}
 		err = os.MkdirAll(dest, 0755)
@@ -195,7 +174,7 @@ func (s *FileSystemBuilder) createAllDirs(src, dest string) (err error) {
 	}
 	if si, e := os.Stat(dest); e == nil {
 		if si.IsDir() {
-			if err = s.checkWithinRoot(dest); err != nil {
+			if err = checkWithin(dest, s.root); err != nil {
 				return
 			}
 			s.dirs[dest] = true
@@ -215,7 +194,7 @@ func (s *FileSystemBuilder) createAllDirs(src, dest string) (err error) {
 	} else {
 		return e
 	}
-	if err = s.checkWithinRoot(dest); err != nil {
+	if err = checkWithin(dest, s.root); err != nil {
 		return
 	}
 	s.log.Printf("d %d %s => %s", si.Mode(), src, dest)
@@ -234,24 +213,20 @@ func chown(file string, info os.FileInfo) (err error) {
 	return
 }
 
-func resolveFilePatterns(root string, pattern []string) (files []string, err error) {
-	for _, p := range pattern {
-		if _, err = filepath.Match(p, "/"); err != nil {
-			return
-		}
+func checkWithin(file, rootDir string) error {
+	file, err := realPath(file)
+	if err == nil && !within(file, rootDir) {
+		err = errors.Errorf("path %q is outside rootfs", file)
 	}
-	for _, p := range pattern {
-		if strings.Index(filepath.Clean("/"+p)+"/", root+"/") != 0 {
-			p = filepath.Join(root, p)
-		}
-		f, e := filepath.Glob(p)
-		if e != nil {
-			return files, e
-		}
-		if len(f) == 0 {
-			return files, errors.Errorf("file pattern %q did not match", p)
-		}
-		files = append(files, f...)
+	return err
+}
+
+func realPath(file string) (f string, err error) {
+	f, err = filepath.EvalSymlinks(file)
+	if err != nil && os.IsNotExist(err) {
+		fileName := filepath.Base(file)
+		file, err = realPath(filepath.Dir(file))
+		f = filepath.Join(file, fileName)
 	}
 	return
 }
