@@ -244,7 +244,10 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
-	cache := builder.NewImageBuildCache(filepath.Join(flagStoreDir, "image-build-cache"), loggers.Warn)
+	cache := builder.NewNoOpCache()
+	if !flagNoCache {
+		cache = builder.NewImageBuildCache(filepath.Join(flagStoreDir, "image-build-cache"), loggers.Warn)
+	}
 	proot := ""
 	if flagProot {
 		proot = flagPRootPath
@@ -252,7 +255,8 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 			return usageError("proot enabled but no --proot-path provided")
 		}
 	}
-	img, err := imageBuilder.Build(lockedStore, store.BundleStore, cache, flagRootless, proot, loggers)
+	tmpDir := filepath.Join(flagStoreDir, "tmp")
+	img, err := imageBuilder.Build(lockedStore, store.BundleStore, cache, tmpDir, flagRootless, proot, loggers)
 	if err == nil {
 		fmt.Fprintln(os.Stdout, img.ID())
 	}

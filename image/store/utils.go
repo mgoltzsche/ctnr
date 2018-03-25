@@ -44,11 +44,12 @@ func nameAndRef(imgRef types.ImageReference) (string, string) {
 	return parseImageName(name)
 }
 
-func parseImageName(nameAndRef string) (name, ref string) {
+func parseImageName(nameAndRef string) (repo, ref string) {
 	if li := strings.LastIndex(nameAndRef, ":"); li > 0 && li+1 < len(nameAndRef) {
+		repo = nameAndRef[:li]
 		ref = nameAndRef[li+1:]
-		name = nameAndRef[:li]
 	} else {
+		repo = nameAndRef
 		ref = "latest"
 	}
 	return

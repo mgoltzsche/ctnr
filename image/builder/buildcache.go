@@ -13,6 +13,21 @@ type ImageBuildCache interface {
 	Put(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) error
 }
 
+type noOpCache string
+
+func (_ noOpCache) Get(parent *digest.Digest, uniqHistoryEntry string) (d digest.Digest, err error) {
+	err = CacheError("image build cache is disabled")
+	return
+}
+
+func (_ noOpCache) Put(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) error {
+	return nil
+}
+
+func NewNoOpCache() ImageBuildCache {
+	return noOpCache("image build cache disabled")
+}
+
 type imageBuildCache struct {
 	dir  string
 	warn log.FieldLogger

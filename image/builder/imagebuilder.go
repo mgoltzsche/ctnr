@@ -3,6 +3,8 @@ package builder
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -65,6 +67,12 @@ func (b *ImageBuilder) Run(cmd string) {
 	})
 }
 
+func (b *ImageBuilder) Copy(ctxDir string, srcPattern []string, dest string) {
+	b.addBuildStep(func(builder *BuildState) error {
+		return builder.CopyFile(ctxDir, srcPattern, dest)
+	})
+}
+
 func (b *ImageBuilder) Tag(tag string) {
 	b.addBuildStep(func(builder *BuildState) error {
 		return builder.Tag(tag)
@@ -75,13 +83,13 @@ func (b *ImageBuilder) addBuildStep(step func(*BuildState) error) {
 	b.steps = append(b.steps, step)
 }
 
-func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, loggers log.Loggers) (img image.Image, err error) {
+func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, tempfs string, rootless bool, proot string, loggers log.Loggers) (img image.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = errors.Wrap(err, "build image")
 		}
 	}()
-	state := NewBuildState(images, bundles, cache, rootless, proot, loggers)
+	state := NewBuildState(images, bundles, cache, tempfs, rootless, proot, loggers)
 	defer func() {
 		if e := state.Close(); e != nil {
 			err = multierror.Append(err, e)
@@ -113,15 +121,20 @@ type BuildState struct {
 	image    *image.Image
 	cache    ImageBuildCache
 	bundle   *bundle.LockedBundle
+	tempdir  string
 	rootless bool
 	proot    string
 	loggers  log.Loggers
 }
 
-func NewBuildState(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, rootless bool, proot string, loggers log.Loggers) (r BuildState) {
+func NewBuildState(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, tempfs string, rootless bool, proot string, loggers log.Loggers) (r BuildState) {
+	if tempfs == "" {
+		tempfs = os.TempDir()
+	}
 	r.images = images
 	r.bundles = bundles
 	r.cache = cache
+	r.tempdir = tempfs
 	r.rootless = rootless
 	r.proot = proot
 	r.loggers = loggers
@@ -270,7 +283,11 @@ func (b *BuildState) Run(cmd string) (err error) {
 		if err = container.Wait(); err != nil {
 			return
 		}
-		return b.commitLayer(comment)
+		src, err := b.images.NewLayerSource(rootfs, nil)
+		if err != nil {
+			return
+		}
+		return b.commitLayer(src, comment)
 	})
 }
 
@@ -291,7 +308,7 @@ type FileEntry struct {
 	// TODO: add mode
 }
 
-func (b *BuildState) CopyFile(contextDir string, srcPattern []string, dest, root string) (err error) {
+func (b *BuildState) CopyFile(contextDir string, srcPattern []string, dest string) (err error) {
 	// TODO: build mtree diffs, merge them and let BlobStoreExt.diff create the layer without touching the bundle
 	// => not possible with umoci's GenerateLayer/tarGenerator.AddFile methods
 	defer func() {
@@ -308,39 +325,70 @@ func (b *BuildState) CopyFile(contextDir string, srcPattern []string, dest, root
 	if len(srcPattern) == 0 {
 		return
 	}
-	if err = b.initBundle(""); err != nil {
-		return
+	var rootfs string
+	if b.bundle == nil {
+		if err = os.MkdirAll(b.tempdir, 0750); err != nil {
+			return
+		}
+		if rootfs, err = ioutil.TempDir(b.tempdir, ".img-build-"); err != nil {
+			return
+		}
+		defer func() {
+			if e := os.RemoveAll(rootfs); e != nil {
+				b.loggers.Error.Println(e)
+			}
+		}()
+	} else {
+		s, _ := b.bundle.Spec()
+		rootfs = filepath.Join(b.bundle.Dir(), s.Root.Path)
 	}
-	// TODO: use empty temp directory if bundle does not already exist
-	fs := files.NewFileSystemBuilder(filepath.Join(b.bundle.Dir(), "rootfs"), b.loggers.Debug)
-	cfg, err := b.image.Config()
+	srcFiles, err := files.Glob(contextDir, srcPattern)
 	if err != nil {
 		return
 	}
-	if !filepath.IsAbs(dest) {
-		dest = filepath.Join(cfg.Config.WorkingDir)
+
+	fs := files.NewFileSystemBuilder(rootfs, b.rootless, b.loggers.Debug)
+	workingDir := "/"
+	if b.image != nil {
+		cfg, e := b.image.Config()
+		if e != nil {
+			return e
+		}
+		workingDir = cfg.Config.WorkingDir
 	}
-	if err = fs.Add(contextDir, srcPattern, dest); err != nil {
+	if !filepath.IsAbs(dest) {
+		dest = filepath.Join(workingDir, dest)
+	}
+	destFiles, err := fs.Add(srcFiles, dest)
+	if err != nil {
 		return
 	}
 
-	// TODO: Commit with exclusion rule for mtree
-	// TODO: unique comment with hash sum from added files
-	return b.commitLayer("add file to image")
+	commitSrc, err := b.images.NewLayerSource(rootfs, destFiles)
+	if err != nil {
+		return
+	}
+	comment := "COPY " + commitSrc.DiffHash().String()
+	return b.cached(comment, func(comment string) (err error) {
+		return b.commitLayer(commitSrc, comment)
+	})
 }
 
-func (b *BuildState) commitLayer(comment string) (err error) {
+func (b *BuildState) commitLayer(src image.LayerSource, comment string) (err error) {
 	defer func() {
 		if err != nil {
 			err = errors.Wrap(err, "commit layer")
 		}
 	}()
 
-	b.loggers.Info.Println("  -> committing layer ...")
+	b.loggers.Debug.Println("Committing layer ...")
 
-	rootfs := filepath.Join(b.bundle.Dir(), "rootfs")
-	parentImageId := b.bundle.Image()
-	img, err := b.images.AddImageLayer(rootfs, parentImageId, b.config.Author, comment)
+	var parentImageId *digest.Digest
+	if b.image != nil {
+		pImgId := b.image.ID()
+		parentImageId = &pImgId
+	}
+	img, err := b.images.AddImageLayer(src, parentImageId, b.config.Author, comment)
 	if err != nil {
 		return
 	}
@@ -348,7 +396,10 @@ func (b *BuildState) commitLayer(comment string) (err error) {
 		return
 	}
 	newImageId := img.ID()
-	return b.bundle.SetParentImageId(&newImageId)
+	if b.bundle != nil {
+		return b.bundle.SetParentImageId(&newImageId)
+	}
+	return
 }
 
 func (b *BuildState) commitConfig(comment string) (err error) {
@@ -399,7 +450,7 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 			if err = b.setImage(&cachedImg); err != nil {
 				return errors.Wrap(err, "cached image")
 			}
-			b.loggers.Info.Printf("  -> using cached image %s", cachedImg.ID())
+			b.loggers.Info.WithField("img", (*b.image).ID()).Printf("Using cached image")
 			return
 		}
 	} else if e, ok := err.(CacheError); !ok || !e.Temporary() {
@@ -408,8 +459,6 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 	} else {
 		err = nil
 	}
-
-	b.loggers.Info.Println("  -> building ...")
 
 	defer func() {
 		if err != nil {
@@ -427,7 +476,7 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 
 	err = b.cache.Put(parentImgId, uniqComment, (*b.image).ID())
 
-	b.loggers.Info.Printf("  -> built image %s", (*b.image).ID())
+	b.loggers.Info.WithField("img", (*b.image).ID()).Printf("Built new image")
 
 	return
 }

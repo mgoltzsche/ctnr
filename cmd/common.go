@@ -15,8 +15,11 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/bundle"
@@ -34,12 +37,16 @@ func wrapRun(cf func(cmd *cobra.Command, args []string) error) func(cmd *cobra.C
 	return func(cmd *cobra.Command, args []string) {
 		defer func() {
 			if err := recover(); err != nil {
-				msg := "\n  |"
-				msg += "\n  | This should not happen!"
-				msg += "\n  | If you think this is a bug please search for an already"
-				msg += "\n  | existing issue at https://github.com/mgoltzsche/cntnr/issues"
-				msg += "\n  | or report it at https://github.com/mgoltzsche/cntnr/issues/new"
-				logrus.Panicf("%s%s\n", err, msg)
+				msg := "\n  THIS SHOULD NOT HAPPEN!"
+				msg += "\n  If you think this is a bug please search for an already"
+				msg += "\n  existing issue at https://github.com/mgoltzsche/cntnr/issues"
+				msg += "\n  or report it at https://github.com/mgoltzsche/cntnr/issues/new"
+				msg += "\n  together with a description of what you did, what you expect"
+				msg += "\n  and how to reproduce:\n"
+				stackTrace := strings.Replace(string(debug.Stack()), "\n", "\n  ", -1)
+				// TODO: Add version
+				logrus.Fatalf("%+v\n%s\n  PANIC: %s\n  %s", err, msg, err, stackTrace)
+				os.Exit(255)
 			}
 		}()
 		err := cf(cmd, args)
@@ -61,7 +68,12 @@ func exitOnError(cmd *cobra.Command, err error) {
 		logger.WithField("id", exiterr.ContainerID()).WithField("status", exiterr.Status()).Error("Container terminated")
 		os.Exit(exiterr.Status())
 	default:
-		logger.Error(err)
+		errStr := err.Error()
+		causeStr := fmt.Sprintf("%+v", errors.Cause(err))
+		if causeStr != errStr {
+			loggers.Debug.Println(strings.Replace(causeStr, "\n", "\n  ", -1))
+		}
+		logger.Errorln(errStr)
 	}
 	os.Exit(255)
 }

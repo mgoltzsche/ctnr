@@ -15,12 +15,14 @@
 package cmd
 
 import (
-	"github.com/spf13/pflag"
-
 	"github.com/mgoltzsche/cntnr/image/builder"
+	"github.com/spf13/pflag"
 )
 
-var flagProot bool
+var (
+	flagProot   bool
+	flagNoCache bool
+)
 
 func initImageBuildFlags(f *pflag.FlagSet, imageBuilder *builder.ImageBuilder) {
 	f.Var((*iFromImage)(imageBuilder), "from", "Extends the provided parent image (must come first)")
@@ -28,9 +30,11 @@ func initImageBuildFlags(f *pflag.FlagSet, imageBuilder *builder.ImageBuilder) {
 	f.Var((*iWorkingDir)(imageBuilder), "work", "Sets the new image's working directory")
 	f.Var((*iEntrypoint)(imageBuilder), "entrypoint", "Sets the new image's entrypoint")
 	f.Var((*iCmd)(imageBuilder), "cmd", "Sets the new image's command")
-	f.Var((*iRun)(imageBuilder), "run", "Creates a new image by running the provided command in the current image")
+	f.Var((*iRun)(imageBuilder), "run", "Runs the provided command in the current image")
+	f.Var((*iAdd)(imageBuilder), "add", "Adds glob pattern matching files to image: SRCPATTERN... [DEST]")
 	f.Var((*iTag)(imageBuilder), "tag", "Tags the image")
-	f.BoolVar(&flagProot, "proot", false, "enables PRoot")
+	f.BoolVar(&flagProot, "proot", false, "Enables PRoot")
+	f.BoolVar(&flagNoCache, "no-cache", false, "Disables caches")
 }
 
 type iRun builder.ImageBuilder
@@ -45,6 +49,36 @@ func (b *iRun) Type() string {
 }
 
 func (b *iRun) String() string {
+	return ""
+}
+
+type iAdd builder.ImageBuilder
+
+func (b *iAdd) Set(expr string) (err error) {
+	l, err := parseStringEntries(expr)
+	if err != nil {
+		return
+	}
+	var srcPattern []string
+	dest := ""
+	switch len(l) {
+	case 0:
+		return usageError("no value provided (expecting SRC... [DEST])")
+	case 1:
+		srcPattern = []string{l[0]}
+	default:
+		srcPattern = l[0 : len(l)-1]
+		dest = l[len(l)-1]
+	}
+	(*builder.ImageBuilder)(b).Copy("", srcPattern, dest)
+	return
+}
+
+func (b *iAdd) Type() string {
+	return "string"
+}
+
+func (b *iAdd) String() string {
 	return ""
 }
 

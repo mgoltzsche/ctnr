@@ -217,7 +217,7 @@ func (b *SpecBuilder) ApplyImage(img ispecs.Image) {
 	if img.Author != "" {
 		b.AddAnnotation("org.opencontainers.image.author", img.Author)
 	}
-	if !time.Unix(0, 0).Equal(*img.Created) {
+	if img.Created != nil && !time.Unix(0, 0).Equal(*img.Created) {
 		b.AddAnnotation("org.opencontainers.image.created", (*img.Created).String())
 	}
 	if img.Config.StopSignal != "" {

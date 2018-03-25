@@ -63,7 +63,12 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 	if spec.Root == nil {
 		return errors.Errorf("bundle %q has no root path", bundleId)
 	}
-	img, err := lockedStore.AddImageLayer(filepath.Join(b.Dir(), spec.Root.Path), lockedBundle.Image(), flagAuthor, flagComment)
+	rootfs := filepath.Join(b.Dir(), spec.Root.Path)
+	src, err := lockedStore.NewLayerSource(rootfs, nil)
+	if err != nil {
+		return
+	}
+	img, err := lockedStore.AddImageLayer(src, lockedBundle.Image(), flagAuthor, flagComment)
 	if err != nil {
 		// TODO: distinguish between nothing to commit and real failure
 		return

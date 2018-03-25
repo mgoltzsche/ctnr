@@ -81,8 +81,8 @@ func (s *MtreeStore) Put(manifestDigest digest.Digest, spec *mtree.DirectoryHier
 	return nil
 }
 
-func (s *MtreeStore) Create(rootfs string) (*mtree.DirectoryHierarchy, error) {
-	dh, err := mtree.Walk(rootfs, nil, mtreeKeywords, s.fsEval)
+func (s *MtreeStore) Create(rootfs string, exclude []mtree.ExcludeFunc) (*mtree.DirectoryHierarchy, error) {
+	dh, err := mtree.Walk(rootfs, exclude, mtreeKeywords, s.fsEval)
 	if err != nil {
 		return nil, errors.Wrap(err, "generate mtree spec")
 	}

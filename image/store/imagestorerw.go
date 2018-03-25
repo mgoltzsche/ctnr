@@ -13,10 +13,10 @@ import (
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -65,7 +65,7 @@ func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Im
 		return
 	}
 	manifestDigest := imgId.ManifestDigest
-	tag, ref := normalizeImageName(tag)
+	repo, ref := normalizeImageName(tag)
 	manifest, err := s.blobs.ImageManifest(manifestDigest)
 	if err != nil {
 		return
@@ -88,11 +88,11 @@ func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Im
 	}
 
 	// Create/update index.json
-	if err = s.addImages(tag, []ispecs.Descriptor{manifestDescriptor}); err != nil {
+	if err = s.addImages(repo, []ispecs.Descriptor{manifestDescriptor}); err != nil {
 		return
 	}
 
-	return image.NewImage(manifestDigest, tag, ref, time.Now(), time.Now(), manifest, nil, s), err
+	return image.NewImage(manifestDigest, repo, ref, time.Now(), time.Now(), manifest, nil, s), err
 }
 
 func (s *ImageStoreRW) UntagImage(tag string) (err error) {
@@ -122,7 +122,11 @@ func (s *ImageStoreRW) UntagImage(tag string) (err error) {
 	return
 }
 
-func (s *ImageStoreRW) AddImageLayer(rootfs string, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
+func (s *ImageStoreRW) NewLayerSource(rootfs string, fileFilter []string) (image.LayerSource, error) {
+	return s.blobs.NewLayerSource(rootfs, fileFilter)
+}
+
+func (s *ImageStoreRW) AddImageLayer(src image.LayerSource, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
 	defer exterrors.Wrapd(&err, "commit image layer")
 
 	var parentManifest *digest.Digest
@@ -133,7 +137,7 @@ func (s *ImageStoreRW) AddImageLayer(rootfs string, parentImageId *digest.Digest
 		}
 		parentManifest = &parent.ManifestDigest
 	}
-	c, err := s.blobs.CommitLayer(rootfs, parentManifest, author, comment)
+	c, err := s.blobs.CommitLayer(src.(*LayerSource), parentManifest, author, comment)
 	if err != nil {
 		return
 	}

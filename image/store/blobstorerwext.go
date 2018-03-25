@@ -31,6 +31,7 @@ func NewBlobStoreExt(blobStore *BlobStore, mtreeStore *MtreeStore, rootless bool
 	return BlobStoreExt{blobStore, mtreeStore, rootless, debug}
 }
 
+// Unpacks all layers contained in the referenced manifest into rootfs
 func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string) (err error) {
 	defer func() {
 		err = errors.Wrap(err, "unpack image layers")
@@ -42,7 +43,7 @@ func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string)
 	if err = s.unpackLayers(&manifest, rootfs); err != nil {
 		return
 	}
-	spec, err := s.mtree.Create(rootfs)
+	spec, err := s.mtree.Create(rootfs, nil)
 	if err != nil {
 		return
 	}
@@ -52,13 +53,14 @@ func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string)
 	return
 }
 
-func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.Digest, author, comment string) (r *CommitResult, err error) {
+// Writes the diff of rootfs to its parent as new layer into the store
+func (s *BlobStoreExt) CommitLayer(src *LayerSource, parentManifestDigest *digest.Digest, author, comment string) (r *CommitResult, err error) {
 	defer func() {
 		err = errors.Wrap(err, "commit layer blob")
 	}()
 
 	// Load parent
-	var parentMtree *mtree.DirectoryHierarchy
+	parentMtree := &mtree.DirectoryHierarchy{}
 	var manifest ispecs.Manifest
 	r = &CommitResult{}
 	if parentManifestDigest != nil {
@@ -69,18 +71,16 @@ func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.D
 		if r.Config, err = s.ImageConfig(manifest.Config.Digest); err != nil {
 			return
 		}
-		parentMtree, err = s.mtree.Get(*parentManifestDigest)
-		if err != nil {
-			return
+		if !src.delta {
+			parentMtree, err = s.mtree.Get(*parentManifestDigest)
+			if err != nil {
+				return
+			}
 		}
 	}
 
 	// Diff file system
-	containerMtree, err := s.mtree.Create(rootfs)
-	if err != nil {
-		return
-	}
-	reader, err := s.diff(parentMtree, containerMtree, rootfs)
+	reader, err := s.diff(parentMtree, src.rootfsMtree, src.rootfs)
 	if err != nil {
 		return
 	}
@@ -122,8 +122,10 @@ func (s *BlobStoreExt) CommitLayer(rootfs string, parentManifestDigest *digest.D
 	}
 
 	// Save mtree for new manifest
-	if err = s.mtree.Put(r.Descriptor.Digest, containerMtree); err != nil {
-		return
+	if !src.delta {
+		if err = s.mtree.Put(r.Descriptor.Digest, src.rootfsMtree); err != nil {
+			return
+		}
 	}
 	return
 }
