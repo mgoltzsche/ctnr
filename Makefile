@@ -38,6 +38,7 @@ test: dependencies
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/model"
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/model/compose"
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/image/store"
+	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/pkg/idutils"
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/pkg/files"
 
 format:

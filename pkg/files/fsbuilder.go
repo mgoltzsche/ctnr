@@ -179,8 +179,8 @@ func (s *FileSystemBuilder) copyFile(src string, si os.FileInfo, dest string) (e
 	if err = s.createAllDirs(filepath.Dir(src), filepath.Dir(dest)); err != nil {
 		return
 	}
-	if e := s.fsEval.RemoveAll(dest); e != nil {
-		return
+	if e := s.fsEval.RemoveAll(dest); e != nil && !os.IsNotExist(e) {
+		return e
 	}
 	// TODO: use fseval to copy file metadata
 	if destFile, err = s.fsEval.Create(dest); err != nil {
