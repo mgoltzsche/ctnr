@@ -22,8 +22,19 @@ import (
 	"github.com/pkg/errors"
 )
 
+type ImageBuildConfig struct {
+	Images   image.ImageStoreRW
+	Bundles  bundle.BundleStore
+	Cache    ImageBuildCache
+	Tempfs   string
+	Rootless bool
+	PRoot    string
+	Loggers  log.Loggers
+}
+
 type ImageBuilder struct {
 	steps []func(*BuildState) error
+	err   error
 }
 
 func NewImageBuilder() *ImageBuilder {
@@ -67,10 +78,14 @@ func (b *ImageBuilder) Run(cmd string) {
 	})
 }
 
-func (b *ImageBuilder) Copy(ctxDir string, srcPattern []string, dest string) {
+func (b *ImageBuilder) Copy(ctxDir string, srcPattern []string, dest string) (err error) {
+	if err = files.ValidateGlob(srcPattern); err != nil {
+		return
+	}
 	b.addBuildStep(func(builder *BuildState) error {
 		return builder.CopyFile(ctxDir, srcPattern, dest)
 	})
+	return
 }
 
 func (b *ImageBuilder) Tag(tag string) {
@@ -83,13 +98,18 @@ func (b *ImageBuilder) addBuildStep(step func(*BuildState) error) {
 	b.steps = append(b.steps, step)
 }
 
-func (b *ImageBuilder) Build(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, tempfs string, rootless bool, proot string, loggers log.Loggers) (img image.Image, err error) {
+func (b *ImageBuilder) Build(cfg ImageBuildConfig) (img image.Image, err error) {
 	defer func() {
 		if err != nil {
 			err = errors.Wrap(err, "build image")
 		}
 	}()
-	state := NewBuildState(images, bundles, cache, tempfs, rootless, proot, loggers)
+
+	if b.err != nil {
+		return img, b.err
+	}
+
+	state := NewBuildState(cfg)
 	defer func() {
 		if e := state.Close(); e != nil {
 			err = multierror.Append(err, e)
@@ -127,17 +147,18 @@ type BuildState struct {
 	loggers  log.Loggers
 }
 
-func NewBuildState(images image.ImageStoreRW, bundles bundle.BundleStore, cache ImageBuildCache, tempfs string, rootless bool, proot string, loggers log.Loggers) (r BuildState) {
-	if tempfs == "" {
-		tempfs = os.TempDir()
+func NewBuildState(cfg ImageBuildConfig) (r BuildState) {
+	if cfg.Tempfs == "" {
+		r.tempdir = os.TempDir()
+	} else {
+		r.tempdir = cfg.Tempfs
 	}
-	r.images = images
-	r.bundles = bundles
-	r.cache = cache
-	r.tempdir = tempfs
-	r.rootless = rootless
-	r.proot = proot
-	r.loggers = loggers
+	r.images = cfg.Images
+	r.bundles = cfg.Bundles
+	r.cache = cfg.Cache
+	r.rootless = cfg.Rootless
+	r.proot = cfg.PRoot
+	r.loggers = cfg.Loggers
 	return
 }
 
@@ -186,18 +207,11 @@ func (b *BuildState) SetAuthor(author string) error {
 }
 
 func (b *BuildState) SetWorkingDir(dir string) error {
-	dir = absFile(dir, b.config.Config.WorkingDir)
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(b.config.Config.WorkingDir, dir)
+	}
 	b.config.Config.WorkingDir = dir
 	return b.cached("WORKDIR "+dir, b.commitConfig)
-}
-
-// TODO: move into some shared package since this is a duplicate
-func absFile(p, baseDir string) string {
-	if filepath.IsAbs(p) {
-		return p
-	} else {
-		return filepath.Join(baseDir, p)
-	}
 }
 
 func (b *BuildState) SetEntrypoint(entrypoint []string) (err error) {
@@ -219,6 +233,7 @@ func (b *BuildState) SetCmd(cmd []string) (err error) {
 }
 
 func (b *BuildState) FromImage(image string) (err error) {
+	b.loggers.Info.Println("FROM", image)
 	if b.image != nil {
 		return errors.New("base image must be defined as first build step")
 	}
@@ -374,7 +389,7 @@ func (b *BuildState) CopyFile(contextDir string, srcPattern []string, dest strin
 	})
 }
 
-func (b *BuildState) commitLayer(src image.LayerSource, comment string) (err error) {
+func (b *BuildState) commitLayer(src image.LayerSource, createdBy string) (err error) {
 	defer func() {
 		if err != nil {
 			err = errors.Wrap(err, "commit layer")
@@ -388,7 +403,7 @@ func (b *BuildState) commitLayer(src image.LayerSource, comment string) (err err
 		pImgId := b.image.ID()
 		parentImageId = &pImgId
 	}
-	img, err := b.images.AddImageLayer(src, parentImageId, b.config.Author, comment)
+	img, err := b.images.AddImageLayer(src, parentImageId, b.config.Author, createdBy)
 	if err != nil {
 		return
 	}
@@ -402,7 +417,7 @@ func (b *BuildState) commitLayer(src image.LayerSource, comment string) (err err
 	return
 }
 
-func (b *BuildState) commitConfig(comment string) (err error) {
+func (b *BuildState) commitConfig(createdBy string) (err error) {
 	defer func() {
 		if err != nil {
 			err = errors.Wrap(err, "commit config")
@@ -410,9 +425,9 @@ func (b *BuildState) commitConfig(comment string) (err error) {
 	}()
 
 	b.config.History = append(b.config.History, ispecs.History{
-		CreatedBy:  b.config.Author,
-		Comment:    comment,
-		EmptyLayer: false,
+		Author:     b.config.Author,
+		CreatedBy:  createdBy,
+		EmptyLayer: true,
 	})
 	var parentImgId *digest.Digest
 	if b.image != nil {

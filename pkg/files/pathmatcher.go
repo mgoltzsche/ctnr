@@ -19,10 +19,8 @@ func Glob(rootDir string, pattern []string) (files []string, err error) {
 		}
 		rootDir = filepath.Join(wd, rootDir)
 	}
-	for _, p := range pattern {
-		if _, err = filepath.Match(p, string(filepath.Separator)); err != nil {
-			return
-		}
+	if err = ValidateGlob(pattern); err != nil {
+		return
 	}
 	rootDir = filepath.Clean(rootDir)
 	for _, p := range pattern {
@@ -40,6 +38,15 @@ func Glob(rootDir string, pattern []string) (files []string, err error) {
 		files = append(files, f...)
 	}
 	sort.Strings(files)
+	return
+}
+
+func ValidateGlob(pattern []string) (err error) {
+	for _, p := range pattern {
+		if _, err = filepath.Match(p, string(filepath.Separator)); err != nil {
+			return
+		}
+	}
 	return
 }
 

@@ -70,8 +70,7 @@ func (b *iAdd) Set(expr string) (err error) {
 		srcPattern = l[0 : len(l)-1]
 		dest = l[len(l)-1]
 	}
-	(*builder.ImageBuilder)(b).Copy("", srcPattern, dest)
-	return
+	return (*builder.ImageBuilder)(b).Copy("", srcPattern, dest)
 }
 
 func (b *iAdd) Type() string {

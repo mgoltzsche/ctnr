@@ -256,7 +256,15 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 	tmpDir := filepath.Join(flagStoreDir, "tmp")
-	img, err := imageBuilder.Build(lockedStore, store.BundleStore, cache, tmpDir, flagRootless, proot, loggers)
+	img, err := imageBuilder.Build(builder.ImageBuildConfig{
+		Images:   lockedStore,
+		Bundles:  store.BundleStore,
+		Cache:    cache,
+		Tempfs:   tmpDir,
+		Rootless: flagRootless,
+		PRoot:    proot,
+		Loggers:  loggers,
+	})
 	if err == nil {
 		fmt.Fprintln(os.Stdout, img.ID())
 	}

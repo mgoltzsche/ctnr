@@ -54,7 +54,7 @@ func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string)
 }
 
 // Writes the diff of rootfs to its parent as new layer into the store
-func (s *BlobStoreExt) CommitLayer(src *LayerSource, parentManifestDigest *digest.Digest, author, comment string) (r *CommitResult, err error) {
+func (s *BlobStoreExt) CommitLayer(src *LayerSource, parentManifestDigest *digest.Digest, author, createdBy string) (r *CommitResult, err error) {
 	defer func() {
 		err = errors.Wrap(err, "commit layer blob")
 	}()
@@ -94,12 +94,12 @@ func (s *BlobStoreExt) CommitLayer(src *LayerSource, parentManifestDigest *diges
 	}
 
 	// Update config
-	if comment == "" {
-		comment = "layer"
+	if createdBy == "" {
+		createdBy = "layer"
 	}
 	r.Config.History = append(r.Config.History, ispecs.History{
-		CreatedBy:  author,
-		Comment:    comment,
+		Author:     author,
+		CreatedBy:  createdBy,
 		EmptyLayer: false,
 	})
 	r.Config.RootFS.DiffIDs = append(r.Config.RootFS.DiffIDs, diffIdDigest)
