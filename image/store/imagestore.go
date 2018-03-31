@@ -7,10 +7,10 @@ import (
 
 	"github.com/containers/image/types"
 	"github.com/hashicorp/go-multierror"
-	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

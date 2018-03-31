@@ -35,11 +35,26 @@ func (u User) Resolve(rootfs string) (r UserIds, err error) {
 	if u.User == "" {
 		return r, errors.New("lookup uid: no user specified")
 	}
-	usr, err := LookupUser(u.User, rootfs)
-	r.Uid = usr.Uid
-	r.Gid = usr.Gid
-	if err == nil && u.Group != "" {
+	uid, e := parseUint(u.User)
+	if e == nil {
+		r.Uid = uid
+	}
+	if e != nil || u.Group == "" {
+		r, err = LookupUser(u.User, rootfs)
+		if err != nil {
+			return
+		}
+	}
+	if u.Group != "" {
 		r.Gid, err = LookupGid(u.Group, rootfs)
 	}
 	return
+}
+
+func (u User) String() string {
+	s := u.User
+	if u.Group != "" {
+		s += ":" + u.Group
+	}
+	return s
 }

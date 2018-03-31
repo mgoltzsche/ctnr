@@ -4,11 +4,11 @@ import (
 	"path/filepath"
 
 	"github.com/containers/image/types"
-	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/bundle"
 	bstore "github.com/mgoltzsche/cntnr/bundle/store"
 	"github.com/mgoltzsche/cntnr/image"
 	istore "github.com/mgoltzsche/cntnr/image/store"
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/pkg/errors"
 )
