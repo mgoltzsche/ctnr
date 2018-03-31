@@ -9,8 +9,6 @@ import (
 	"github.com/satori/go.uuid"
 )
 
-const ANNOTATION_BUNDLE_ID = "com.github.mgoltzsche.cntnr.bundle.id"
-
 type BundleBuilder struct {
 	id string
 	*generate.SpecBuilder

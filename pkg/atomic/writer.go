@@ -30,7 +30,7 @@ func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 	// Create temp file to write blob to
 	tmpFile, err := ioutil.TempFile(filepath.Dir(dest), ".tmp-")
 	if err != nil {
-		return
+		return 0, errors.New(err.Error())
 	}
 	tmpPath := tmpFile.Name()
 	tmpRemoved := false
@@ -43,18 +43,21 @@ func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 
 	// Write temp file
 	if size, err = io.Copy(tmpFile, reader); err != nil {
-		err = errors.Wrap(err, "write to temp file")
+		err = errors.New("write to temp file: " + err.Error())
 		return
 	}
 	if err = tmpFile.Sync(); err != nil {
-		err = errors.Wrap(err, "sync temp file")
+		err = errors.New("sync temp file: " + err.Error())
 		return
 	}
-	tmpFile.Close()
+	if err = tmpFile.Close(); err != nil {
+		err = errors.New("close temp file: " + err.Error())
+		return
+	}
 
 	// Rename temp file
 	if err = os.Rename(tmpPath, dest); err != nil {
-		return 0, errors.Wrap(err, "rename temp file")
+		return 0, errors.New("rename temp file: " + err.Error())
 	}
 	tmpRemoved = true
 	return
@@ -64,7 +67,7 @@ func WriteFile(dest string, reader io.Reader) (size int64, err error) {
 func WriteJson(dest string, o interface{}) (size int64, err error) {
 	var buf bytes.Buffer
 	if err = json.NewEncoder(&buf).Encode(o); err != nil {
-		return 0, errors.Wrap(err, "write json")
+		return 0, errors.New("write json: " + err.Error())
 	}
 	return WriteFile(dest, &buf)
 }

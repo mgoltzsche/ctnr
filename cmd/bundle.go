@@ -17,13 +17,11 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"sort"
-
 	"os/signal"
+	"sort"
 	"syscall"
 
 	humanize "github.com/dustin/go-humanize"
-	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/spf13/cobra"
@@ -111,6 +109,7 @@ func runBundleDelete(cmd *cobra.Command, args []string) (err error) {
 	if len(args) == 0 {
 		return usageError("No bundle specified to remove")
 	}
+	failedIds := []string{}
 	for _, id := range args {
 		b, e := store.Bundle(id)
 		if e == nil {
@@ -119,14 +118,24 @@ func runBundleDelete(cmd *cobra.Command, args []string) (err error) {
 				e = bl.Delete()
 				if e == nil {
 					loggers.Info.WithField("id", id).Println("Bundle deleted")
+				} else {
+					err = e
+					loggers.Error.WithField("id", id).Printf("bundle rm: %s", err)
+					failedIds = append(failedIds, id)
 				}
-				err = multierror.Append(err, e)
 			} else {
-				err = multierror.Append(err, e)
+				err = e
+				loggers.Error.WithField("id", id).Printf("bundle rm: %s", err)
+				failedIds = append(failedIds, id)
 			}
 		} else {
-			err = multierror.Append(err, e)
+			err = e
+			loggers.Error.WithField("id", id).Printf("bundle rm: %s", err)
+			failedIds = append(failedIds, id)
 		}
+	}
+	if err != nil {
+		err = fmt.Errorf("cannot delete bundles %+v", failedIds)
 	}
 	return
 }
@@ -168,7 +177,11 @@ func runBundleRun(cmd *cobra.Command, args []string) (err error) {
 
 	defer func() {
 		if e := c.Close(); e != nil {
-			err = multierror.Append(err, e)
+			if err == nil {
+				err = e
+			} else {
+				loggers.Error.Println(e)
+			}
 		}
 	}()
 

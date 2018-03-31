@@ -32,7 +32,7 @@ func (l *Lockfile) TryLock() (err error) {
 
 	defer func() {
 		if err != nil {
-			err = errors.Wrap(err, "trylock")
+			err = errors.New("trylock: " + err.Error())
 			unlock(l.file)
 		}
 	}()
@@ -54,6 +54,9 @@ func (l *Lockfile) Lock() (err error) {
 		err = l.lockfile.TryLock()
 		if terr, ok := err.(lockfile.TemporaryError); err == nil || !ok || !terr.Temporary() {
 			// return when locked successfully or error is not temporary
+			if err != nil {
+				err = errors.New(err.Error())
+			}
 			return
 		}
 		if err = awaitFileChange(l.file); err != nil && !os.IsNotExist(err) {
@@ -63,9 +66,12 @@ func (l *Lockfile) Lock() (err error) {
 	return
 }
 
-func (l *Lockfile) Unlock() error {
+func (l *Lockfile) Unlock() (err error) {
 	defer unlock(l.file)
-	return l.lockfile.Unlock()
+	if err = l.lockfile.Unlock(); err != nil {
+		err = errors.New("unlock: " + err.Error())
+	}
+	return
 }
 
 func normalizePath(path string) (f string, err error) {
@@ -74,11 +80,14 @@ func normalizePath(path string) (f string, err error) {
 			f, err = normalizePath(filepath.Dir(path))
 			f = filepath.Join(f, filepath.Base(path))
 		}
-		if err != nil {
-			return
-		}
 	}
-	return filepath.Abs(f)
+	if err == nil {
+		f, err = filepath.Abs(f)
+	}
+	if err != nil {
+		err = errors.New(err.Error())
+	}
+	return
 }
 
 func awaitFileChange(files ...string) (err error) {
@@ -88,12 +97,12 @@ func awaitFileChange(files ...string) (err error) {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return
+		return errors.New(err.Error())
 	}
 	defer watcher.Close()
 	for _, file := range files {
 		if err = watcher.Add(file); err != nil {
-			return
+			return errors.New(err.Error())
 		}
 	}
 	log := logrus.WithField("files", files)
