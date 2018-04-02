@@ -56,7 +56,7 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 		if rootless {
 			fsEval = fseval.RootlessFsEval
 		}
-		mtreeStore := istore.NewMtreeStore(mtreeDir, fsEval)
+		mtreeStore := istore.NewMtreeStore(mtreeDir, fsEval, loggers.Debug)
 		blobStore := istore.NewBlobStore(blobDir, loggers.Debug)
 		blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, loggers.Debug)
 		rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), loggers.Warn)

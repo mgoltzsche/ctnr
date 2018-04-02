@@ -154,7 +154,7 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 ## Roadmap
 
 - separate OCI hook binary
-- CLI improvements: `image create`, daemon mode
+- CLI improvements: `image create`: set owner of `--add`ed files
 - Dockerfile support
 - Improved docker compose support
 - Improved container, bundle, image and build cache garbage collection
@@ -163,6 +163,7 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 - additional configurable read-only image stores
 - network manager daemon with ACL to be used by unprivileged users to configure their container networks
 - service discovery integration (hook / DNS; consul, etcd)
+- daemon mode
 - _Far future: Make it available on platforms other than Linux_
 
 

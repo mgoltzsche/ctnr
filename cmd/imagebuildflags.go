@@ -20,42 +20,56 @@ import (
 )
 
 var (
-	flagProot   bool
-	flagNoCache bool
+	flagProot         bool
+	flagNoCache       bool
+	flagImageBuildOps imageBuildFlags
 )
 
-func initImageBuildFlags(f *pflag.FlagSet, imageBuilder *builder.ImageBuilder) {
-	f.Var((*iFromImage)(imageBuilder), "from", "Extends the provided parent image (must come first)")
-	f.Var((*iAuthor)(imageBuilder), "author", "Sets the new image's author")
-	f.Var((*iWorkingDir)(imageBuilder), "work", "Sets the new image's working directory")
-	f.Var((*iEntrypoint)(imageBuilder), "entrypoint", "Sets the new image's entrypoint")
-	f.Var((*iCmd)(imageBuilder), "cmd", "Sets the new image's command")
-	f.Var((*iUser)(imageBuilder), "user", "Sets the new image's user")
-	f.Var((*iRun)(imageBuilder), "run", "Runs the provided command in the current image")
-	f.Var((*iAdd)(imageBuilder), "add", "Adds glob pattern matching files to image: SRCPATTERN... [DEST]")
-	f.Var((*iTag)(imageBuilder), "tag", "Tags the image")
+type imageBuildFlags struct {
+	ops []func(*builder.ImageBuilder) error
+}
+
+func (s *imageBuildFlags) add(op func(*builder.ImageBuilder) error) {
+	s.ops = append(s.ops, op)
+}
+
+func initImageBuildFlags(f *pflag.FlagSet) {
+	ops := &flagImageBuildOps
+	f.Var((*iFromImage)(ops), "from", "Extends the provided parent image (must come first)")
+	f.Var((*iAuthor)(ops), "author", "Sets the new image's author")
+	f.Var((*iEnv)(ops), "env", "Adds environment variables to the image")
+	f.Var((*iWorkDir)(ops), "workdir", "Sets the new image's working directory")
+	f.Var((*iEntrypoint)(ops), "entrypoint", "Sets the new image's entrypoint")
+	f.Var((*iCmd)(ops), "cmd", "Sets the new image's command")
+	f.Var((*iUser)(ops), "user", "Sets the new image's user")
+	f.Var((*iRun)(ops), "run", "Runs the provided command in the current image")
+	f.Var((*iAdd)(ops), "add", "Adds glob pattern matching files to image: SRCPATTERN... [DEST]")
+	f.Var((*iTag)(ops), "tag", "Tags the image")
 	f.BoolVar(&flagProot, "proot", false, "Enables PRoot")
 	f.BoolVar(&flagNoCache, "no-cache", false, "Disables caches")
 }
 
-type iRun builder.ImageBuilder
+type iRun imageBuildFlags
 
-func (b *iRun) Set(cmd string) (err error) {
-	(*builder.ImageBuilder)(b).Run(cmd)
+func (o *iRun) Set(cmd string) (err error) {
+	err = checkNonEmpty(cmd)
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.Run(cmd)
+	})
 	return
 }
 
-func (b *iRun) Type() string {
+func (o *iRun) Type() string {
 	return "string"
 }
 
-func (b *iRun) String() string {
+func (o *iRun) String() string {
 	return ""
 }
 
-type iAdd builder.ImageBuilder
+type iAdd imageBuildFlags
 
-func (b *iAdd) Set(expr string) (err error) {
+func (o *iAdd) Set(expr string) (err error) {
 	l, err := parseStringEntries(expr)
 	if err != nil {
 		return
@@ -71,126 +85,165 @@ func (b *iAdd) Set(expr string) (err error) {
 		srcPattern = l[0 : len(l)-1]
 		dest = l[len(l)-1]
 	}
-	return (*builder.ImageBuilder)(b).Copy("", srcPattern, dest)
-}
-
-func (b *iAdd) Type() string {
-	return "string"
-}
-
-func (b *iAdd) String() string {
-	return ""
-}
-
-type iFromImage builder.ImageBuilder
-
-func (b *iFromImage) Set(image string) (err error) {
-	(*builder.ImageBuilder)(b).FromImage(image)
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.CopyFile("", srcPattern, dest)
+	})
 	return
 }
 
-func (b *iFromImage) Type() string {
+func (o *iAdd) Type() string {
 	return "string"
 }
 
-func (b *iFromImage) String() string {
+func (o *iAdd) String() string {
 	return ""
 }
 
-type iUser builder.ImageBuilder
+type iFromImage imageBuildFlags
 
-func (b *iUser) Set(cmd string) (err error) {
-	(*builder.ImageBuilder)(b).SetUser(cmd)
+func (o *iFromImage) Set(image string) (err error) {
+	err = checkNonEmpty(image)
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.FromImage(image)
+	})
 	return
 }
 
-func (b *iUser) Type() string {
+func (o *iFromImage) Type() string {
 	return "string"
 }
 
-func (b *iUser) String() string {
+func (o *iFromImage) String() string {
 	return ""
 }
 
-type iAuthor builder.ImageBuilder
+type iUser imageBuildFlags
 
-func (b *iAuthor) Set(author string) (err error) {
-	(*builder.ImageBuilder)(b).SetAuthor(author)
+func (o *iUser) Set(user string) (err error) {
+	err = checkNonEmpty(user)
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.SetUser(user)
+	})
 	return
 }
 
-func (b *iAuthor) Type() string {
+func (o *iUser) Type() string {
 	return "string"
 }
 
-func (b *iAuthor) String() string {
+func (o *iUser) String() string {
 	return ""
 }
 
-type iWorkingDir builder.ImageBuilder
+type iAuthor imageBuildFlags
 
-func (b *iWorkingDir) Set(s string) (err error) {
-	(*builder.ImageBuilder)(b).SetWorkingDir(s)
+func (o *iAuthor) Set(author string) (err error) {
+	err = checkNonEmpty(author)
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.SetAuthor(author)
+	})
 	return
 }
 
-func (b *iWorkingDir) Type() string {
+func (o *iAuthor) Type() string {
 	return "string"
 }
 
-func (b *iWorkingDir) String() string {
+func (o *iAuthor) String() string {
 	return ""
 }
 
-type iEntrypoint builder.ImageBuilder
+type iEnv imageBuildFlags
 
-func (b *iEntrypoint) Set(s string) (err error) {
+func (o *iEnv) Set(v string) (err error) {
+	env := map[string]string{}
+	if err = addMapEntries(v, &env); err == nil && len(env) == 0 {
+		err = usageError("no environment variables provided (expecting KEY=VAL ...)")
+	}
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.AddEnv(env)
+	})
+	return
+}
+
+func (o *iEnv) Type() string {
+	return "string"
+}
+
+func (o *iEnv) String() string {
+	return ""
+}
+
+type iWorkDir imageBuildFlags
+
+func (o *iWorkDir) Set(dir string) (err error) {
+	err = checkNonEmpty(dir)
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.SetWorkingDir(dir)
+	})
+	return
+}
+
+func (o *iWorkDir) Type() string {
+	return "string"
+}
+
+func (o *iWorkDir) String() string {
+	return ""
+}
+
+type iEntrypoint imageBuildFlags
+
+func (o *iEntrypoint) Set(s string) (err error) {
 	entrypoint := make([]string, 0, 1)
-	if err = addStringEntries(s, &entrypoint); err != nil {
-		return
-	}
-	(*builder.ImageBuilder)(b).SetEntrypoint(entrypoint)
+	err = addStringEntries(s, &entrypoint)
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.SetEntrypoint(entrypoint)
+	})
 	return
 }
 
-func (b *iEntrypoint) Type() string {
+func (o *iEntrypoint) Type() string {
 	return "string"
 }
 
-func (b *iEntrypoint) String() string {
+func (o *iEntrypoint) String() string {
 	return ""
 }
 
-type iCmd builder.ImageBuilder
+type iCmd imageBuildFlags
 
-func (b *iCmd) Set(s string) (err error) {
+func (o *iCmd) Set(s string) (err error) {
 	cmd := make([]string, 0, 1)
-	if err = addStringEntries(s, &cmd); err != nil {
-		return
-	}
-	(*builder.ImageBuilder)(b).SetCmd(cmd)
+	err = addStringEntries(s, &cmd)
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.SetCmd(cmd)
+	})
 	return
 }
 
-func (b *iCmd) Type() string {
+func (o *iCmd) Type() string {
 	return "string"
 }
 
-func (b *iCmd) String() string {
+func (o *iCmd) String() string {
 	return ""
 }
 
-type iTag builder.ImageBuilder
+type iTag imageBuildFlags
 
-func (b *iTag) Set(tag string) (err error) {
-	(*builder.ImageBuilder)(b).Tag(tag)
+func (o *iTag) Set(tag string) (err error) {
+	err = checkNonEmpty(tag)
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.Tag(tag)
+	})
 	return
 }
 
-func (b *iTag) Type() string {
+func (o *iTag) Type() string {
 	return "string"
 }
 
-func (b *iTag) String() string {
+func (o *iTag) String() string {
 	return ""
 }

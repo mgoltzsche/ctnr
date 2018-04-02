@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
+	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/vbatts/go-mtree"
@@ -28,10 +29,11 @@ var mtreeKeywords = []mtree.Keyword{
 type MtreeStore struct {
 	dir    string
 	fsEval mtree.FsEval
+	debug  log.Logger
 }
 
-func NewMtreeStore(dir string, fsEval mtree.FsEval) MtreeStore {
-	return MtreeStore{dir, fsEval}
+func NewMtreeStore(dir string, fsEval mtree.FsEval, debug log.Logger) MtreeStore {
+	return MtreeStore{dir, fsEval, debug}
 }
 
 func (s *MtreeStore) Get(manifestDigest digest.Digest) (spec *mtree.DirectoryHierarchy, err error) {
@@ -76,6 +78,11 @@ func (s *MtreeStore) Put(manifestDigest digest.Digest, spec *mtree.DirectoryHier
 }
 
 func (s *MtreeStore) Create(rootfs string, exclude []mtree.ExcludeFunc) (dh *mtree.DirectoryHierarchy, err error) {
+	partial := ""
+	if exclude != nil {
+		partial = " (partial)"
+	}
+	s.debug.Printf("Generating mtree of %s%s", rootfs, partial)
 	if dh, err = mtree.Walk(rootfs, exclude, mtreeKeywords, s.fsEval); err != nil {
 		err = errors.New("generate mtree spec: " + err.Error())
 	}

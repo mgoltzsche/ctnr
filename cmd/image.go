@@ -95,12 +95,10 @@ to a local or remote destination.`,
 	}
 	flagImageTTL time.Duration
 	flagImage    string
-	imageBuilder *builder.ImageBuilder
 )
 
 func init() {
-	imageBuilder = builder.NewImageBuilder()
-	initImageBuildFlags(imageBuildCmd.Flags(), imageBuilder)
+	initImageBuildFlags(imageBuildCmd.Flags())
 	imageCmd.AddCommand(imageListCmd)
 	imageCmd.AddCommand(imageTagCmd)
 	imageCmd.AddCommand(imageUntagCmd)
@@ -256,7 +254,7 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 	tmpDir := filepath.Join(flagStoreDir, "tmp")
-	img, err := imageBuilder.Build(builder.ImageBuildConfig{
+	imageBuilder := builder.NewImageBuilder(builder.ImageBuildConfig{
 		Images:   lockedStore,
 		Bundles:  store.BundleStore,
 		Cache:    cache,
@@ -266,8 +264,19 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 		PRoot:    proot,
 		Loggers:  loggers,
 	})
-	if err == nil {
-		fmt.Fprintln(os.Stdout, img.ID())
+	defer func() {
+		if e := imageBuilder.Close(); e != nil {
+			loggers.Error.Println(e)
+		}
+	}()
+	if len(flagImageBuildOps.ops) == 0 {
+		return errors.New("no build steps provided")
 	}
+	for _, op := range flagImageBuildOps.ops {
+		if err = op(imageBuilder); err != nil {
+			return
+		}
+	}
+	fmt.Fprintln(os.Stdout, *imageBuilder.Image())
 	return
 }

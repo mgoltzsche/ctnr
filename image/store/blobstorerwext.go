@@ -55,6 +55,8 @@ func (s *BlobStoreExt) UnpackLayers(manifestDigest digest.Digest, rootfs string)
 
 // Writes the diff of rootfs to its parent as new layer into the store
 func (s *BlobStoreExt) CommitLayer(src *LayerSource, parentManifestDigest *digest.Digest, author, createdBy string) (r *CommitResult, err error) {
+	s.debug.Println("Building layer from " + src.rootfs)
+
 	defer func() {
 		err = errors.Wrap(err, "commit layer blob")
 	}()

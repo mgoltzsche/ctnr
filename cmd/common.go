@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -226,4 +227,11 @@ func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b 
 
 func isFile(file string) bool {
 	return file != "" && (filepath.IsAbs(file) || file == "." || file == ".." || len(file) > 1 && file[0:2] == "./" || len(file) > 2 && file[0:3] == "../" || file == "~" || len(file) > 1 && file[0:2] == "~/")
+}
+
+func checkNonEmpty(s string) (err error) {
+	if len(bytes.TrimSpace([]byte(s))) == 0 {
+		err = usageError("empty value")
+	}
+	return
 }
