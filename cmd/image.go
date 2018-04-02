@@ -261,6 +261,7 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 		Bundles:  store.BundleStore,
 		Cache:    cache,
 		Tempfs:   tmpDir,
+		RunRoot:  flagStateDir,
 		Rootless: flagRootless,
 		PRoot:    proot,
 		Loggers:  loggers,

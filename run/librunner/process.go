@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/activation"
-	"github.com/hashicorp/go-multierror"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
@@ -73,7 +72,7 @@ func NewProcess(container *Container, p *specs.Process, io run.ContainerIO, logg
 		for _, rlimit := range p.Rlimits {
 			rl, err := createLibContainerRlimit(rlimit)
 			if err != nil {
-				return nil, errors.Wrap(err, "new process")
+				return nil, errors.New("new process: " + err.Error())
 			}
 			lp.Rlimits = append(lp.Rlimits, rl)
 		}
@@ -123,7 +122,7 @@ func (p *Process) handleTermination() {
 	err = run.NewExitError(err, p.container.ID())
 	logger := p.log.Debug
 	if exiterr, ok := err.(*run.ExitError); ok {
-		logger = logger.WithField("status", exiterr.Status())
+		logger = logger.WithField("code", exiterr.Code())
 	}
 	logger.WithField("args", p.args).Println("Process terminated")
 
@@ -136,7 +135,7 @@ func (p *Process) handleTermination() {
 	// Release TTY
 	// TODO: reject tty CLI option when process is detached and no console socket provided
 	err = p.tty.Close() // ATTENTION: deadlock when detached process and tty enabled
-	p.err = run.WrapExitError(p.err, err)
+	p.err = exterrors.Append(p.err, err)
 	p.tty = nil
 	p.running = false
 }
@@ -209,9 +208,7 @@ func (p *Process) Close() (err error) {
 		err = p.err
 		p.err = nil
 		if p.tty != nil {
-			if e := p.tty.Close(); e != nil {
-				err = multierror.Append(err, e)
-			}
+			err = exterrors.Append(err, p.tty.Close())
 			p.tty = nil
 		}
 	}

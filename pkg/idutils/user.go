@@ -2,8 +2,6 @@ package idutils
 
 import (
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 type UserIds struct {
@@ -16,37 +14,33 @@ type User struct {
 	Group string
 }
 
-func ParseUser(v string) (r User, err error) {
-	s := strings.Split(v, ":")
-	l := len(s)
+func ParseUser(v string) (r User) {
+	s := strings.SplitN(v, ":", 2)
 	r.User = strings.TrimSpace(s[0])
-	switch {
-	case l == 2 && strings.TrimSpace(s[1]) != "":
+	if len(s) == 2 {
 		r.Group = strings.TrimSpace(s[1])
-	case l == 1 && r.User != "":
-		r.Group = r.User
-	default:
-		err = errors.Errorf("expected USER[:GROUP] but was %q", v)
 	}
 	return
 }
 
 func (u User) Resolve(rootfs string) (r UserIds, err error) {
-	if u.User == "" {
-		return r, errors.New("lookup uid: no user specified")
+	usr := u.User
+	grp := u.Group
+	if usr == "" {
+		usr = "0"
 	}
-	uid, e := parseUint(u.User)
+	uid, e := parseUint(usr)
 	if e == nil {
 		r.Uid = uid
 	}
-	if e != nil || u.Group == "" {
-		r, err = LookupUser(u.User, rootfs)
+	if e != nil || grp == "" {
+		r, err = LookupUser(usr, rootfs)
 		if err != nil {
 			return
 		}
 	}
-	if u.Group != "" {
-		r.Gid, err = LookupGid(u.Group, rootfs)
+	if grp != "" {
+		r.Gid, err = LookupGid(grp, rootfs)
 	}
 	return
 }

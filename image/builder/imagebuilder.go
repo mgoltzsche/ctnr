@@ -9,16 +9,17 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/mgoltzsche/cntnr/image"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/files"
+	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/opencontainers/runtime-tools/generate"
+	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
@@ -27,6 +28,7 @@ type ImageBuildConfig struct {
 	Bundles  bundle.BundleStore
 	Cache    ImageBuildCache
 	Tempfs   string
+	RunRoot  string
 	Rootless bool
 	PRoot    string
 	Loggers  log.Loggers
@@ -51,6 +53,12 @@ func (b *ImageBuilder) SetAuthor(image string) {
 	b.addBuildStep(func(builder *BuildState) error {
 		builder.SetAuthor(image)
 		return nil
+	})
+}
+
+func (b *ImageBuilder) SetUser(user string) {
+	b.addBuildStep(func(builder *BuildState) error {
+		return builder.SetUser(user)
 	})
 }
 
@@ -111,9 +119,7 @@ func (b *ImageBuilder) Build(cfg ImageBuildConfig) (img image.Image, err error) 
 
 	state := NewBuildState(cfg)
 	defer func() {
-		if e := state.Close(); e != nil {
-			err = multierror.Append(err, e)
-		}
+		err = exterrors.Append(err, state.Close())
 	}()
 
 	now := time.Now()
@@ -135,68 +141,94 @@ func (b *ImageBuilder) Build(cfg ImageBuildConfig) (img image.Image, err error) 
 }
 
 type BuildState struct {
-	images   image.ImageStoreRW
-	bundles  bundle.BundleStore
-	config   ispecs.Image
-	image    *image.Image
-	cache    ImageBuildCache
-	bundle   *bundle.LockedBundle
-	tempdir  string
-	rootless bool
-	proot    string
-	loggers  log.Loggers
+	images    image.ImageStoreRW
+	bundles   bundle.BundleStore
+	config    ispecs.Image
+	image     *image.Image
+	cache     ImageBuildCache
+	bundle    *bundle.LockedBundle
+	container run.Container
+	stdio     run.ContainerIO
+	tempDir   string
+	runRoot   string
+	rootless  bool
+	proot     string
+	loggers   log.Loggers
 }
 
 func NewBuildState(cfg ImageBuildConfig) (r BuildState) {
 	if cfg.Tempfs == "" {
-		r.tempdir = os.TempDir()
+		r.tempDir = os.TempDir()
 	} else {
-		r.tempdir = cfg.Tempfs
+		r.tempDir = cfg.Tempfs
+	}
+	if cfg.RunRoot == "" {
+		r.runRoot = "/tmp/cntnr"
+	} else {
+		r.runRoot = cfg.RunRoot
 	}
 	r.images = cfg.Images
 	r.bundles = cfg.Bundles
 	r.cache = cfg.Cache
+	r.runRoot = cfg.RunRoot
 	r.rootless = cfg.Rootless
 	r.proot = cfg.PRoot
 	r.loggers = cfg.Loggers
 	return
 }
 
-func (b *BuildState) initBundle(cmd string) (err error) {
-	entrypoint := []string{"/bin/sh", "-c"}
-	if b.bundle == nil {
-		var bb *bundle.BundleBuilder
-		if b.image == nil {
-			bb = bundle.Builder("")
-		} else if bb, err = bundle.BuilderFromImage("", b.image); err != nil {
-			return errors.Wrap(err, "image builder")
-		}
-		if b.rootless {
-			bb.ToRootless()
-		}
-		if b.proot != "" {
-			bb.SetPRootPath(b.proot)
-		}
-		bb.UseHostNetwork()
-		bb.SetProcessEntrypoint(entrypoint)
-		if cmd != "" {
-			bb.SetProcessCmd([]string{cmd})
-		}
-		bundle, err := b.bundles.CreateBundle(bb, false)
+func (b *BuildState) closeContainer() {
+	if err := b.Close(); err != nil {
+		b.loggers.Warn.Println(err)
+	}
+}
+
+func (b *BuildState) initContainer() (err error) {
+	if b.bundle != nil {
+		return
+	}
+
+	// Derive bundle from image
+	var bb *bundle.BundleBuilder
+	if b.image == nil {
+		bb = bundle.Builder("")
+	} else if bb, err = bundle.BuilderFromImage("", b.image); err != nil {
+		return errors.Wrap(err, "image builder")
+	}
+	if b.rootless {
+		bb.ToRootless()
+	}
+	if b.proot != "" {
+		bb.SetPRootPath(b.proot)
+	}
+	bb.UseHostNetwork()
+	bundle, err := b.bundles.CreateBundle(bb, false)
+	if err != nil {
+		return errors.Wrap(err, "image builder")
+	}
+	b.bundle = bundle
+	defer func() {
 		if err != nil {
-			return errors.Wrap(err, "image builder")
+			b.bundle = nil
+			bundle.Delete()
 		}
-		b.bundle = bundle
-	} else {
-		if cmd != "" {
-			spec, err := b.bundle.Spec()
-			if err != nil {
-				return err
-			}
-			specgen := generate.NewFromSpec(spec)
-			specgen.SetProcessArgs(append(entrypoint, cmd))
-			err = b.bundle.SetSpec(&specgen)
-		}
+	}()
+
+	// Create container from bundle
+	manager, err := factory.NewContainerManager(b.runRoot, b.rootless, b.loggers)
+	if err != nil {
+		return
+	}
+	// TODO: move container creation into bundle init method and update the process here only
+	b.stdio = run.NewStdContainerIO()
+	container, err := manager.NewContainer(&run.ContainerConfig{
+		Id:             bundle.ID(),
+		Bundle:         bundle,
+		Io:             b.stdio,
+		DestroyOnClose: true,
+	})
+	if err == nil {
+		b.container = container
 	}
 	return
 }
@@ -204,6 +236,17 @@ func (b *BuildState) initBundle(cmd string) (err error) {
 func (b *BuildState) SetAuthor(author string) error {
 	b.config.Author = author
 	return b.cached("AUTHOR "+author, b.commitConfig)
+}
+
+func (b *BuildState) SetUser(user string) (err error) {
+	b.config.Config.User = user
+	return b.cached("USER "+user, func(createdBy string) error {
+		// Validate user
+		if err := b.initContainer(); err != nil {
+			return err
+		}
+		return b.commitConfig(createdBy)
+	})
 }
 
 func (b *BuildState) SetWorkingDir(dir string) error {
@@ -260,9 +303,9 @@ func (b *BuildState) Run(cmd string) (err error) {
 		return
 	}
 
-	comment := fmt.Sprintf("RUN /bin/sh -c %q", cmd)
-	return b.cached(comment, func(comment string) (err error) {
-		if err = b.initBundle(cmd); err != nil {
+	createdBy := fmt.Sprintf("RUN /bin/sh -c %q", cmd)
+	return b.cached(createdBy, func(createdBy string) (err error) {
+		if err = b.initContainer(); err != nil {
 			return
 		}
 
@@ -271,39 +314,40 @@ func (b *BuildState) Run(cmd string) (err error) {
 		if err != nil {
 			return
 		}
-		rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
-		manager, err := factory.NewContainerManager(rootfs, b.rootless, b.loggers)
+		proc, err := b.newProcess(cmd, spec)
 		if err != nil {
 			return
 		}
-		// TODO: move container creation into bundle init method and update the process here only
-		container, err := manager.NewContainer(&run.ContainerConfig{
-			Id:             b.bundle.ID(),
-			Bundle:         b.bundle,
-			Io:             run.NewStdContainerIO(),
-			DestroyOnClose: true,
-		})
-		if err != nil {
-			return
-		}
-		defer func() {
-			if e := container.Close(); e != nil {
-				err = multierror.Append(err, e)
-			}
-		}()
 
-		if err = container.Start(); err != nil {
+		if err = b.container.Exec(proc, b.stdio); err != nil {
 			return
 		}
-		if err = container.Wait(); err != nil {
-			return
-		}
+		rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
 		src, err := b.images.NewLayerSource(rootfs, nil)
 		if err != nil {
 			return
 		}
-		return b.commitLayer(src, comment)
+		return b.commitLayer(src, createdBy)
 	})
+}
+
+func (b *BuildState) newProcess(cmd string, spec *rspecs.Spec) (pr *rspecs.Process, err error) {
+	u := idutils.ParseUser(b.config.Config.User)
+	rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
+	usr, err := u.Resolve(rootfs)
+	if err != nil {
+		return
+	}
+	p := *spec.Process
+	p.User = rspecs.User{
+		UID: uint32(usr.Uid),
+		GID: uint32(usr.Gid),
+		// TODO: resolve additional group ids
+	}
+	p.Args = []string{"/bin/sh", "-c", cmd}
+	p.Env = b.config.Config.Env
+	p.Cwd = b.config.Config.WorkingDir
+	return &p, nil
 }
 
 func (b *BuildState) Tag(tag string) (err error) {
@@ -324,29 +368,18 @@ type FileEntry struct {
 }
 
 func (b *BuildState) CopyFile(contextDir string, srcPattern []string, dest string) (err error) {
-	// TODO: build mtree diffs, merge them and let BlobStoreExt.diff create the layer without touching the bundle
-	// => not possible with umoci's GenerateLayer/tarGenerator.AddFile methods
-	defer func() {
-		if err != nil {
-			// Release bundle when operation failed
-			if b.bundle != nil {
-				err = multierror.Append(err, b.bundle.Close())
-				b.bundle = nil
-			}
-			err = errors.Wrap(err, "copy file into image")
-		}
-	}()
+	defer exterrors.Wrapd(&err, "copy into image")
 
 	if len(srcPattern) == 0 {
 		return
 	}
 	var rootfs string
 	if b.bundle == nil {
-		if err = os.MkdirAll(b.tempdir, 0750); err != nil {
-			return
+		if err = os.MkdirAll(b.tempDir, 0750); err != nil {
+			return errors.New(err.Error())
 		}
-		if rootfs, err = ioutil.TempDir(b.tempdir, ".img-build-"); err != nil {
-			return
+		if rootfs, err = ioutil.TempDir(b.tempDir, ".img-build-"); err != nil {
+			return errors.New(err.Error())
 		}
 		defer func() {
 			if e := os.RemoveAll(rootfs); e != nil {
@@ -376,54 +409,41 @@ func (b *BuildState) CopyFile(contextDir string, srcPattern []string, dest strin
 	}
 	destFiles, err := fs.Add(srcFiles, dest)
 	if err != nil {
+		b.closeContainer()
 		return
 	}
 
 	commitSrc, err := b.images.NewLayerSource(rootfs, destFiles)
 	if err != nil {
+		b.closeContainer()
 		return
 	}
-	comment := "COPY " + commitSrc.DiffHash().String()
-	return b.cached(comment, func(comment string) (err error) {
-		return b.commitLayer(commitSrc, comment)
+	createdBy := "COPY " + commitSrc.DiffHash().String()
+	return b.cached(createdBy, func(createdBy string) (err error) {
+		return b.commitLayer(commitSrc, createdBy)
 	})
 }
 
 func (b *BuildState) commitLayer(src image.LayerSource, createdBy string) (err error) {
-	defer func() {
-		if err != nil {
-			err = errors.Wrap(err, "commit layer")
-		}
-	}()
-
 	b.loggers.Debug.Println("Committing layer ...")
-
 	var parentImageId *digest.Digest
 	if b.image != nil {
 		pImgId := b.image.ID()
 		parentImageId = &pImgId
 	}
 	img, err := b.images.AddImageLayer(src, parentImageId, b.config.Author, createdBy)
-	if err != nil {
-		return
+	if err == nil {
+		if err = b.setImage(&img); err == nil {
+			newImageId := img.ID()
+			if b.bundle != nil {
+				err = b.bundle.SetParentImageId(&newImageId)
+			}
+		}
 	}
-	if err = b.setImage(&img); err != nil {
-		return
-	}
-	newImageId := img.ID()
-	if b.bundle != nil {
-		return b.bundle.SetParentImageId(&newImageId)
-	}
-	return
+	return errors.Wrap(err, "commit layer")
 }
 
 func (b *BuildState) commitConfig(createdBy string) (err error) {
-	defer func() {
-		if err != nil {
-			err = errors.Wrap(err, "commit config")
-		}
-	}()
-
 	b.config.History = append(b.config.History, ispecs.History{
 		Author:     b.config.Author,
 		CreatedBy:  createdBy,
@@ -435,10 +455,10 @@ func (b *BuildState) commitConfig(createdBy string) (err error) {
 		parentImgId = &imgId
 	}
 	img, err := b.images.AddImageConfig(b.config, parentImgId)
-	if err != nil {
-		return
+	if err == nil {
+		err = b.setImage(&img)
 	}
-	return b.setImage(&img)
+	return errors.Wrap(err, "commit config")
 }
 
 func (b *BuildState) AddTag(name string) (err error) {
@@ -449,23 +469,27 @@ func (b *BuildState) AddTag(name string) (err error) {
 	return
 }
 
-func (b *BuildState) cached(uniqComment string, call func(comment string) error) (err error) {
-	b.loggers.Info.Println(uniqComment)
+func (b *BuildState) cached(uniqCreatedBy string, call func(createdBy string) error) (err error) {
+	defer func() {
+		if err != nil {
+			// Release bundle when operation failed
+			b.closeContainer()
+		}
+	}()
+	b.loggers.Info.Println(uniqCreatedBy)
 	var parentImgId *digest.Digest
 	if b.image != nil {
 		pImgId := b.image.ID()
 		parentImgId = &pImgId
 	}
 	var cachedImgId digest.Digest
-	cachedImgId, err = b.cache.Get(parentImgId, uniqComment)
+	cachedImgId, err = b.cache.Get(parentImgId, uniqCreatedBy)
 	if err == nil {
-		var cachedImg image.Image
-		if cachedImg, err = b.images.Image(cachedImgId); err == nil {
+		if cachedImg, e := b.images.Image(cachedImgId); e == nil {
 			// TODO: distinguish between image not found and serious error
-			if err = b.setImage(&cachedImg); err != nil {
-				return errors.Wrap(err, "cached image")
-			}
 			b.loggers.Info.WithField("img", (*b.image).ID()).Printf("Using cached image")
+			err = b.setImage(&cachedImg)
+			err = errors.Wrap(err, "cached image")
 			return
 		}
 	} else if e, ok := err.(CacheError); !ok || !e.Temporary() {
@@ -475,21 +499,11 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 		err = nil
 	}
 
-	defer func() {
-		if err != nil {
-			// Release bundle when operation failed
-			if b.bundle != nil {
-				err = multierror.Append(err, b.bundle.Close())
-				b.bundle = nil
-			}
-		}
-	}()
-
-	if err = call(uniqComment); err != nil {
+	if err = call(uniqCreatedBy); err != nil {
 		return
 	}
 
-	err = b.cache.Put(parentImgId, uniqComment, (*b.image).ID())
+	err = b.cache.Put(parentImgId, uniqCreatedBy, (*b.image).ID())
 
 	b.loggers.Info.WithField("img", (*b.image).ID()).Printf("Built new image")
 
@@ -497,10 +511,11 @@ func (b *BuildState) cached(uniqComment string, call func(comment string) error)
 }
 
 func (b *BuildState) Close() (err error) {
-	if b.bundle != nil {
-		if e := b.bundle.Close(); e != nil {
-			err = multierror.Append(err, e)
-		}
+	if b.container != nil {
+		err = b.container.Close()
+		errors.Wrap(err, "close image builder")
+		b.container = nil
+		b.bundle = nil
 	}
 	return
 }

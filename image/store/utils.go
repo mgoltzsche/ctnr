@@ -9,22 +9,22 @@ import (
 
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
-	"github.com/hashicorp/go-multierror"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
-func imageIndex(dir string, r *ispecs.Index) error {
+func imageIndex(dir string, r *ispecs.Index) (err error) {
 	idxFile := filepath.Join(dir, "index.json")
 	b, err := ioutil.ReadFile(idxFile)
 	if err != nil {
-		return errors.Wrap(err, "read image index")
+		return errors.New("read image index: " + err.Error())
 	}
 	if err = json.Unmarshal(b, r); err != nil {
-		return errors.Wrapf(err, "unmarshal image index %s", idxFile)
+		err = errors.New("unmarshal image index " + idxFile + ": " + err.Error())
 	}
-	return nil
+	return
 }
 
 func normalizeImageName(nameAndTag string) (name, ref string) {
@@ -78,11 +78,5 @@ func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err
 }
 
 func unlock(lock lock.Locker, err *error) {
-	if e := lock.Unlock(); e != nil {
-		if *err == nil {
-			*err = e
-		} else {
-			*err = multierror.Append(*err, e)
-		}
-	}
+	*err = exterrors.Append(*err, lock.Unlock())
 }

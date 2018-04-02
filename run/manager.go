@@ -5,7 +5,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/hashicorp/go-multierror"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 )
 
@@ -23,13 +23,7 @@ func (m *ContainerGroup) Close() (err error) {
 	m.Stop()
 	err = m.err
 	for _, c := range m.runners {
-		if e := c.Close(); e != nil {
-			if err == nil {
-				err = e
-			} else {
-				err = WrapExitError(err, e)
-			}
-		}
+		err = exterrors.Append(err, c.Close())
 	}
 	m.runners = nil
 	return err
@@ -50,9 +44,7 @@ func (m *ContainerGroup) Start() {
 			m.debug.Println("start:", m.err)
 			for _, sc := range m.runners[0:i] {
 				sc.Stop()
-				if e := sc.Wait(); e != nil {
-					m.err = multierror.Append(m.err, e)
-				}
+				m.err = exterrors.Append(m.err, sc.Wait())
 			}
 			return
 		}
@@ -74,9 +66,7 @@ func (m *ContainerGroup) Wait() {
 	m.handleSignals()
 
 	for _, c := range m.runners {
-		if e := c.Wait(); e != nil {
-			m.err = WrapExitError(m.err, e)
-		}
+		m.err = exterrors.Append(m.err, c.Wait())
 	}
 	return
 }

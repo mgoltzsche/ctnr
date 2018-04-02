@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
@@ -50,6 +49,7 @@ type ContainerManager interface {
 
 type Container interface {
 	ID() string
+	Rootfs() string
 	Start() error
 	Stop()
 	Wait() error
@@ -64,13 +64,13 @@ type ContainerInfo struct {
 }
 
 type ExitError struct {
-	status      int
 	containerId string
+	code        int
 	cause       error
 }
 
-func (e *ExitError) Status() int {
-	return e.status
+func (e *ExitError) Code() int {
+	return e.code
 }
 
 func (e *ExitError) ContainerID() string {
@@ -78,32 +78,41 @@ func (e *ExitError) ContainerID() string {
 }
 
 func (e *ExitError) Error() string {
-	if e.cause == nil {
-		return fmt.Sprintf("container %q terminated: exit status %d", e.containerId, e.status)
-	} else {
-		return fmt.Sprintf("container %q terminated: exit status %d. error: %s", e.containerId, e.status, e.cause)
-	}
+	return e.cause.Error()
+}
+
+type formatter interface {
+	Format(s fmt.State, verb rune)
+}
+
+func (e *ExitError) Format(s fmt.State, verb rune) {
+	e.cause.(formatter).Format(s, verb)
 }
 
 func NewExitError(err error, containerId string) error {
+	if err == nil {
+		return nil
+	}
 	if exiterr, ok := err.(*exec.ExitError); ok {
 		if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-			return &ExitError{status.ExitStatus(), containerId, nil}
+			code := status.ExitStatus()
+			return &ExitError{containerId, code, errors.New(fmt.Sprintf("%s terminated: exit code %d", containerId, code))}
 		}
 	}
-	return err
+	return errors.New(err.Error())
 }
 
-func WrapExitError(ex, err error) error {
-	if err == nil {
-		err = ex
-	} else if ex != nil {
-		// TODO: wrap ExitError and get it from cause instead whereever a type assertion is done now
-		if exiterr, ok := ex.(*ExitError); ok {
-			err = &ExitError{exiterr.status, exiterr.containerId, multierror.Append(ex, err)}
-		} else {
-			err = errors.Errorf("%s, await container termination: %s", err, ex)
+func FindExitError(err error) *ExitError {
+	if err != nil {
+		type causer interface {
+			Cause() error
+		}
+		if e, ok := err.(*ExitError); ok {
+			return e
+		}
+		if e, ok := err.(causer); ok && e.Cause() != nil {
+			return FindExitError(e.Cause())
 		}
 	}
-	return err
+	return nil
 }

@@ -15,7 +15,7 @@
 package cmd
 
 import (
-	"github.com/hashicorp/go-multierror"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +48,7 @@ func runKill(cmd *cobra.Command, args []string) (err error) {
 	for _, id := range args {
 		if e := containers.Kill(id, flagSignal, flagAll); e != nil {
 			loggers.Debug.Println("Failed to kill container:", e)
-			err = multierror.Append(err, e)
+			err = exterrors.Append(err, e)
 		}
 	}
 	return

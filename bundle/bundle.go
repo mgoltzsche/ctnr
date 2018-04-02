@@ -9,13 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	digest "github.com/opencontainers/go-digest"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
-	gen "github.com/opencontainers/runtime-tools/generate"
 	"github.com/pkg/errors"
 )
 
@@ -25,6 +23,10 @@ type Bundle struct {
 	id      string
 	dir     string
 	created time.Time
+}
+
+type SpecGenerator interface {
+	Spec(rootfs string) (*rspecs.Spec, error)
 }
 
 func NewBundle(dir string) (r Bundle, err error) {
@@ -84,11 +86,13 @@ func (b *Bundle) Lock() (*LockedBundle, error) {
 }
 
 // Update mod time so that gc doesn't touch it for a while
-func (b *Bundle) resetExpiryTime() error {
+func (b *Bundle) resetExpiryTime() (err error) {
 	configFile := filepath.Join(b.dir)
 	now := time.Now()
-	os.Chtimes(configFile, now, now)
-	return nil
+	if e := os.Chtimes(configFile, now, now); e != nil && !os.IsNotExist(e) {
+		err = errors.New("reset bundle expiry time: " + e.Error())
+	}
+	return
 }
 
 func (b *Bundle) GC(before time.Time) (r bool, err error) {
@@ -104,9 +108,7 @@ func (b *Bundle) GC(before time.Time) (r bool, err error) {
 			return true, err
 		}
 		defer func() {
-			if e := bl.Unlock(); e != nil {
-				err = multierror.Append(err, e)
-			}
+			err = exterrors.Append(err, bl.Unlock())
 		}()
 		if st, err = os.Stat(b.dir); err != nil {
 			return true, err
@@ -139,15 +141,11 @@ func OpenLockedBundle(bundle Bundle) (*LockedBundle, error) {
 	return &LockedBundle{bundle, nil, nil, lck}, nil
 }
 
-func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage, update bool) (r *LockedBundle, err error) {
+func CreateLockedBundle(dir string, spec SpecGenerator, image BundleImage, update bool) (r *LockedBundle, err error) {
 	defer exterrors.Wrapd(&err, "create bundle")
 
 	// Create bundle
 	id := ""
-	sp := spec.Spec()
-	if sp.Annotations != nil {
-		id = sp.Annotations[ANNOTATION_BUNDLE_ID]
-	}
 	if id == "" {
 		id = filepath.Base(dir)
 	}
@@ -158,12 +156,10 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage, upda
 	if err != nil {
 		return nil, err
 	}
-	r = &LockedBundle{bundle, spec.Spec(), nil, lck}
+	r = &LockedBundle{bundle, nil, nil, lck}
 	defer func() {
 		if err != nil {
-			if e := r.Close(); e != nil {
-				err = multierror.Append(err, e)
-			}
+			err = exterrors.Append(err, r.Close())
 		}
 	}()
 
@@ -177,7 +173,7 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage, upda
 			return nil, errors.Errorf("bundle %q directory already exists", id)
 		}
 		lastImageId := bundle.Image()
-		rootfs := filepath.Join(dir, spec.Spec().Root.Path)
+		rootfs := filepath.Join(dir, "rootfs")
 		if _, e := os.Stat(rootfs); e == nil && (lastImageId == nil && image == nil || lastImageId != nil && *lastImageId == image.ID()) {
 			updateRootfs = false
 		}
@@ -188,7 +184,7 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage, upda
 		if !update {
 			defer func() {
 				if err != nil {
-					err = multierror.Append(err, os.RemoveAll(dir))
+					err = exterrors.Append(err, os.RemoveAll(dir))
 				}
 			}()
 		}
@@ -201,6 +197,7 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage, upda
 		}
 	}
 
+	// TODO: resolve user/group names here
 	// Write spec
 	if err = r.SetSpec(spec); err != nil {
 		return
@@ -212,12 +209,7 @@ func CreateLockedBundle(dir string, spec *gen.Generator, image BundleImage, upda
 func (b *LockedBundle) Close() (err error) {
 	if b.lock != nil {
 		err = b.bundle.resetExpiryTime()
-		if e := b.lock.Unlock(); e != nil {
-			err = multierror.Append(err, e)
-		}
-		if err != nil {
-			err = errors.Wrap(err, "unlock bundle")
-		}
+		err = exterrors.Append(err, errors.Wrap(b.lock.Unlock(), "unlock bundle"))
 		b.lock = nil
 	}
 	return
@@ -243,11 +235,7 @@ func (b *LockedBundle) Spec() (*rspecs.Spec, error) {
 }
 
 func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
-	spec, err := b.Spec()
-	if err != nil {
-		return
-	}
-	rootfs := filepath.Join(b.Dir(), spec.Root.Path)
+	rootfs := filepath.Join(b.Dir(), "rootfs")
 	var imgId *digest.Digest
 	if image != nil {
 		id := image.ID()
@@ -271,40 +259,23 @@ func createRootfs(rootfs string, image BundleImage) (err error) {
 	return
 }
 
-func (b *LockedBundle) SetSpec(spec *gen.Generator) (err error) {
-	defer exterrors.Wrapdf(&err, "update bundle %q spec", b.ID())
-
-	/*if err = createVolumeDirectories(spec.Spec(), b.Dir()); err != nil {
-		return
-	}*/
-
-	// Write config.json
-	if spec.Spec().Root != nil {
-		spec.Spec().Root.Path = "rootfs"
-	}
-	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, b.ID())
-	tmpConfFile, err := ioutil.TempFile(b.Dir(), ".tmp-conf-")
+func (b *LockedBundle) SetSpec(specgen SpecGenerator) (err error) {
+	spec, err := specgen.Spec(filepath.Join(b.Dir(), "rootfs"))
 	if err != nil {
-		return errors.New(err.Error())
+		return errors.Wrap(err, "set bundle spec")
 	}
-	tmpConfPath := tmpConfFile.Name()
-	tmpConfRemoved := false
-	defer func() {
-		tmpConfFile.Close()
-		if !tmpConfRemoved {
-			os.Remove(tmpConfPath)
-		}
-	}()
-	if err = spec.Save(tmpConfFile, gen.ExportOptions{Seccomp: false}); err != nil {
-		return
+	if spec.Root != nil {
+		spec.Root.Path = "rootfs"
 	}
-	tmpConfFile.Close()
+	if spec.Annotations == nil {
+		spec.Annotations = map[string]string{}
+	}
+	spec.Annotations[ANNOTATION_BUNDLE_ID] = b.ID()
 	confFile := filepath.Join(b.Dir(), "config.json")
-	if err = os.Rename(tmpConfPath, confFile); err != nil {
-		return errors.New(err.Error())
+	if _, err = atomic.WriteJson(confFile, spec); err != nil {
+		err = errors.Wrapf(err, "update bundle %q spec", b.ID())
 	}
-	tmpConfRemoved = true
-	b.spec = spec.Spec()
+	b.spec = spec
 	return
 }
 
@@ -359,9 +330,7 @@ func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) (err error) {
 
 func (b *LockedBundle) Delete() (err error) {
 	err = deleteBundle(b.Dir())
-	if e := b.Close(); e != nil {
-		err = multierror.Append(err, e)
-	}
+	err = exterrors.Append(err, b.Close())
 	return
 }
 

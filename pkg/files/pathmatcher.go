@@ -15,7 +15,7 @@ func Glob(rootDir string, pattern []string) (files []string, err error) {
 	if !filepath.IsAbs(rootDir) {
 		wd, e := os.Getwd()
 		if e != nil {
-			return nil, e
+			return nil, errors.New(e.Error())
 		}
 		rootDir = filepath.Join(wd, rootDir)
 	}
@@ -30,7 +30,7 @@ func Glob(rootDir string, pattern []string) (files []string, err error) {
 		}
 		f, e := filepath.Glob(p)
 		if e != nil {
-			return files, e
+			return files, errors.New(e.Error())
 		}
 		if len(f) == 0 {
 			return files, errors.Errorf("file pattern %q did not match", p)
@@ -44,7 +44,7 @@ func Glob(rootDir string, pattern []string) (files []string, err error) {
 func ValidateGlob(pattern []string) (err error) {
 	for _, p := range pattern {
 		if _, err = filepath.Match(p, string(filepath.Separator)); err != nil {
-			return
+			return errors.New(err.Error())
 		}
 	}
 	return

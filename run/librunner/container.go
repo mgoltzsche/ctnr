@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/hashicorp/go-multierror"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
@@ -61,7 +60,6 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-
 	defer exterrors.Wrapd(&err, "new container")
 
 	loggers = loggers.WithField("id", id)
@@ -76,20 +74,17 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 	}
 	orgwd, err := os.Getwd()
 	if err != nil {
-		return
+		return nil, errors.New(err.Error())
 	}
 
 	// Must change to bundle dir because CreateLibcontainerConfig assumes it is in the bundle directory
 	if err = os.Chdir(cfg.Bundle.Dir()); err != nil {
-		return nil, errors.Wrap(err, "change to bundle directory")
+		return nil, errors.New("change to bundle directory: " + err.Error())
 	}
 	defer func() {
-		e := os.Chdir(orgwd)
-		e = errors.Wrap(e, "change back from bundle to previous directory")
-		if err == nil {
-			err = e
-		} else {
-			err = multierror.Append(err, e)
+		if e := os.Chdir(orgwd); e != nil {
+			e = errors.New("change back from bundle to previous directory: " + e.Error())
+			err = exterrors.Append(err, e)
 		}
 	}()
 
@@ -102,7 +97,7 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 		Rootless:         rootless,
 	})
 	if err != nil {
-		return
+		return nil, errors.New(err.Error())
 	}
 	if spec.Root != nil {
 		if filepath.IsAbs(spec.Root.Path) {
@@ -113,7 +108,7 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 	}
 	container, err := factory.Create(id, config)
 	if err != nil {
-		return
+		return nil, errors.New(err.Error())
 	}
 
 	r = &Container{
@@ -129,6 +124,10 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 
 func (c *Container) ID() string {
 	return c.id
+}
+
+func (c *Container) Rootfs() string {
+	return c.container.Config().Rootfs
 }
 
 // Prepare and start the container process from spec and with stdio
@@ -164,9 +163,7 @@ func (c *Container) Destroy() (err error) {
 	c.log.Debug.Println("Destroying container")
 	cc := c.container
 	if cc != nil {
-		if e := cc.Destroy(); e != nil {
-			err = run.WrapExitError(err, e)
-		}
+		err = exterrors.Append(err, cc.Destroy())
 		c.container = nil
 	}
 	return
@@ -184,17 +181,13 @@ func (c *Container) Close() (err error) {
 
 	// Destroy container
 	if c.destroyOnClose {
-		if e := c.Destroy(); e != nil {
-			err = multierror.Append(err, e)
-		}
+		err = exterrors.Append(err, c.Destroy())
 	}
 
 	// Release bundle
 	b := c.bundle
 	if b != nil {
-		if e := b.Close(); e != nil {
-			err = run.WrapExitError(err, e)
-		}
+		err = exterrors.Append(err, b.Close())
 		c.bundle = nil
 	}
 	return

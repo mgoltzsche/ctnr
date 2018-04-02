@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/containers/image/types"
-	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
@@ -52,9 +51,7 @@ func (s *ImageStore) DelImage(ids ...digest.Digest) (err error) {
 		return
 	}
 	defer func() {
-		if e := lockedStore.Close(); e != nil {
-			err = multierror.Append(err, e)
-		}
+		err = exterrors.Append(err, lockedStore.Close())
 	}()
 
 	imgs, err := lockedStore.Images()
@@ -85,9 +82,7 @@ func (s *ImageStore) ImageGC(before time.Time) (err error) {
 		return
 	}
 	defer func() {
-		if e := lockedStore.Close(); e != nil {
-			err = multierror.Append(err, e)
-		}
+		err = exterrors.Append(err, lockedStore.Close())
 	}()
 
 	// Collect all image IDs and delete

@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/pkg/generate"
+	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
@@ -30,6 +30,8 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 	if rootless {
 		spec.ToRootless()
 	}
+
+	sp := spec.Generator.Spec()
 
 	if err = ToSpecProcess(&service.Process, prootPath, spec); err != nil {
 		return
@@ -55,8 +57,8 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 	if service.Expose != nil {
 		// Merge exposedPorts annotation
 		exposedPortsAnn := ""
-		if spec.Spec().Annotations != nil {
-			exposedPortsAnn = spec.Spec().Annotations["org.opencontainers.image.exposedPorts"]
+		if sp.Annotations != nil {
+			exposedPortsAnn = sp.Annotations["org.opencontainers.image.exposedPorts"]
 		}
 		exposed := map[string]bool{}
 		if exposedPortsAnn != "" {
@@ -145,7 +147,7 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 
 	// Add network hook
 	if len(networks) > 0 {
-		hook, err := generate.NewHookBuilderFromSpec(spec.Spec())
+		hook, err := generate.NewHookBuilderFromSpec(sp)
 		if err != nil {
 			return err
 		}
@@ -255,33 +257,8 @@ func ToSpecProcess(p *model.Process, prootPath string, spec *generate.SpecBuilde
 
 	// User
 	if p.User != nil {
-		if p.User.User != "" {
-			// TODO: eventually map username using rootfs/etc/passwd to uid/gid
-			//       (not possible here since filesystem is not yet populated. => Could be moved into bundle builder)
-			usr, e := strconv.Atoi(p.User.User)
-			if e == nil && usr >= 0 && usr < (1<<32) {
-				spec.SetProcessUID(uint32(usr))
-			} else {
-				return errors.Errorf("uid expected but was %q", p.User.User)
-			}
-			if p.User.Group != "" {
-				grp, e := strconv.Atoi(p.User.Group)
-				if e == nil && grp >= 0 && grp < (1<<32) {
-					spec.SetProcessGID(uint32(grp))
-				} else {
-					return errors.Errorf("gid expected but was %q", p.User.Group)
-				}
-			}
-		}
-		if p.User.AdditionalGroups != nil {
-			for _, gidstr := range p.User.AdditionalGroups {
-				gid, err := strconv.Atoi(gidstr)
-				if err != nil || gid < 0 || gid > 1<<32 {
-					return errors.Errorf("additional gid expected but was %q", gidstr)
-				}
-				spec.AddProcessAdditionalGid(uint32(gid))
-			}
-		}
+		// TODO: map additional groups
+		spec.SetProcessUser(idutils.User{p.User.User, p.User.Group})
 	}
 
 	// Capabilities
@@ -330,7 +307,8 @@ func toMounts(mounts []model.VolumeMount, res model.ResourceResolver, spec *gene
 			sliceutils.AddToSet(&opts, "rbind")
 		}
 
-		spec.Spec().Mounts = append(spec.Spec().Mounts, specs.Mount{
+		sp := spec.Generator.Spec()
+		sp.Mounts = append(sp.Mounts, specs.Mount{
 			Type:        string(t),
 			Source:      src,
 			Destination: m.Target,

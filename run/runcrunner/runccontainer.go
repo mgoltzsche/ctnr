@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -19,6 +21,7 @@ type RuncContainer struct {
 	io           run.ContainerIO
 	id           string
 	bundle       run.ContainerBundle
+	rootfs       string
 	noNewKeyring bool
 	noPivot      bool
 	rootDir      string
@@ -29,29 +32,40 @@ type RuncContainer struct {
 	err          error
 }
 
-func NewRuncContainer(cfg *run.ContainerConfig, rootDir string, debug log.FieldLogger) *RuncContainer {
+func NewRuncContainer(cfg *run.ContainerConfig, rootDir string, debug log.FieldLogger) (c *RuncContainer, err error) {
 	id := cfg.Id
 	if id == "" {
 		if id = cfg.Bundle.ID(); id == "" {
 			panic("no container ID provided and bundle ID is empty")
 		}
 	}
+
+	spec, err := cfg.Bundle.Spec()
+	if err != nil {
+		return nil, errors.Wrapf(err, "new container %q", id)
+	}
+
 	// TODO: handle config option destroyOnClose
 	return &RuncContainer{
 		id:           id,
 		io:           cfg.Io,
 		bundle:       cfg.Bundle,
+		rootfs:       filepath.Join(cfg.Bundle.Dir(), spec.Root.Path),
 		noPivot:      cfg.NoPivotRoot,
 		noNewKeyring: cfg.NoNewKeyring,
 		rootDir:      rootDir,
 		mutex:        &sync.Mutex{},
 		wait:         &sync.WaitGroup{},
 		debug:        debug.WithField("id", id),
-	}
+	}, nil
 }
 
 func (c *RuncContainer) ID() string {
 	return c.id
+}
+
+func (c *RuncContainer) Rootfs() string {
+	return c.rootfs
 }
 
 func (c *RuncContainer) Start() (err error) {
@@ -119,6 +133,10 @@ func (c *RuncContainer) stop() {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
+	if c.cmd == nil {
+		return
+	}
+
 	if c.cmd.Process != nil {
 		// Terminate container orderly
 		c.debug.Println("Terminating container...")
@@ -146,7 +164,7 @@ func (c *RuncContainer) stop() {
 	}
 	close(quit)
 	c.cmd = nil
-	c.err = run.WrapExitError(ex, err)
+	c.err = exterrors.Append(ex, err)
 	return
 }
 
@@ -157,19 +175,17 @@ func (c *RuncContainer) Wait() error {
 
 func (c *RuncContainer) Destroy() (err error) {
 	var stdout, stderr bytes.Buffer
-	err = c.Close()
-	cmd := exec.Command("runc", "--root", c.rootDir, c.ID()) // TODO: Add --force option
+	e := c.Close()
+	cmd := exec.Command("runc", "--root", c.rootDir, "delete", c.ID()) // TODO: Add --force option
 	cmd.Dir = c.bundle.Dir()
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if e := cmd.Run(); e != nil {
-		err = run.WrapExitError(e, err)
-	}
+	err = cmd.Run()
 	if err != nil {
 		outStr, errStr := strings.Trim(string(stdout.Bytes()), "\n"), strings.Trim(string(stderr.Bytes()), "\n")
-		err = run.WrapExitError(err, errors.Errorf("runc delete:\n  out: %s\n  err: %s", outStr, errStr))
+		err = errors.Errorf("runc delete: %s\n  out: %s\n  err: %s", err, outStr, errStr)
 	}
-	return
+	return exterrors.Append(err, e)
 }
 
 // TODO: implement model to runc parameter transformation
@@ -177,11 +193,9 @@ func (c *RuncContainer) Exec(process *specs.Process, io run.ContainerIO) (err er
 	panic("TODO: implement")
 }
 
-func (c *RuncContainer) Close() error {
+func (c *RuncContainer) Close() (err error) {
 	c.Stop()
-	err := c.Wait()
-	if e := c.bundle.Close(); e != nil {
-		err = run.WrapExitError(err, e)
-	}
-	return err
+	err = c.Wait()
+	err = exterrors.Append(err, c.bundle.Close())
+	return
 }

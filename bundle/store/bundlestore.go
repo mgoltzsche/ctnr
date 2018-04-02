@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/bundle"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/pkg/errors"
 )
@@ -39,7 +39,7 @@ func (s *BundleStore) Bundles() (l []bundle.Bundle, err error) {
 			if e == nil {
 				l = append(l, c)
 			} else {
-				err = multierror.Append(err, e)
+				err = exterrors.Append(err, e)
 			}
 		}
 	}

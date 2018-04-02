@@ -37,7 +37,7 @@ func BuilderFromImage(id string, image BundleImage) (b *BundleBuilder, err error
 
 func FromSpec(spec *generate.SpecBuilder) *BundleBuilder {
 	id := ""
-	if s := spec.Spec(); s != nil && s.Annotations != nil {
+	if s := spec.Generator.Spec(); s != nil && s.Annotations != nil {
 		id = s.Annotations[ANNOTATION_BUNDLE_ID]
 	}
 	if id == "" {
@@ -63,7 +63,7 @@ func (b *BundleBuilder) GetID() string {
 
 func (b *BundleBuilder) Build(dir string, update bool) (*LockedBundle, error) {
 	// Create bundle directory
-	bundle, err := CreateLockedBundle(dir, &b.Generator, b.image, update)
+	bundle, err := CreateLockedBundle(dir, b, b.image, update)
 	return bundle, errors.Wrap(err, "build bundle")
 }
 

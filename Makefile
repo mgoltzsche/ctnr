@@ -35,6 +35,7 @@ binary: dependencies
 
 test: dependencies
 	# Run tests. TODO: more tests
+	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/pkg/errors"
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/model"
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/model/compose"
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/image/store"

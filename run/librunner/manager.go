@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hashicorp/go-multierror"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/opencontainers/runc/libcontainer"
@@ -39,8 +39,7 @@ func NewContainerManager(rootDir string, rootless bool, loggers log.Loggers) (r 
 }
 
 func (m *ContainerManager) NewContainer(cfg *run.ContainerConfig) (c run.Container, err error) {
-	c, err = NewContainer(cfg, m.rootless, m.factory, m.loggers)
-	return c, errors.Wrap(err, "new container")
+	return NewContainer(cfg, m.rootless, m.factory, m.loggers)
 }
 
 func (m *ContainerManager) Get(id string) (run.Container, error) {
@@ -62,7 +61,7 @@ func (m *ContainerManager) List() (r []run.ContainerInfo, err error) {
 				}
 			}
 		} else {
-			err = multierror.Append(err, e)
+			err = exterrors.Append(err, errors.New(e.Error()))
 		}
 	}
 	return

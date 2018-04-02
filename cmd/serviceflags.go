@@ -66,7 +66,7 @@ func (c *bundleFlags) InitProcessFlags(f *pflag.FlagSet) {
 	f.Var((*cEntrypoint)(c), "entrypoint", "container entrypoint")
 	f.VarP((*cWorkingDir)(c), "workdir", "w", "container entrypoint")
 	f.VarP((*cEnvironment)(c), "env", "e", "container environment variables")
-	f.VarP((*cUser)(c), "user", "u", "process user: UID[:GID]")
+	f.VarP((*cUser)(c), "user", "u", "process user (requires root): UID[:GID]")
 	f.Var((*cAdditionalGroups)(c), "additional-groups", "additional groups")
 	f.BoolVarP(&c.tty, "tty", "t", false, "binds a terminal to the container")
 	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")

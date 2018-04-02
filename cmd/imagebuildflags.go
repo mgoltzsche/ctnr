@@ -30,6 +30,7 @@ func initImageBuildFlags(f *pflag.FlagSet, imageBuilder *builder.ImageBuilder) {
 	f.Var((*iWorkingDir)(imageBuilder), "work", "Sets the new image's working directory")
 	f.Var((*iEntrypoint)(imageBuilder), "entrypoint", "Sets the new image's entrypoint")
 	f.Var((*iCmd)(imageBuilder), "cmd", "Sets the new image's command")
+	f.Var((*iUser)(imageBuilder), "user", "Sets the new image's user")
 	f.Var((*iRun)(imageBuilder), "run", "Runs the provided command in the current image")
 	f.Var((*iAdd)(imageBuilder), "add", "Adds glob pattern matching files to image: SRCPATTERN... [DEST]")
 	f.Var((*iTag)(imageBuilder), "tag", "Tags the image")
@@ -93,6 +94,21 @@ func (b *iFromImage) Type() string {
 }
 
 func (b *iFromImage) String() string {
+	return ""
+}
+
+type iUser builder.ImageBuilder
+
+func (b *iUser) Set(cmd string) (err error) {
+	(*builder.ImageBuilder)(b).SetUser(cmd)
+	return
+}
+
+func (b *iUser) Type() string {
+	return "string"
+}
+
+func (b *iUser) String() string {
 	return ""
 }
 

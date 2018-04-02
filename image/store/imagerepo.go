@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	lock "github.com/mgoltzsche/cntnr/pkg/lock"
@@ -41,9 +40,8 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 	}
 	defer func() {
 		if err != nil {
-			if e := r.lock.Unlock(); e != nil {
-				err = multierror.Append(err, errors.Wrap(e, "unlock image repo"))
-			}
+			e := r.lock.Unlock()
+			err = exterrors.Append(err, errors.Wrap(e, "unlock image repo"))
 		}
 	}()
 
@@ -51,10 +49,10 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 	if _, e := os.Stat(dir); os.IsNotExist(e) {
 		if create {
 			if err = os.MkdirAll(dir, 0775); err != nil {
-				return
+				return r, errors.New(err.Error())
 			}
 		} else {
-			return nil, errors.Errorf("repo dir %s does not exist", dir)
+			return r, errors.Errorf("repo dir %s does not exist", dir)
 		}
 	}
 
@@ -62,14 +60,14 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 	blobDir := filepath.Join(dir, "blobs")
 	if externalBlobDir == "" {
 		if err = os.MkdirAll(blobDir, 0755); err != nil {
-			return
+			return r, errors.New(err.Error())
 		}
 	} else if _, e := os.Lstat(blobDir); os.IsNotExist(e) {
 		if _, e = os.Stat(externalBlobDir); os.IsNotExist(e) {
 			return r, errors.Errorf("external blob dir %s does not exist", externalBlobDir)
 		}
 		if err = os.Symlink(externalBlobDir, blobDir); err != nil {
-			return r, errors.Wrap(err, "link external blob dir")
+			return r, errors.New("link external blob dir: " + err.Error())
 		}
 	}
 
@@ -87,10 +85,10 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 		layout := ispecs.ImageLayout{}
 		b, err := ioutil.ReadFile(layoutFile)
 		if err != nil {
-			return nil, errors.Wrap(err, "read oci-layout")
+			return nil, errors.New("read oci-layout: " + err.Error())
 		}
 		if err = json.Unmarshal(b, &layout); err != nil {
-			return nil, errors.Wrap(err, "unmarshal oci-layout")
+			return nil, errors.New("unmarshal oci-layout: " + err.Error())
 		}
 		if layout.Version != ispecs.ImageLayoutVersion {
 			return nil, errors.Errorf("unsupported oci-layout version %q", layout.Version)
@@ -115,23 +113,19 @@ func OpenImageRepo(dir, externalBlobDir string, create bool) (r *ImageRepo, err 
 func (r *ImageRepo) Close() (err error) {
 	// Unlock image repo dir
 	defer func() {
-		if e := r.lock.Unlock(); e != nil {
-			if err == nil {
-				err = e
-			} else {
-				err = multierror.Append(err, e)
-			}
-		}
+		err = exterrors.Append(err, r.lock.Unlock())
 		err = errors.Wrap(err, "close image repo")
 	}()
 
-	// Delete whole image repo directory if manifest list is empty
 	if len(r.index.Manifests) == 0 {
-		return os.RemoveAll(filepath.Dir(r.indexFile))
+		// Delete whole image repo directory if manifest list is empty
+		if err = os.RemoveAll(filepath.Dir(r.indexFile)); err != nil {
+			err = errors.New(err.Error())
+		}
+	} else {
+		// Write modified index.json
+		_, err = atomic.WriteJson(r.indexFile, &r.index)
 	}
-
-	// Write modified index.json
-	_, err = atomic.WriteJson(r.indexFile, &r.index)
 	return
 }
 

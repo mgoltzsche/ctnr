@@ -12,7 +12,6 @@ import (
 	ocitransport "github.com/containers/image/oci/layout"
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
-	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
@@ -47,7 +46,8 @@ func (s *ImageStoreRW) Close() (err error) {
 		return nil
 	}
 	if err = s.lock.Unlock(); err != nil {
-		s.warn.Printf("close store: %s", err)
+		err = errors.New("close store: " + err.Error())
+		s.warn.Println(err)
 	}
 	s.ImageStoreRO = nil
 	return err
@@ -160,19 +160,19 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	// Create temp image directory
 	name, ref := nameAndRef(srcRef)
 	if err = os.MkdirAll(s.repoDir, 0775); err != nil {
-		return
+		return img, errors.New(err.Error())
 	}
 	imgDir, err := ioutil.TempDir(s.repoDir, ".tmp-img-")
 	if err != nil {
-		return
+		return img, errors.New(err.Error())
 	}
 	defer os.RemoveAll(imgDir)
 	imgBlobDir := filepath.Join(imgDir, "blobs")
 	if err = os.MkdirAll(s.blobs.blobDir, 0775); err != nil {
-		return
+		return img, errors.New(err.Error())
 	}
 	if err = os.Symlink(s.blobs.blobDir, imgBlobDir); err != nil {
-		return
+		return img, errors.New(err.Error())
 	}
 
 	// Parse destination
@@ -302,13 +302,7 @@ func (s *ImageStoreRW) updateImageIndex(repoName string, create bool, transform 
 		repo, err = OpenImageRepo(dir, s.blobs.blobDir, create)
 		if err == nil {
 			defer func() {
-				if e := repo.Close(); e != nil {
-					if err == nil {
-						err = e
-					} else {
-						err = multierror.Append(err, e)
-					}
-				}
+				err = exterrors.Append(err, repo.Close())
 			}()
 			err = transform(repo)
 		}

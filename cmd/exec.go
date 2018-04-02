@@ -66,5 +66,9 @@ func runExec(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	return container.Exec(spec.Spec().Process, run.NewStdContainerIO())
+	sp, err := spec.Spec(container.Rootfs())
+	if err != nil {
+		return
+	}
+	return container.Exec(sp.Process, run.NewStdContainerIO())
 }

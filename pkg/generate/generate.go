@@ -15,15 +15,18 @@
 package generate
 
 import (
+	"os"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runc/libcontainer/specconv"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-tools/generate"
 	"github.com/opencontainers/runtime-tools/generate/seccomp"
+	"github.com/pkg/errors"
 	"github.com/syndtr/gocapability/capability"
 )
 
@@ -31,7 +34,9 @@ type SpecBuilder struct {
 	generate.Generator
 	entrypoint []string
 	cmd        []string
+	user       idutils.User
 	prootPath  string
+	rootless   bool
 }
 
 func NewSpecBuilder() SpecBuilder {
@@ -43,7 +48,8 @@ func FromSpec(spec *rspecs.Spec) SpecBuilder {
 }
 
 func (b *SpecBuilder) ToRootless() {
-	specconv.ToRootless(b.Spec())
+	specconv.ToRootless(b.Generator.Spec())
+	b.rootless = true
 }
 
 func (b *SpecBuilder) UseHostNetwork() {
@@ -53,6 +59,10 @@ func (b *SpecBuilder) UseHostNetwork() {
 	b.AddBindMount("/etc/resolv.conf", "/etc/resolv.conf", opts)
 }
 
+func (b *SpecBuilder) SetProcessUser(user idutils.User) {
+	b.user = user
+}
+
 func (b *SpecBuilder) AddAllProcessCapabilities() {
 	// Add all capabilities
 	all := capability.List()
@@ -60,7 +70,7 @@ func (b *SpecBuilder) AddAllProcessCapabilities() {
 	for i, c := range all {
 		caps[i] = "CAP_" + strings.ToUpper(c.String())
 	}
-	c := b.Spec().Process.Capabilities
+	c := b.Generator.Spec().Process.Capabilities
 	c.Effective = caps
 	c.Permitted = caps
 	c.Bounding = caps
@@ -70,7 +80,7 @@ func (b *SpecBuilder) AddAllProcessCapabilities() {
 
 func (b *SpecBuilder) DropAllProcessCapabilities() {
 	caps := []string{}
-	c := b.Spec().Process.Capabilities
+	c := b.Generator.Spec().Process.Capabilities
 	c.Effective = caps
 	c.Permitted = caps
 	c.Bounding = caps
@@ -80,12 +90,12 @@ func (b *SpecBuilder) DropAllProcessCapabilities() {
 
 // Derives a reasonable default seccomp from the current spec
 func (b *SpecBuilder) SetLinuxSeccompDefault() {
-	spec := b.Spec()
+	spec := b.Generator.Spec()
 	spec.Linux.Seccomp = seccomp.DefaultProfile(spec)
 }
 
 func (b *SpecBuilder) SetLinuxSeccompUnconfined() {
-	spec := b.Spec()
+	spec := b.Generator.Spec()
 	profile := seccomp.DefaultProfile(spec)
 	profile.DefaultAction = rspecs.ActAllow
 	profile.Syscalls = nil
@@ -93,7 +103,7 @@ func (b *SpecBuilder) SetLinuxSeccompUnconfined() {
 }
 
 func (b *SpecBuilder) SetLinuxSeccomp(profile *rspecs.LinuxSeccomp) {
-	spec := b.Spec()
+	spec := b.Generator.Spec()
 	if spec.Linux == nil {
 		spec.Linux = &rspecs.Linux{}
 	}
@@ -103,8 +113,9 @@ func (b *SpecBuilder) SetLinuxSeccomp(profile *rspecs.LinuxSeccomp) {
 func (b *SpecBuilder) AddExposedPorts(ports []string) {
 	// Merge exposedPorts annotation
 	exposedPortsAnn := ""
-	if b.Spec().Annotations != nil {
-		exposedPortsAnn = b.Spec().Annotations["org.opencontainers.image.exposedPorts"]
+	spec := b.Generator.Spec()
+	if spec.Annotations != nil {
+		exposedPortsAnn = spec.Annotations["org.opencontainers.image.exposedPorts"]
 	}
 	exposed := map[string]bool{}
 	if exposedPortsAnn != "" {
@@ -129,7 +140,7 @@ func (b *SpecBuilder) AddExposedPorts(ports []string) {
 
 func (b *SpecBuilder) SetPRootPath(prootPath string) {
 	b.prootPath = prootPath
-	spec := b.Spec()
+	spec := b.Generator.Spec()
 	// This has been derived from https://github.com/AkihiroSuda/runrootless/blob/b9a7df0120a7fee15c0223fd0fbc8c3885edd9b3/bundle/spec.go
 	spec.Mounts = append(spec.Mounts,
 		rspecs.Mount{
@@ -185,6 +196,9 @@ func (b *SpecBuilder) applyEntrypoint() {
 func (b *SpecBuilder) ApplyImage(img ispecs.Image) {
 	cfg := &img.Config
 
+	// User
+	b.user = idutils.ParseUser(img.Config.User)
+
 	// Entrypoint
 	b.SetProcessEntrypoint(cfg.Entrypoint)
 	b.SetProcessCmd(cfg.Cmd)
@@ -232,4 +246,40 @@ func (b *SpecBuilder) ApplyImage(img ispecs.Image) {
 		}
 		b.AddAnnotation("org.opencontainers.image.exposedPorts", strings.Join(ports, ","))
 	}
+}
+
+func (b *SpecBuilder) Spec(rootfs string) (spec *rspecs.Spec, err error) {
+	usr, err := b.user.Resolve(rootfs)
+	if err != nil {
+		return
+	}
+	if b.rootless && (usr.Uid != 0 || usr.Gid != 0) {
+		return nil, errors.Errorf("rootless containers support UID/GID 0 only but %q provided", b.user.String())
+	}
+	if usr.Uid > 1<<32 {
+		return nil, errors.Errorf("uid %d exceeds range", usr.Uid)
+	}
+	if usr.Gid > 1<<32 {
+		return nil, errors.Errorf("gid %d exceeds range", usr.Gid)
+	}
+	b.SetProcessUID(uint32(usr.Uid))
+	b.SetProcessGID(uint32(usr.Gid))
+	// TODO: set additional gids
+	sp := b.Generator.Spec()
+	if b.rootless {
+		b.ClearLinuxUIDMappings()
+		b.ClearLinuxGIDMappings()
+		b.AddLinuxUIDMapping(uint32(os.Geteuid()), uint32(usr.Uid), 1)
+		b.AddLinuxGIDMapping(uint32(os.Getegid()), uint32(usr.Gid), 1)
+	}
+	return sp, nil
+}
+
+func containsNamespace(ns rspecs.LinuxNamespaceType, l []rspecs.LinuxNamespace) bool {
+	for _, e := range l {
+		if e.Type == ns {
+			return true
+		}
+	}
+	return false
 }

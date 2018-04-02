@@ -14,23 +14,20 @@ func TestParseUserExpr(t *testing.T) {
 		expr  string
 		user  string
 		group string
-		valid bool
 	}{
-		{"root", "root", "root", true},
-		{"root:root", "root", "root", true},
-		{"root:root ", "root", "root", true},
-		{"  root : root ", "root", "root", true},
-		{"root:mygroup", "root", "mygroup", true},
-		{"", "", "", false},
+		{"root:root", "root", "root"},
+		{"root", "root", ""},
+		{" root  ", "root", ""},
+		{"root:root ", "root", "root"},
+		{"  root : root ", "root", "root"},
+		{"root:mygroup", "root", "mygroup"},
+		{":mygroup", "", "mygroup"},
+		{":", "", ""},
+		{"", "", ""},
 	} {
-		u, err := ParseUser(c.expr)
-		if c.valid {
-			require.NoError(t, err, "unexpected error for "+c.expr)
-			assert.Equal(t, c.user, u.User, "did not resolve user properly: "+c.expr)
-			assert.Equal(t, c.group, u.Group, "did not resolve group properly: "+c.expr)
-		} else if err == nil {
-			t.Errorf("lookup of user %q should fail", c.expr)
-		}
+		u := ParseUser(c.expr)
+		assert.Equal(t, c.user, u.User, "did not resolve user properly: "+c.expr)
+		assert.Equal(t, c.group, u.Group, "did not resolve group properly: "+c.expr)
 	}
 }
 
@@ -56,8 +53,8 @@ func TestUserResolve(t *testing.T) {
 		{"9000", "testgroup", 9000, 7777, rootfs, true},
 		{"300", "testgroup", 300, 7777, rootfs, true},
 		{"300", "300", 300, 300, dir, true},
+		{"", "", 0, 0, dir, true},
 		{"unknownusr", "unknowngrp", 0, 0, rootfs, false},
-		{"", "", 0, 0, rootfs, false},
 	} {
 		u := User{c.user, c.group}
 		r, err := u.Resolve(c.rootfs)

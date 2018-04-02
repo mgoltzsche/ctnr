@@ -21,11 +21,11 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/model"
 	"github.com/mgoltzsche/cntnr/model/oci"
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
 	"github.com/pkg/errors"
@@ -59,23 +59,31 @@ func exitOnError(cmd *cobra.Command, err error) {
 	if err == nil {
 		return
 	}
-	switch err.(type) {
-	case UsageError:
+
+	// Usage error - print help text and exit
+	if _, ok := err.(UsageError); ok {
 		logger.Errorf("%s\n%s\n%s", err, cmd.UsageString(), err)
 		os.Exit(1)
-	case *run.ExitError:
-		exiterr := err.(*run.ExitError)
-		logger.WithField("id", exiterr.ContainerID()).WithField("status", exiterr.Status()).Error("Container terminated")
-		os.Exit(exiterr.Status())
-	default:
-		errStr := err.Error()
-		causeStr := fmt.Sprintf("%+v", errors.Cause(err))
-		if causeStr != errStr {
-			loggers.Debug.Println(strings.Replace(causeStr, "\n", "\n  ", -1))
-		}
-		logger.Errorln(errStr)
 	}
-	os.Exit(255)
+
+	// Handle exit error
+	exitCode := 255
+	errLog := loggers.Error
+	cause := errors.Cause(err)
+	if exitErr, ok := cause.(*run.ExitError); ok {
+		exitCode = exitErr.Code()
+		errLog = errLog.WithField("id", exitErr.ContainerID()).WithField("code", exitCode)
+		err = errors.New("container process terminated with error")
+	}
+
+	// Print error & exit
+	errStr := err.Error()
+	causeStr := fmt.Sprintf("%+v", cause)
+	if causeStr != errStr {
+		loggers.Debug.Println(strings.Replace(causeStr, "\n", "\n  ", -1))
+	}
+	errLog.Println(errStr)
+	os.Exit(exitCode)
 }
 
 func usageError(msg string) UsageError {
@@ -127,8 +135,7 @@ func runServices(services []model.Service, res model.ResourceResolver) (err erro
 
 	containers := run.NewContainerGroup(loggers.Debug)
 	defer func() {
-		e := containers.Close()
-		err = run.WrapExitError(err, e)
+		err = exterrors.Append(err, containers.Close())
 	}()
 
 	for _, s := range services {
@@ -153,9 +160,7 @@ func createContainer(model *model.Service, res model.ResourceResolver, manager r
 	}
 	defer func() {
 		if err != nil {
-			if e := bundle.Close(); e != nil {
-				err = multierror.Append(err, e)
-			}
+			err = exterrors.Append(err, bundle.Close())
 		}
 	}()
 

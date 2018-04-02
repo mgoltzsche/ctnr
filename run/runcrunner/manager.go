@@ -30,7 +30,7 @@ func NewContainerManager(rootDir string, loggers log.Loggers) (*ContainerManager
 }
 
 func (m *ContainerManager) NewContainer(cfg *run.ContainerConfig) (run.Container, error) {
-	return NewRuncContainer(cfg, m.rootDir, m.debug), nil
+	return NewRuncContainer(cfg, m.rootDir, m.debug)
 }
 
 func (m *ContainerManager) Get(id string) (run.Container, error) {

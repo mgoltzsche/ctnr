@@ -104,8 +104,11 @@ func (s *BlobStore) PutLayer(reader io.Reader) (layer ispecs.Descriptor, diffIdD
 	return
 }
 
-func (s *BlobStore) BlobFileInfo(id digest.Digest) (os.FileInfo, error) {
-	return os.Stat(s.blobFile(id))
+func (s *BlobStore) BlobFileInfo(id digest.Digest) (st os.FileInfo, err error) {
+	if st, err = os.Stat(s.blobFile(id)); err != nil {
+		err = errors.New(err.Error())
+	}
+	return
 }
 
 func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
@@ -117,7 +120,7 @@ func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
 		if os.IsNotExist(err) {
 			return nil
 		} else {
-			return
+			return errors.New(err.Error())
 		}
 	}
 	for _, f := range al {
@@ -126,14 +129,14 @@ func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
 			af := filepath.Join(s.blobDir, alg)
 			dl, err = ioutil.ReadDir(af)
 			if err != nil {
-				return
+				return errors.New(err.Error())
 			}
 			for _, f = range dl {
 				if blobDigest := digest.NewDigestFromHex(alg, f.Name()); blobDigest.Validate() == nil {
 					if !keep[blobDigest] {
 						if e := os.Remove(filepath.Join(af, f.Name())); e != nil {
-							s.debug.Printf("warn: blob %s: %s", blobDigest, e)
-							err = e
+							err = errors.New(e.Error())
+							s.debug.Printf("blob %s: %s", blobDigest, e)
 						}
 					}
 				}
@@ -150,7 +153,7 @@ func (s *BlobStore) unpackLayers(manifest *ispecs.Manifest, dest string) (err er
 
 	// Create destination directory
 	if _, err = os.Stat(dest); err != nil {
-		return
+		return errors.New(err.Error())
 	}
 
 	// Unpack layers
@@ -167,22 +170,23 @@ func (s *BlobStore) unpackLayer(id digest.Digest, dest string) (err error) {
 	layerFile := filepath.Join(s.blobDir, id.Algorithm().String(), id.Hex())
 	f, err := os.Open(layerFile)
 	if err != nil {
-		return
+		return errors.New(err.Error())
 	}
 	defer f.Close()
 	reader, err := gzip.NewReader(f)
 	if err != nil {
-		return
+		return errors.New(err.Error())
 	}
 	return layer.UnpackLayer(dest, reader, &layer.MapOptions{Rootless: true})
 }
 
 func (s *BlobStore) readBlob(id digest.Digest) (b []byte, err error) {
 	if err = id.Validate(); err != nil {
-		return nil, errors.Wrapf(err, "blob digest %q", id.String())
+		return nil, errors.New("blob digest " + id.String() + ": " + err.Error())
 	}
-	b, err = ioutil.ReadFile(filepath.Join(s.blobDir, id.Algorithm().String(), id.Hex()))
-	err = errors.Wrapf(err, "read blob %s", id)
+	if b, err = ioutil.ReadFile(filepath.Join(s.blobDir, id.Algorithm().String(), id.Hex())); err != nil {
+		err = errors.New("read blob " + id.String() + ": " + err.Error())
+	}
 	return
 }
 
@@ -193,12 +197,14 @@ func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err 
 
 	// Create blob dir
 	if err = os.MkdirAll(s.blobDir, 0775); err != nil {
+		err = errors.New(err.Error())
 		return
 	}
 	// Create temp file to write blob to
 	tmpBlob, err := ioutil.TempFile(s.blobDir, "blob-")
 	if err != nil {
-		return d, size, errors.Wrap(err, "create temporary blob")
+		err = errors.New(err.Error())
+		return
 	}
 	tmpPath := tmpBlob.Name()
 	defer tmpBlob.Close()
@@ -207,7 +213,8 @@ func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err 
 	digester := digest.SHA256.Digester()
 	writer := io.MultiWriter(tmpBlob, digester.Hash())
 	if size, err = io.Copy(writer, reader); err != nil {
-		return d, size, errors.Wrap(err, "write temporary blob")
+		err = errors.New(err.Error())
+		return
 	}
 	tmpBlob.Close()
 
@@ -216,10 +223,13 @@ func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err 
 	blobFile := s.blobFile(d)
 	if _, e := os.Stat(blobFile); os.IsNotExist(e) {
 		// Write blob if not exists
-		err = errors.Wrap(os.Rename(tmpPath, blobFile), "rename temp blob")
+		err = os.Rename(tmpPath, blobFile)
 	} else {
 		// Do not override already existing blob to make hash collisions obvious early
-		err = errors.Wrap(os.Remove(tmpPath), "remove temp blob")
+		err = os.Remove(tmpPath)
+	}
+	if err != nil {
+		err = errors.New(err.Error())
 	}
 	return
 }
