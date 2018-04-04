@@ -1,10 +1,10 @@
 package store
 
 import (
-	"os"
-
+	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/mgoltzsche/cntnr/pkg/log"
@@ -26,6 +26,26 @@ var mtreeKeywords = []mtree.Keyword{
 	"xattr",
 }
 
+type notExistError struct {
+	cause error
+}
+
+func (e *notExistError) Error() string {
+	return e.cause.Error()
+}
+
+func (e *notExistError) Format(s fmt.State, verb rune) {
+	type formatter interface {
+		Format(s fmt.State, verb rune)
+	}
+	e.cause.(formatter).Format(s, verb)
+}
+
+func IsNotExist(err error) bool {
+	_, ok := err.(*notExistError)
+	return ok
+}
+
 type MtreeStore struct {
 	dir    string
 	fsEval mtree.FsEval
@@ -44,12 +64,17 @@ func (s *MtreeStore) Get(manifestDigest digest.Digest) (spec *mtree.DirectoryHie
 		spec, err = mtree.ParseSpec(f)
 	}
 	if err != nil {
-		err = errors.New("read mtree: " + err.Error())
+		if os.IsNotExist(err) {
+			err = &notExistError{errors.Errorf("mtree %s does not exist", manifestDigest)}
+		} else {
+			err = errors.New("read mtree: " + err.Error())
+		}
 	}
 	return
 }
 
 func (s *MtreeStore) Put(manifestDigest digest.Digest, spec *mtree.DirectoryHierarchy) (err error) {
+	s.debug.Printf("Storing layer mtree %s", manifestDigest)
 	destFile := s.mtreeFile(manifestDigest)
 	if _, err = os.Stat(destFile); !os.IsNotExist(err) {
 		// Cancel if already exists

@@ -81,11 +81,10 @@ func (e *ExitError) Error() string {
 	return e.cause.Error()
 }
 
-type formatter interface {
-	Format(s fmt.State, verb rune)
-}
-
 func (e *ExitError) Format(s fmt.State, verb rune) {
+	type formatter interface {
+		Format(s fmt.State, verb rune)
+	}
 	e.cause.(formatter).Format(s, verb)
 }
 

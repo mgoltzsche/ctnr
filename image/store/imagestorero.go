@@ -18,14 +18,14 @@ import (
 var _ image.ImageStoreRO = &ImageStoreRO{}
 
 type ImageStoreRO struct {
-	blobs       *BlobStoreExt
+	blobs       *BlobStoreOci
 	imageReader image.ImageReader
 	imageIds    ImageIdStore
 	repoDir     string
 	warn        log.Logger
 }
 
-func NewImageStoreRO(dir string, blobStore *BlobStoreExt, imageIds ImageIdStore, warn log.Logger) (r *ImageStoreRO) {
+func NewImageStoreRO(dir string, blobStore *BlobStoreOci, imageIds ImageIdStore, warn log.Logger) (r *ImageStoreRO) {
 	return &ImageStoreRO{blobStore, nil, imageIds, dir, warn}
 }
 
@@ -38,15 +38,13 @@ func (s *ImageStoreRO) ImageConfig(id digest.Digest) (ispecs.Image, error) {
 }
 
 func (s *ImageStoreRO) UnpackImageLayers(imageId digest.Digest, rootfs string) (err error) {
-	defer exterrors.Wrapd(&err, "unpack image layers")
 	img, err := s.imageIds.ImageID(imageId)
-	if err != nil {
-		return
+	if err == nil {
+		if err = s.imageIds.MarkUsed(imageId); err == nil {
+			return s.blobs.UnpackLayers(img.ManifestDigest, rootfs)
+		}
 	}
-	if err = s.imageIds.MarkUsed(imageId); err != nil {
-		return
-	}
-	return s.blobs.UnpackLayers(img.ManifestDigest, rootfs)
+	return errors.Wrap(err, "unpack image layers")
 }
 
 func (s *ImageStoreRO) Image(id digest.Digest) (r image.Image, err error) {
@@ -68,7 +66,7 @@ func (s *ImageStoreRO) imageFromManifestDigest(manifestDigest digest.Digest, las
 	if err != nil {
 		return
 	}
-	return image.NewImage(manifestDigest, "", "", f.ModTime(), lastUsed, manifest, nil, s), err
+	return image.NewImage(manifestDigest, "", "", f.ModTime(), lastUsed, manifest, nil, s.imageReader), err
 }
 
 func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {

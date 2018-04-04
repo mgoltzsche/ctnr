@@ -66,7 +66,7 @@ func (s *ImageIdStore) ImageID(imageID digest.Digest) (r ImageID, err error) {
 		r.LastUsed = f.ModTime()
 		r.ManifestDigest, err = readImageIDFile(file)
 	} else {
-		err = errors.New("image ID " + imageID.String() + ": " + err.Error())
+		err = errors.Errorf("image ID %q: %s", imageID, err)
 	}
 	return
 }

@@ -19,7 +19,7 @@ type Lockfile struct {
 func LockFile(file string) (*Lockfile, error) {
 	file, err := normalizePath(file)
 	if err != nil {
-		return nil, errors.Wrap(err, "lock file")
+		return nil, errors.Wrap(err, "new lock file")
 	}
 
 	l, err := lockfile.New(file)
@@ -45,7 +45,7 @@ func (l *Lockfile) Lock() (err error) {
 
 	defer func() {
 		if err != nil {
-			err = errors.Wrap(err, "lock")
+			err = errors.New("lock: " + err.Error())
 			unlock(l.file)
 		}
 	}()
@@ -79,13 +79,16 @@ func normalizePath(path string) (f string, err error) {
 		if os.IsNotExist(err) {
 			f, err = normalizePath(filepath.Dir(path))
 			f = filepath.Join(f, filepath.Base(path))
+			if err != nil {
+				return
+			}
 		}
 	}
 	if err == nil {
 		f, err = filepath.Abs(f)
 	}
 	if err != nil {
-		err = errors.New(err.Error())
+		err = errors.Errorf("normalize path %q: %s", path, err)
 	}
 	return
 }

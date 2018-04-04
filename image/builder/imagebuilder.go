@@ -86,10 +86,15 @@ func (b *ImageBuilder) Image() *digest.Digest {
 	}
 }
 
-func (b *ImageBuilder) closeContainer() {
-	if err := b.Close(); err != nil {
-		b.loggers.Warn.Println(err)
+func (b *ImageBuilder) closeContainer() (err error) {
+	if b.container != nil {
+		err = b.container.Close()
+		b.container = nil
+	} else if b.bundle != nil {
+		err = b.bundle.Close()
 	}
+	b.bundle = nil
+	return
 }
 
 func (b *ImageBuilder) initBundle() (err error) {
@@ -291,14 +296,9 @@ func (b *ImageBuilder) Tag(tag string) (err error) {
 	img, err := b.images.TagImage(b.image.ID(), tag)
 	if err == nil {
 		b.image = &img
+		b.loggers.Info.WithField("img", b.image.ID()).WithField("tag", tag).Println("Tagged image")
 	}
 	return
-}
-
-type FileEntry struct {
-	Source      string
-	Destination string
-	// TODO: add mode
 }
 
 func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest string) (err error) {
@@ -343,18 +343,23 @@ func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest str
 	}
 	destFiles, err := fs.Add(srcFiles, dest)
 	if err != nil {
-		b.closeContainer()
+		err = exterrors.Append(err, b.closeContainer())
 		return
 	}
 
 	commitSrc, err := b.images.NewLayerSource(rootfs, destFiles)
 	if err != nil {
-		b.closeContainer()
+		err = exterrors.Append(err, b.closeContainer())
 		return
 	}
 	createdBy := "COPY " + commitSrc.DiffHash().String()
 	return b.cached(createdBy, func(createdBy string) (err error) {
-		return b.commitLayer(commitSrc, createdBy)
+		err = b.commitLayer(commitSrc, createdBy)
+		// Close container to force full mtree creation when the file system
+		// should be changed in a subsequent operation
+		// (requiring this image's mtree)
+		err = exterrors.Append(err, b.closeContainer())
+		return
 	})
 }
 
@@ -389,17 +394,14 @@ func (b *ImageBuilder) commitConfig(createdBy string) (err error) {
 	}
 	img, err := b.images.AddImageConfig(b.config, parentImgId)
 	if err == nil {
-		err = b.setImage(&img)
+		if err = b.setImage(&img); err == nil {
+			newImageId := img.ID()
+			if b.bundle != nil {
+				err = b.bundle.SetParentImageId(&newImageId)
+			}
+		}
 	}
 	return errors.Wrap(err, "commit config")
-}
-
-func (b *ImageBuilder) AddTag(name string) (err error) {
-	img, err := b.images.TagImage(b.image.ID(), name)
-	if err == nil {
-		b.image = &img
-	}
-	return
 }
 
 func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) error) (err error) {
@@ -408,7 +410,7 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 	defer func() {
 		if err != nil {
 			// Release bundle when operation failed
-			b.closeContainer()
+			err = exterrors.Append(err, b.closeContainer())
 		}
 	}()
 
@@ -422,7 +424,7 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 	if err == nil {
 		if cachedImg, e := b.images.Image(cachedImgId); e == nil {
 			// TODO: distinguish between image not found and serious error
-			b.loggers.Info.WithField("img", (*b.image).ID()).Printf("Using cached image")
+			b.loggers.Info.WithField("img", cachedImg.ID()).Printf("Using cached image")
 			err = b.setImage(&cachedImg)
 			err = errors.Wrap(err, "cached image")
 			return
@@ -446,11 +448,7 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 }
 
 func (b *ImageBuilder) Close() (err error) {
-	if b.container != nil {
-		err = b.container.Close()
-		errors.Wrap(err, "close image builder")
-		b.container = nil
-		b.bundle = nil
-	}
+	err = b.closeContainer()
+	err = errors.WithMessage(err, "close image builder")
 	return
 }

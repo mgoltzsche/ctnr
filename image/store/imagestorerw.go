@@ -53,100 +53,6 @@ func (s *ImageStoreRW) Close() (err error) {
 	return err
 }
 
-// Creates a new image ref. Overwrites existing refs.
-func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Image, err error) {
-	defer exterrors.Wrapd(&err, "tag")
-
-	if tag == "" {
-		return img, errors.New("no tag provided")
-	}
-	imgId, err := s.imageIds.ImageID(imageId)
-	if err != nil {
-		return
-	}
-	manifestDigest := imgId.ManifestDigest
-	repo, ref := normalizeImageName(tag)
-	manifest, err := s.blobs.ImageManifest(manifestDigest)
-	if err != nil {
-		return
-	}
-	f, err := s.blobs.BlobFileInfo(manifestDigest)
-	if err != nil {
-		return
-	}
-	manifestDescriptor := ispecs.Descriptor{
-		MediaType: ispecs.MediaTypeImageManifest,
-		Digest:    manifestDigest,
-		Size:      f.Size(),
-		Annotations: map[string]string{
-			ispecs.AnnotationRefName: ref,
-		},
-		Platform: &ispecs.Platform{
-			Architecture: runtime.GOARCH,
-			OS:           runtime.GOOS,
-		},
-	}
-
-	// Create/update index.json
-	if err = s.addImages(repo, []ispecs.Descriptor{manifestDescriptor}); err != nil {
-		return
-	}
-
-	return image.NewImage(manifestDigest, repo, ref, time.Now(), time.Now(), manifest, nil, s), err
-}
-
-func (s *ImageStoreRW) UntagImage(tag string) (err error) {
-	defer exterrors.Wrapd(&err, "untag")
-	repo, ref := normalizeImageName(tag)
-	err = s.updateImageIndex(repo, false, func(repo *ImageRepo) error {
-		idx := &repo.index
-		if ref == "" {
-			idx.Manifests = nil
-		} else {
-			manifests := make([]ispecs.Descriptor, 0, len(idx.Manifests))
-			deleted := false
-			for _, m := range idx.Manifests {
-				if ref == m.Annotations[ispecs.AnnotationRefName] {
-					deleted = true
-				} else {
-					manifests = append(manifests, m)
-				}
-			}
-			idx.Manifests = manifests
-			if !deleted {
-				return errors.Errorf("image repo %q has no ref %q", repo, ref)
-			}
-		}
-		return nil
-	})
-	return
-}
-
-func (s *ImageStoreRW) NewLayerSource(rootfs string, fileFilter []string) (image.LayerSource, error) {
-	return s.blobs.NewLayerSource(rootfs, fileFilter)
-}
-
-func (s *ImageStoreRW) AddImageLayer(src image.LayerSource, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
-	defer exterrors.Wrapd(&err, "commit image layer")
-
-	var parentManifest *digest.Digest
-	if parentImageId != nil {
-		parent, err := s.imageIds.ImageID(*parentImageId)
-		if err != nil {
-			return r, errors.Wrap(err, "resolve base image")
-		}
-		parentManifest = &parent.ManifestDigest
-	}
-	c, err := s.blobs.CommitLayer(src.(*LayerSource), parentManifest, author, comment)
-	if err != nil {
-		return
-	}
-	if err = s.imageIds.Add(c.Manifest.Config.Digest, c.Descriptor.Digest); err != nil {
-		return
-	}
-	return s.Image(c.Manifest.Config.Digest)
-}
-
 func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	defer exterrors.Wrapd(&err, "import")
 
@@ -216,50 +122,131 @@ func (s *ImageStoreRW) MarkUsedImage(id digest.Digest) error {
 	return s.imageIds.MarkUsed(id)
 }
 
-func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.Digest) (img image.Image, err error) {
-	var manifest ispecs.Manifest
-	if parentImageId == nil {
-		manifest = ispecs.Manifest{}
-		manifest.Versioned.SchemaVersion = 2
+func (s *ImageStoreRW) NewLayerSource(rootfs string, fileFilter []string) (image.LayerSource, error) {
+	return s.blobs.NewLayerSource(rootfs, fileFilter)
+}
 
+func (s *ImageStoreRW) AddImageLayer(src image.LayerSource, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
+	var parentManifest *digest.Digest
+	if parentImageId != nil {
+		parent, err := s.imageIds.ImageID(*parentImageId)
+		if err != nil {
+			return r, errors.Wrap(err, "add image layer: resolve base image")
+		}
+		parentManifest = &parent.ManifestDigest
+	}
+	c, err := s.blobs.PutImageLayer(src.(*LayerSource), parentManifest, author, comment)
+	if err != nil {
+		return
+	}
+	if err = s.imageIds.Add(c.Manifest.Config.Digest, c.Descriptor.Digest); err == nil {
+		now := time.Now()
+		r = image.NewImage(c.Descriptor.Digest, "", "", now, now, c.Manifest, &c.Config, s)
+	}
+	return r, errors.WithMessage(err, "add image layer")
+}
+
+func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.Digest) (img image.Image, err error) {
+	// Lookup parent manifest digest and set image id annotation
+	var parentManifest *digest.Digest
+	if parentImageId == nil {
 		if conf.Config.Labels != nil {
 			delete(conf.Config.Labels, AnnotationParentImage)
 		}
 	} else {
-		parent, err := s.Image(*parentImageId)
+		pImg, err := s.imageIds.ImageID(*parentImageId)
 		if err != nil {
-			return img, errors.Wrap(err, "parent image")
+			return img, errors.WithMessage(err, "add image config: resolve parent manifest")
 		}
-		manifest = parent.Manifest
+		parentManifest = &pImg.ManifestDigest
 
 		if conf.Config.Labels == nil {
-			conf.Config.Labels = map[string]string{AnnotationParentImage: (*parentImageId).String()}
-		} else {
-			conf.Config.Labels[AnnotationParentImage] = (*parentImageId).String()
+			conf.Config.Labels = map[string]string{}
+		}
+		conf.Config.Labels[AnnotationParentImage] = (*parentImageId).String()
+	}
+
+	// Write image config and new manifest
+	manifestRef, manifest, err := s.blobs.PutImageConfig(conf, parentManifest, nil)
+	if err == nil {
+		// Map imageID (config digest) to manifest
+		if err = s.imageIds.Add(manifest.Config.Digest, manifestRef.Digest); err == nil {
+			now := time.Now()
+			img = image.NewImage(manifestRef.Digest, "", "", now, now, manifest, &conf, s)
 		}
 	}
-
-	//now := time.Now()
-	//conf.Created = &now
-	conf.Architecture = runtime.GOARCH
-	conf.OS = runtime.GOOS
-	confRef, err := s.blobs.PutImageConfig(conf)
-	if err != nil {
-		return
-	}
-	manifest.Config = confRef
-	return s.putImageManifest(manifest)
+	err = errors.WithMessage(err, "add image config")
+	return
 }
 
-func (s *ImageStoreRW) putImageManifest(manifest ispecs.Manifest) (r image.Image, err error) {
-	d, err := s.blobs.PutImageManifest(manifest)
+// Creates a new image ref. Overwrites existing refs.
+func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Image, err error) {
+	defer exterrors.Wrapd(&err, "tag")
+
+	if tag == "" {
+		return img, errors.New("no tag provided")
+	}
+	imgId, err := s.imageIds.ImageID(imageId)
 	if err != nil {
 		return
 	}
-	if err = s.imageIds.Add(manifest.Config.Digest, d.Digest); err != nil {
+	manifestDigest := imgId.ManifestDigest
+	repo, ref := normalizeImageName(tag)
+	manifest, err := s.blobs.ImageManifest(manifestDigest)
+	if err != nil {
 		return
 	}
-	return s.Image(manifest.Config.Digest)
+	f, err := s.blobs.BlobFileInfo(manifestDigest)
+	if err != nil {
+		return
+	}
+	manifestDescriptor := ispecs.Descriptor{
+		MediaType: ispecs.MediaTypeImageManifest,
+		Digest:    manifestDigest,
+		Size:      f.Size(),
+		Annotations: map[string]string{
+			ispecs.AnnotationRefName: ref,
+		},
+		Platform: &ispecs.Platform{
+			Architecture: runtime.GOARCH,
+			OS:           runtime.GOOS,
+		},
+	}
+
+	// Create/update index.json
+	if err = s.addImages(repo, []ispecs.Descriptor{manifestDescriptor}); err != nil {
+		return
+	}
+
+	now := time.Now()
+	return image.NewImage(manifestDigest, repo, ref, now, now, manifest, nil, s), err
+}
+
+func (s *ImageStoreRW) UntagImage(tag string) (err error) {
+	defer exterrors.Wrapd(&err, "untag")
+	repo, ref := normalizeImageName(tag)
+	err = s.updateImageIndex(repo, false, func(repo *ImageRepo) error {
+		idx := &repo.index
+		if ref == "" {
+			idx.Manifests = nil
+		} else {
+			manifests := make([]ispecs.Descriptor, 0, len(idx.Manifests))
+			deleted := false
+			for _, m := range idx.Manifests {
+				if ref == m.Annotations[ispecs.AnnotationRefName] {
+					deleted = true
+				} else {
+					manifests = append(manifests, m)
+				}
+			}
+			idx.Manifests = manifests
+			if !deleted {
+				return errors.Errorf("image repo %q has no ref %q", repo, ref)
+			}
+		}
+		return nil
+	})
+	return
 }
 
 // Adds manifests to an image repo. This is an atomic operation

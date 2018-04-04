@@ -1,17 +1,13 @@
 package store
 
 import (
-	"bytes"
 	"compress/gzip"
-	"encoding/json"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/mgoltzsche/cntnr/pkg/log"
-	"github.com/openSUSE/umoci/oci/layer"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -25,53 +21,6 @@ type BlobStore struct {
 func NewBlobStore(dir string, debug log.Logger) (r BlobStore) {
 	r.blobDir = dir
 	r.debug = debug
-	return
-}
-
-func (s *BlobStore) ImageManifest(manifestDigest digest.Digest) (r ispecs.Manifest, err error) {
-	b, err := s.readBlob(manifestDigest)
-	if err != nil {
-		return r, errors.Wrap(err, "image manifest")
-	}
-	if err = json.Unmarshal(b, &r); err != nil {
-		return r, errors.Wrapf(err, "unmarshal image manifest %q", manifestDigest.String())
-	}
-	if r.Config.Digest.String() == "" {
-		return r, errors.Errorf("image manifest: loaded JSON blob %q is not an OCI image manifest", manifestDigest)
-	}
-	return
-}
-
-func (s *BlobStore) PutImageManifest(m ispecs.Manifest) (d ispecs.Descriptor, err error) {
-	d.Digest, d.Size, err = s.putJsonBlob(m)
-	d.MediaType = ispecs.MediaTypeImageManifest
-	d.Platform = &ispecs.Platform{
-		Architecture: runtime.GOARCH,
-		OS:           runtime.GOOS,
-	}
-	if err != nil {
-		err = errors.Wrap(err, "put image manifest")
-	}
-	return
-}
-
-func (s *BlobStore) ImageConfig(configDigest digest.Digest) (r ispecs.Image, err error) {
-	b, err := s.readBlob(configDigest)
-	if err != nil {
-		return r, errors.Wrap(err, "image config")
-	}
-	if err = json.Unmarshal(b, &r); err != nil {
-		err = errors.Wrap(err, "unmarshal image config")
-	}
-	return
-}
-
-func (s *BlobStore) PutImageConfig(m ispecs.Image) (d ispecs.Descriptor, err error) {
-	d.Digest, d.Size, err = s.putJsonBlob(m)
-	d.MediaType = ispecs.MediaTypeImageConfig
-	if err != nil {
-		err = errors.Wrap(err, "put image config")
-	}
 	return
 }
 
@@ -146,40 +95,6 @@ func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
 	return
 }
 
-func (s *BlobStore) unpackLayers(manifest *ispecs.Manifest, dest string) (err error) {
-	defer func() {
-		err = errors.Wrap(err, "unpack layers")
-	}()
-
-	// Create destination directory
-	if _, err = os.Stat(dest); err != nil {
-		return errors.New(err.Error())
-	}
-
-	// Unpack layers
-	for _, l := range manifest.Layers {
-		if err = s.unpackLayer(l.Digest, dest); err != nil {
-			return
-		}
-	}
-	return
-}
-
-func (s *BlobStore) unpackLayer(id digest.Digest, dest string) (err error) {
-	s.debug.Println("Extracting layer", id)
-	layerFile := filepath.Join(s.blobDir, id.Algorithm().String(), id.Hex())
-	f, err := os.Open(layerFile)
-	if err != nil {
-		return errors.New(err.Error())
-	}
-	defer f.Close()
-	reader, err := gzip.NewReader(f)
-	if err != nil {
-		return errors.New(err.Error())
-	}
-	return layer.UnpackLayer(dest, reader, &layer.MapOptions{Rootless: true})
-}
-
 func (s *BlobStore) readBlob(id digest.Digest) (b []byte, err error) {
 	if err = id.Validate(); err != nil {
 		return nil, errors.New("blob digest " + id.String() + ": " + err.Error())
@@ -192,7 +107,7 @@ func (s *BlobStore) readBlob(id digest.Digest) (b []byte, err error) {
 
 func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err error) {
 	defer func() {
-		err = errors.Wrap(err, "put blob")
+		err = errors.WithMessage(err, "put blob")
 	}()
 
 	// Create blob dir
@@ -232,14 +147,6 @@ func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err 
 		err = errors.New(err.Error())
 	}
 	return
-}
-
-func (s *BlobStore) putJsonBlob(o interface{}) (d digest.Digest, size int64, err error) {
-	var buf bytes.Buffer
-	if err = json.NewEncoder(&buf).Encode(o); err != nil {
-		return d, size, errors.Wrap(err, "put json blob")
-	}
-	return s.putBlob(&buf)
 }
 
 func (s *BlobStore) blobFile(d digest.Digest) string {

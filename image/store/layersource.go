@@ -35,7 +35,7 @@ func (s *LayerSource) DiffHash() digest.Digest {
 	return digest.FromString(strings.Join(normalizedLines, "\n"))
 }
 
-func (s *BlobStoreExt) NewLayerSource(rootfs string, filterPaths []string) (src *LayerSource, err error) {
+func (s *BlobStoreOci) NewLayerSource(rootfs string, filterPaths []string) (src *LayerSource, err error) {
 	if rootfs == "" {
 		return nil, errors.New("rootfs not set")
 	}

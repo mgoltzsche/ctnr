@@ -249,9 +249,7 @@ func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
 
 func createRootfs(rootfs string, image BundleImage) (err error) {
 	if err = os.RemoveAll(rootfs); err == nil || os.IsNotExist(err) {
-		if err = os.Mkdir(rootfs, 0755); err == nil && image != nil {
-			return image.Unpack(rootfs)
-		}
+		return image.Unpack(rootfs)
 	}
 	if err != nil {
 		err = errors.New("create bundle rootfs: " + err.Error())
