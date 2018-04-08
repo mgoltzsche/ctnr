@@ -1,17 +1,19 @@
 package store
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/vbatts/go-mtree"
 )
+
+const errMtreeNotExist = "github.com/mgoltzsche/cntnr/image/mtree/notexist"
 
 var mtreeKeywords = []mtree.Keyword{
 	"size",
@@ -26,24 +28,8 @@ var mtreeKeywords = []mtree.Keyword{
 	"xattr",
 }
 
-type notExistError struct {
-	cause error
-}
-
-func (e *notExistError) Error() string {
-	return e.cause.Error()
-}
-
-func (e *notExistError) Format(s fmt.State, verb rune) {
-	type formatter interface {
-		Format(s fmt.State, verb rune)
-	}
-	e.cause.(formatter).Format(s, verb)
-}
-
-func IsNotExist(err error) bool {
-	_, ok := err.(*notExistError)
-	return ok
+func IsMtreeNotExist(err error) bool {
+	return exterrors.HasType(err, errMtreeNotExist)
 }
 
 // TODO: RetainAll(manifestDigests)
@@ -84,7 +70,7 @@ func (s *MtreeStore) Get(manifestDigest digest.Digest) (spec *mtree.DirectoryHie
 	}
 	if err != nil {
 		if os.IsNotExist(err) {
-			err = &notExistError{errors.Errorf("mtree %s does not exist", manifestDigest)}
+			err = exterrors.Typedf(errMtreeNotExist, "mtree %s does not exist", manifestDigest)
 		} else {
 			err = errors.New("read mtree: " + err.Error())
 		}

@@ -3,8 +3,8 @@ package store
 import (
 	"encoding/json"
 	"io/ioutil"
+	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/containers/image/transports/alltransports"
@@ -15,10 +15,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+// TODO: Move into imagerepo after repo lock is made optional
 func imageIndex(dir string, r *ispecs.Index) (err error) {
 	idxFile := filepath.Join(dir, "index.json")
 	b, err := ioutil.ReadFile(idxFile)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return err
+		}
 		return errors.New("read image index: " + err.Error())
 	}
 	if err = json.Unmarshal(b, r); err != nil {
@@ -51,28 +55,6 @@ func parseImageName(nameAndRef string) (repo, ref string) {
 	} else {
 		repo = nameAndRef
 		ref = "latest"
-	}
-	return
-}
-
-// TODO: Move into imagerepo
-func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err error) {
-	refFound := false
-	for _, descriptor := range idx.Manifests {
-		if descriptor.Annotations[ispecs.AnnotationRefName] == ref {
-			refFound = true
-			if descriptor.Platform.Architecture == runtime.GOARCH && descriptor.Platform.OS == runtime.GOOS {
-				if descriptor.MediaType != ispecs.MediaTypeImageManifest {
-					err = errors.Errorf("unsupported manifest media type %q", descriptor.MediaType)
-				}
-				return descriptor, err
-			}
-		}
-	}
-	if refFound {
-		err = errors.Errorf("no image manifest for architecture %s and OS %s found in image index!", runtime.GOARCH, runtime.GOOS)
-	} else {
-		err = errors.Errorf("no image manifest for ref %q found in image index!", ref)
 	}
 	return
 }

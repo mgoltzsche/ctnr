@@ -23,6 +23,7 @@ import (
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
+	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/image/builder"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -212,12 +213,7 @@ func runImageCatConfig(cmd *cobra.Command, args []string) (err error) {
 	if len(args) != 1 {
 		return usageError("No IMAGE argument provided")
 	}
-	lockedStore, err := openImageStore()
-	if err != nil {
-		return
-	}
-
-	img, err := lockedStore.ImageByName(args[0])
+	img, err := image.GetLocalImage(store, args[0])
 	if err != nil {
 		return
 	}

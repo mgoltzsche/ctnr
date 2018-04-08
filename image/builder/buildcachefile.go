@@ -3,7 +3,6 @@ package builder
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -12,20 +11,16 @@ import (
 	"github.com/pkg/errors"
 )
 
+const errCacheKeyNotExist = "github.com/mgoltzsche/cntnr/image/builder/cache/notexist"
+
+func IsCacheKeyNotExist(err error) bool {
+	return exterrors.HasType(err, errCacheKeyNotExist)
+}
+
 type CacheFile struct {
 	file  string
 	cache map[string]string
 	warn  log.Logger
-}
-
-type CacheError string
-
-func (e CacheError) Error() string {
-	return string(e)
-}
-
-func (e CacheError) Temporary() bool {
-	return true
 }
 
 type cacheEntry struct {
@@ -45,7 +40,7 @@ func (s *CacheFile) Get(key string) (child string, err error) {
 	}
 	child, ok := s.cache[key]
 	if !ok {
-		err = CacheError(fmt.Sprintf("cache key %q not found", key))
+		err = exterrors.Typedf(errCacheKeyNotExist, "cache key %q not found", key)
 	}
 	return
 }
@@ -82,24 +77,20 @@ func (s *CacheFile) read() (idx map[string]string, err error) {
 }
 
 func (s *CacheFile) Put(key, value string) (err error) {
-	defer exterrors.Wrapdf(&err, "put cache %q => %q", key, value)
-	if err = os.MkdirAll(filepath.Dir(s.file), 0775); err != nil {
-		return
+	if err = os.MkdirAll(filepath.Dir(s.file), 0775); err == nil {
+		var f *os.File
+		if f, err = os.OpenFile(s.file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0660); err == nil {
+			defer f.Close()
+			var b []byte
+			if b, err = json.Marshal(cacheEntry{key, value}); err == nil {
+				if _, err = f.Write([]byte(string(b) + "\n")); err == nil {
+					err = f.Sync()
+				}
+			}
+		}
 	}
-	f, err := os.OpenFile(s.file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0660)
 	if err != nil {
-		return
-	}
-	defer f.Close()
-	b, err := json.Marshal(cacheEntry{key, value})
-	if err != nil {
-		return
-	}
-	if _, err = f.Write([]byte(string(b) + "\n")); err != nil {
-		return
-	}
-	if err = f.Sync(); err != nil {
-		return
+		return errors.Errorf("put cache %q => %q: %s", key, value, err)
 	}
 	if s.cache != nil {
 		s.cache[key] = value

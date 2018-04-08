@@ -20,7 +20,7 @@ func Map(src []string, dest string) []CopyPair {
 			destDir = filepath.Dir(dest)
 			destFile = filepath.Base(dest)
 		}
-		r[i] = CopyPair{file, filepath.Clean("/" + filepath.Join(destDir, destFile))}
+		r[i] = CopyPair{filepath.Clean(file), filepath.Clean("/" + filepath.Join(destDir, destFile))}
 	}
 	return r
 }

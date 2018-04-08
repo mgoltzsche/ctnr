@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/mgoltzsche/cntnr/image"
@@ -70,17 +71,17 @@ func (s *ImageStoreRO) imageFromManifestDigest(manifestDigest digest.Digest, las
 }
 
 func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
-	defer exterrors.Wrapdf(&err, "image %q not found in local store", nameRef)
-	if id, e := digest.Parse(nameRef); e == nil && id.Validate() == nil {
-		return s.Image(id)
-	}
-	name, ref := normalizeImageName(nameRef)
-	dir, err := s.name2dir(name)
+	defer exterrors.Wrapdf(&err, "image tag %q", nameRef)
+	repo, ref := normalizeImageName(nameRef)
+	dir, err := s.repo2dir(repo)
 	if err != nil {
 		return
 	}
 	var idx ispecs.Index
 	if err = imageIndex(dir, &idx); err != nil {
+		if os.IsNotExist(err) {
+			err = image.ErrorImageNameNotExist("image repo %q not found in local store", repo)
+		}
 		return
 	}
 	d, err := findManifestDigest(&idx, ref)
@@ -88,6 +89,27 @@ func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
 		return
 	}
 	return s.imageFromManifestDigest(d.Digest, time.Now())
+}
+
+func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err error) {
+	refFound := false
+	for _, descriptor := range idx.Manifests {
+		if descriptor.Annotations[ispecs.AnnotationRefName] == ref {
+			refFound = true
+			if descriptor.Platform.Architecture == runtime.GOARCH && descriptor.Platform.OS == runtime.GOOS {
+				if descriptor.MediaType != ispecs.MediaTypeImageManifest {
+					err = errors.Errorf("unsupported manifest media type %q", descriptor.MediaType)
+				}
+				return descriptor, err
+			}
+		}
+	}
+	if refFound {
+		err = image.ErrorImageNameNotExist("image ref %q not found for architecture %s and OS %s", ref, runtime.GOARCH, runtime.GOOS)
+	} else {
+		err = image.ErrorImageNameNotExist("image ref %q not found", ref)
+	}
+	return
 }
 
 func (s *ImageStoreRO) Images() (r []image.Image, err error) {
@@ -122,9 +144,9 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 	for _, f := range fl {
 		if f.IsDir() && f.Name()[0] != '.' {
 			name := f.Name()
-			name, e := s.dir2name(name)
+			name, e := s.dir2repo(name)
 			if e == nil {
-				dir, e := s.name2dir(name)
+				dir, e := s.repo2dir(name)
 				if e != nil {
 					s.warn.Println(e)
 					continue
@@ -163,19 +185,19 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 	return
 }
 
-func (s *ImageStoreRO) name2dir(name string) (string, error) {
-	if name == "" {
-		return name, errors.New("no repo name provided")
+func (s *ImageStoreRO) repo2dir(repo string) (string, error) {
+	if repo == "" {
+		return repo, errors.New("no repo name provided")
 	}
-	name = base64.RawStdEncoding.EncodeToString([]byte(name))
-	return filepath.Join(s.repoDir, name), nil
+	repo = base64.RawStdEncoding.EncodeToString([]byte(repo))
+	return filepath.Join(s.repoDir, repo), nil
 }
 
-func (s *ImageStoreRO) dir2name(fileName string) (name string, err error) {
+func (s *ImageStoreRO) dir2repo(fileName string) (repo string, err error) {
 	b, err := base64.RawStdEncoding.DecodeString(fileName)
-	name = string(b)
+	repo = string(b)
 	if err != nil {
-		name = fileName
+		repo = fileName
 		err = errors.Wrapf(err, "repo name from dir")
 	}
 	return

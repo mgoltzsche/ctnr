@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/openSUSE/umoci/oci/layer"
 	digest "github.com/opencontainers/go-digest"
@@ -83,7 +84,7 @@ func (s *BlobStoreOci) PutImageConfig(cfg ispecs.Image, parentManifest *digest.D
 			if e == nil {
 				dh = pdh
 				err = s.mtree.Put(d.Digest, dh)
-			} else if !IsNotExist(e) {
+			} else if !IsMtreeNotExist(e) {
 				err = e
 			}
 		}
@@ -240,7 +241,7 @@ func (s *BlobStoreOci) diff(from, to *mtree.DirectoryHierarchy, rootfs string) (
 	}
 
 	if len(diffs) == 0 {
-		return nil, errors.New("empty diff")
+		return nil, image.ErrorEmptyLayerDiff("empty layer")
 	}
 
 	// Generate tar layer from mtree diff

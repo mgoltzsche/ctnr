@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/mgoltzsche/cntnr/image"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -68,22 +70,34 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	img, err := lockedStore.AddImageLayer(src, lockedBundle.Image(), flagAuthor, flagComment)
-	if err != nil {
-		// TODO: distinguish between nothing to commit and real failure
-		return
+
+	// Try to create new image
+	var (
+		imgId digest.Digest
+		img   image.Image
+	)
+	if img, err = lockedStore.AddImageLayer(src, lockedBundle.Image(), flagAuthor, flagComment); err == nil {
+		imgId = img.ID()
+		err = lockedBundle.SetParentImageId(&imgId)
+	} else if image.IsEmptyLayerDiff(err) {
+		bImgId := lockedBundle.Image()
+		if bImgId == nil {
+			panic("bundle has no parent but provides no layer contents")
+		}
+		imgId = *bImgId
+		err = nil
 	}
-	imgId := img.ID()
-	if err = lockedBundle.SetParentImageId(&imgId); err != nil {
-		return
-	}
-	if len(args) > 1 {
-		for _, tag := range args[1:] {
-			if _, err = lockedStore.TagImage(img.ID(), tag); err != nil {
-				return
+
+	// Tag image
+	if err == nil {
+		if len(args) > 1 {
+			for _, tag := range args[1:] {
+				if _, err = lockedStore.TagImage(img.ID(), tag); err != nil {
+					return
+				}
 			}
 		}
+		fmt.Println(img.ID())
 	}
-	fmt.Println(img.ID())
 	return
 }

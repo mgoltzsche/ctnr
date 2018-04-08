@@ -18,6 +18,9 @@ func TestMap(t *testing.T) {
 		dest     string
 		expected []CopyPair
 	}{
+		{[]string{""}, "", []CopyPair{
+			CopyPair{".", "/"},
+		}},
 		{[]string{"/a"}, "/d", []CopyPair{
 			CopyPair{"/a", "/d"},
 		}},

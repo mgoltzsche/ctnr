@@ -25,7 +25,7 @@ func TestMtreeStore(t *testing.T) {
 	require.NoError(t, err)
 	testee := NewMtreeStore(tmpDir, fseval.RootlessFsEval, log.NewNopLogger())
 	_, err = testee.Get(digest.FromString("asdf"))
-	assert.True(t, IsNotExist(err), "_, err = Get(nonexisting); IsNotExist(err)")
+	assert.True(t, IsMtreeNotExist(err), "_, err = Get(nonexisting); IsNotExist(err)")
 	dhl := []*mtree.DirectoryHierarchy{}
 	// Assert different contents result in different mtrees
 	for i, _ := range []int{1, 2} {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	digest "github.com/opencontainers/go-digest"
@@ -37,8 +38,9 @@ func (s *ImageIdStore) Add(imageID, manifestDigest digest.Digest) (err error) {
 	defer func() {
 		err = errors.Wrapf(err, "add image ID %s -> %s", imageID, manifestDigest)
 	}()
-	if err = imageID.Validate(); err != nil {
-		return errors.New("invalid image ID: " + imageID.String())
+	file, err := s.idFile(imageID)
+	if err != nil {
+		return
 	}
 	if err = manifestDigest.Validate(); err != nil {
 		return errors.New("invalid manifest digest: " + manifestDigest.String())
@@ -46,27 +48,39 @@ func (s *ImageIdStore) Add(imageID, manifestDigest digest.Digest) (err error) {
 	if err = os.MkdirAll(filepath.Join(s.dir), 0775); err != nil {
 		return errors.New(err.Error())
 	}
-	file := s.idFile(imageID)
 	_, err = atomic.WriteFile(file, bytes.NewBufferString(manifestDigest.String()))
 	return
 }
 
 func (s *ImageIdStore) Del(imageID digest.Digest) (err error) {
-	if err = os.Remove(s.idFile(imageID)); err != nil {
-		err = errors.New("delete image ID " + imageID.String() + ": " + err.Error())
+	f, err := s.idFile(imageID)
+	if err == nil {
+		if err = os.Remove(f); err != nil {
+			if os.IsNotExist(err) {
+				err = image.ErrorImageIdNotExist("image %s does not exist", imageID)
+			} else {
+				err = errors.Errorf(err.Error())
+			}
+		}
 	}
+	errors.WithMessage(err, "delete image ID")
 	return
 }
 
 func (s *ImageIdStore) ImageID(imageID digest.Digest) (r ImageID, err error) {
 	r.ID = imageID
-	file := s.idFile(imageID)
+	file, err := s.idFile(imageID)
+	if err != nil {
+		return
+	}
 	f, err := os.Stat(file)
 	if err == nil {
 		r.LastUsed = f.ModTime()
 		r.ManifestDigest, err = readImageIDFile(file)
+	} else if os.IsNotExist(err) {
+		err = image.ErrorImageIdNotExist("image ID %s does not exist", imageID)
 	} else {
-		err = errors.Errorf("image ID %q: %s", imageID, err)
+		err = errors.Errorf("lookup image ID %q: %s", imageID, err)
 	}
 	return
 }
@@ -96,15 +110,22 @@ func (s *ImageIdStore) ImageIDs() (r []ImageID, err error) {
 }
 
 func (s *ImageIdStore) MarkUsed(id digest.Digest) (err error) {
-	now := time.Now()
-	if err = os.Chtimes(s.idFile(id), now, now); err != nil {
-		err = errors.New("mark used image ID: " + err.Error())
+	f, err := s.idFile(id)
+	if err == nil {
+		now := time.Now()
+		if err = os.Chtimes(f, now, now); err != nil {
+			err = errors.New(err.Error())
+		}
 	}
-	return
+	return errors.WithMessage(err, "mark used image ID")
 }
 
-func (s *ImageIdStore) idFile(imageId digest.Digest) string {
-	return filepath.Join(s.dir, imageId.Algorithm().String()+"-"+imageId.Hex())
+func (s *ImageIdStore) idFile(imageId digest.Digest) (f string, err error) {
+	if err = imageId.Validate(); err != nil {
+		err = errors.Errorf("invalid image ID %q: %s", imageId, err)
+	}
+	f = filepath.Join(s.dir, imageId.Algorithm().String()+"-"+imageId.Hex())
+	return
 }
 
 func decodeImageIdFileName(fileName string) (id digest.Digest, err error) {
@@ -113,7 +134,7 @@ func decodeImageIdFileName(fileName string) (id digest.Digest, err error) {
 		err = id.Validate()
 	}
 	if err != nil {
-		err = errors.New("decode image ID from file name " + idStr + ": " + err.Error())
+		err = errors.Errorf("decode image ID from file name %s: %s", idStr, err)
 	}
 	return
 }

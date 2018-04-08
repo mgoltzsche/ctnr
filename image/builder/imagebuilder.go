@@ -213,20 +213,16 @@ func (b *ImageBuilder) SetCmd(cmd []string) (err error) {
 	return b.cached("CMD "+string(cmdJson), b.commitConfig)
 }
 
-func (b *ImageBuilder) FromImage(image string) (err error) {
-	b.loggers.Info.Println("FROM", image)
+func (b *ImageBuilder) FromImage(imageName string) (err error) {
+	b.loggers.Info.Println("FROM", imageName)
 	if b.image != nil {
 		return errors.New("base image must be defined as first build step")
 	}
-	img, e := b.images.ImageByName(image)
-	// TODO: distinguish between 'image not found' and serious error
-	if e != nil {
-		if img, err = b.images.ImportImage(image); err != nil {
-			return
-		}
+	img, err := image.GetImage(b.images, imageName)
+	if err == nil {
+		err = b.setImage(&img)
 	}
-
-	return b.setImage(&img)
+	return
 }
 
 func (b *ImageBuilder) setImage(img *image.Image) (err error) {
@@ -429,7 +425,7 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 			err = errors.Wrap(err, "cached image")
 			return
 		}
-	} else if e, ok := err.(CacheError); !ok || !e.Temporary() {
+	} else if !IsCacheKeyNotExist(err) {
 		// if no "entry not found" error
 		return err
 	} else {

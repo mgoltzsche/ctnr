@@ -59,7 +59,7 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	// Parse source
 	srcRef, err := alltransports.ParseImageName(src)
 	if err != nil {
-		err = errors.Wrapf(err, "invalid source %q", src)
+		err = errors.WithMessage(err, "source")
 		return
 	}
 
@@ -283,7 +283,7 @@ func (s *ImageStoreRW) addImages(repoName string, manifestDescriptors []ispecs.D
 }
 
 func (s *ImageStoreRW) updateImageIndex(repoName string, create bool, transform func(*ImageRepo) error) (err error) {
-	dir, err := s.name2dir(repoName)
+	dir, err := s.repo2dir(repoName)
 	if err == nil {
 		var repo *ImageRepo
 		repo, err = OpenImageRepo(dir, s.blobs.blobDir, create)

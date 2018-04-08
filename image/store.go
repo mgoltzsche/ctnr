@@ -1,10 +1,13 @@
 package image
 
 import (
+	"bytes"
 	"time"
 
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 )
 
 // TODO: Make sure store is closed before running any container to free shared lock to allow other container to be prepared
@@ -47,6 +50,7 @@ type ImageStoreRW interface {
 	ImportImage(name string) (Image, error)
 	AddImageConfig(m ispecs.Image, parentImageId *digest.Digest) (Image, error)
 	NewLayerSource(rootfs string, addOnly bool) (LayerSource, error)
+	// Creates a new layer or returns errEmptyLayerDiff if nothing has changed
 	AddImageLayer(src LayerSource, parentImageId *digest.Digest, author, comment string) (Image, error)
 	TagImage(imageId digest.Digest, tag string) (Image, error)
 	UntagImage(tag string) error
@@ -57,13 +61,48 @@ type LayerSource interface {
 	DiffHash(filterPaths []string) (digest.Digest, error)
 }
 
-func GetImage(store ImageStoreRW, image string) (img Image, err error) {
+const (
+	errEmptyLayerDiff    = "github.com/mgoltzsche/cntnr/image/emptylayerdiff"
+	errImageIdNotExist   = "github.com/mgoltzsche/cntnr/image/idnotexist"
+	errImageNameNotExist = "github.com/mgoltzsche/cntnr/image/namenotexist"
+)
+
+func IsImageIdNotExist(err error) bool {
+	return exterrors.HasType(err, errImageIdNotExist)
+}
+
+func ErrorImageIdNotExist(format string, o ...interface{}) error {
+	return exterrors.Typedf(errImageIdNotExist, format, o...)
+}
+
+func IsImageNameNotExist(err error) bool {
+	return exterrors.HasType(err, errImageNameNotExist)
+}
+
+func ErrorImageNameNotExist(format string, o ...interface{}) error {
+	return exterrors.Typedf(errImageNameNotExist, format, o...)
+}
+
+func IsEmptyLayerDiff(err error) bool {
+	return exterrors.HasType(err, errEmptyLayerDiff)
+}
+
+func ErrorEmptyLayerDiff(msg string) error {
+	return exterrors.Typed(errEmptyLayerDiff, msg)
+}
+
+func GetLocalImage(store ImageStoreRO, image string) (img Image, err error) {
+	if len(bytes.TrimSpace([]byte(image))) == 0 {
+		return img, errors.New("get image: no image specified")
+	}
 	if imgId, e := digest.Parse(image); e == nil && imgId.Validate() == nil {
 		return store.Image(imgId)
 	}
-	img, err = store.ImageByName(image)
-	// TODO: distiguish between image not found and severe error
-	if err != nil {
+	return store.ImageByName(image)
+}
+
+func GetImage(store ImageStoreRW, image string) (img Image, err error) {
+	if img, err = GetLocalImage(store, image); IsImageNameNotExist(err) {
 		img, err = store.ImportImage(image)
 	}
 	return

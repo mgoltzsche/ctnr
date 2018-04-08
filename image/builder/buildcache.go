@@ -1,8 +1,10 @@
 package builder
 
 import (
+	"fmt"
 	"path/filepath"
 
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -16,7 +18,7 @@ type ImageBuildCache interface {
 type noOpCache string
 
 func (_ noOpCache) Get(parent *digest.Digest, uniqHistoryEntry string) (d digest.Digest, err error) {
-	err = CacheError("image build cache is disabled")
+	err = exterrors.Typed(errCacheKeyNotExist, "image build cache is disabled")
 	return
 }
 
@@ -40,18 +42,17 @@ func NewImageBuildCache(dir string, warn log.FieldLogger) ImageBuildCache {
 func (s *imageBuildCache) Get(parent *digest.Digest, uniqHistoryEntry string) (child digest.Digest, err error) {
 	c := s.cache(parent, uniqHistoryEntry)
 	cached, err := c.Get(uniqHistoryEntry)
-	if err != nil {
-		if e, ok := err.(CacheError); ok && e.Temporary() {
-			return child, err
-		} else {
-			return child, errors.Wrap(err, "image build cache")
+	if err == nil {
+		if child, err = digest.Parse(cached); err == nil {
+			if err = child.Validate(); err != nil {
+				msg := fmt.Sprintf("invalid cache value %q found in %s: %s", child, c.file, err)
+				s.warn.Println(msg)
+				err = exterrors.Typed(errCacheKeyNotExist, msg)
+				child = digest.Digest("")
+			}
 		}
 	}
-	child, err = digest.Parse(cached)
-	if err != nil {
-		return child, errors.Wrap(err, "get cached image build step")
-	}
-	return
+	return child, errors.Wrap(err, "get cached image")
 }
 
 func (s *imageBuildCache) Put(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) (err error) {
