@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/pkg/errors"
 )
@@ -45,22 +46,7 @@ func (s *FileSystemBuilder) Files() []string {
 	return s.files
 }
 
-/*func (s *FileSystemBuilder) Add(src []string, dest string) (r []string, err error) {
-	sort.Strings(src)
-	destc := filepath.Clean(dest)
-	if strings.Index(destc, "../") == 0 || strings.Index(destc, "/../") == 0 || destc == ".." || destc == "/.." {
-		return nil, errors.Errorf("destination %q is outside root directory", dest)
-	}
-
-	for _, e := range ToSourceDestPairs(src, dest) {
-		if err = s.add(e[0], e[1]); err != nil {
-			return
-		}
-	}
-	return
-}*/
-
-func (s *FileSystemBuilder) Add(src, destFile string) (err error) {
+func (s *FileSystemBuilder) Add(src, destFile string, usr *idutils.UserIds) (err error) {
 	src = filepath.Clean(src)
 	destFile = filepath.Clean(destFile)
 	destDir := filepath.Dir(filepath.Join(s.root, destFile))
@@ -77,7 +63,7 @@ func (s *FileSystemBuilder) Add(src, destFile string) (err error) {
 		}
 		s.dirs[destDir] = true
 	}
-	if err = s.copy(src, st, destFile); err == nil {
+	if err = s.copy(src, st, destFile, usr); err == nil {
 		err = s.restoreTimeMetadata(s.root, s.latestMtime, s.latestMtime)
 	}
 	return errors.Wrap(err, "add")
@@ -111,24 +97,24 @@ func (s *FileSystemBuilder) mkdirAll(path string, mode os.FileMode, atime, mtime
 	return
 }
 
-func (s *FileSystemBuilder) copy(src string, si os.FileInfo, dest string) (err error) {
+func (s *FileSystemBuilder) copy(src string, si os.FileInfo, dest string, usr *idutils.UserIds) (err error) {
 	if err = checkWithin(filepath.Join(s.root, dest), s.root); err != nil {
 		return
 	}
 	dest = filepath.Clean(string(filepath.Separator) + dest)
 	switch {
 	case si.IsDir():
-		return s.copyDir(src, dest)
+		return s.copyDir(src, dest, usr)
 	case si.Mode()&os.ModeSymlink != 0:
-		return s.copyLink(src, si, dest)
+		return s.copyLink(src, si, dest, usr)
 	default:
-		return s.copyFile(src, si, dest)
+		return s.copyFile(src, si, dest, usr)
 	}
 	return
 }
 
-func (s *FileSystemBuilder) copyDir(src, dest string) (err error) {
-	if err = s.createAllDirs(src, dest); err != nil {
+func (s *FileSystemBuilder) copyDir(src, dest string, usr *idutils.UserIds) (err error) {
+	if err = s.createAllDirs(src, dest, usr); err != nil {
 		return
 	}
 	files, err := ioutil.ReadDir(src)
@@ -136,14 +122,14 @@ func (s *FileSystemBuilder) copyDir(src, dest string) (err error) {
 		return
 	}
 	for _, f := range files {
-		if err = s.copy(filepath.Join(src, f.Name()), f, filepath.Join(dest, f.Name())); err != nil {
+		if err = s.copy(filepath.Join(src, f.Name()), f, filepath.Join(dest, f.Name()), usr); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func (s *FileSystemBuilder) copyLink(src string, si os.FileInfo, dest string) (err error) {
+func (s *FileSystemBuilder) copyLink(src string, si os.FileInfo, dest string, usr *idutils.UserIds) (err error) {
 	absDest := filepath.Join(s.root, dest)
 	target, err := s.fsEval.Readlink(src)
 	if err != nil {
@@ -153,7 +139,7 @@ func (s *FileSystemBuilder) copyLink(src string, si os.FileInfo, dest string) (e
 	if !filepath.IsAbs(target) && !within(filepath.Join(filepath.Dir(absDest), target), s.root) {
 		return errors.Errorf("link %s target %q outside root directory", absDest, target)
 	}
-	if err = s.createAllDirs(filepath.Dir(src), filepath.Dir(dest)); err != nil {
+	if err = s.createAllDirs(filepath.Dir(src), filepath.Dir(dest), usr); err != nil {
 		return
 	}
 	if e := s.fsEval.RemoveAll(absDest); e != nil {
@@ -162,20 +148,20 @@ func (s *FileSystemBuilder) copyLink(src string, si os.FileInfo, dest string) (e
 	if err = s.fsEval.Symlink(target, absDest); err != nil {
 		return
 	}
-	if err = s.restoreMetadata(absDest, si); err == nil {
+	if err = s.restoreMetadata(absDest, si, usr); err == nil {
 		s.logCopy(src, dest, 0) // TODO: set correct link file mode
 	}
 	return
 }
 
-func (s *FileSystemBuilder) copyFile(src string, si os.FileInfo, dest string) (err error) {
+func (s *FileSystemBuilder) copyFile(src string, si os.FileInfo, dest string, usr *idutils.UserIds) (err error) {
 	absDest := filepath.Join(s.root, dest)
 	var srcFile, destFile *os.File
 	if srcFile, err = os.Open(src); err != nil {
 		return
 	}
 	defer srcFile.Close()
-	if err = s.createAllDirs(filepath.Dir(src), filepath.Dir(dest)); err != nil {
+	if err = s.createAllDirs(filepath.Dir(src), filepath.Dir(dest), usr); err != nil {
 		return
 	}
 	if e := s.fsEval.RemoveAll(absDest); e != nil && !os.IsNotExist(e) {
@@ -188,13 +174,13 @@ func (s *FileSystemBuilder) copyFile(src string, si os.FileInfo, dest string) (e
 	if _, err = io.Copy(destFile, srcFile); err != nil {
 		return errors.Wrapf(err, "copy %s => %s", src, absDest)
 	}
-	if err = s.restoreMetadata(absDest, si); err == nil {
+	if err = s.restoreMetadata(absDest, si, usr); err == nil {
 		s.logCopy(src, dest, si.Mode())
 	}
 	return
 }
 
-func (s *FileSystemBuilder) createAllDirs(src, dest string) (err error) {
+func (s *FileSystemBuilder) createAllDirs(src, dest string, usr *idutils.UserIds) (err error) {
 	absDest := filepath.Join(s.root, dest)
 	if s.dirs[absDest] {
 		return
@@ -219,7 +205,7 @@ func (s *FileSystemBuilder) createAllDirs(src, dest string) (err error) {
 	} else if os.IsNotExist(e) {
 		psrc := filepath.Dir(src)
 		pdest := filepath.Dir(dest)
-		if err = s.createAllDirs(psrc, pdest); err != nil {
+		if err = s.createAllDirs(psrc, pdest, usr); err != nil {
 			return
 		}
 	} else {
@@ -231,7 +217,7 @@ func (s *FileSystemBuilder) createAllDirs(src, dest string) (err error) {
 	if err = s.fsEval.Mkdir(absDest, si.Mode()); err != nil {
 		return
 	}
-	if err = s.restoreMetadata(absDest, si); err == nil {
+	if err = s.restoreMetadata(absDest, si, usr); err == nil {
 		s.dirs[absDest] = true
 		s.logCopy(src, dest, si.Mode())
 	}
@@ -243,23 +229,38 @@ func (s *FileSystemBuilder) logCopy(src, dest string, mode os.FileMode) {
 	s.log.Printf("%s %s => %s", mode, src, dest)
 }
 
-func (s *FileSystemBuilder) restoreMetadata(path string, meta os.FileInfo) (err error) {
+func (s *FileSystemBuilder) restoreMetadata(path string, meta os.FileInfo, usr *idutils.UserIds) (err error) {
 	st := meta.Sys().(*syscall.Stat_t)
 	atime, mtime := fileTime(meta)
 	if mtime.After(s.latestMtime) {
 		s.latestMtime = mtime
 	}
+
+	// chmod
 	if meta.Mode()&os.ModeSymlink == 0 {
 		if err = s.fsEval.Chmod(path, meta.Mode()); err != nil {
 			return errors.Wrap(err, "restore mode")
 		}
 	}
-	// TODO: use fseval method if available
+
+	// chown
 	if !s.rootless {
-		if err = errors.Wrap(os.Lchown(path, int(st.Uid), int(st.Gid)), "chown"); err != nil {
+		// TODO: use fseval method if available
+		uid := int(st.Uid)
+		gid := int(st.Gid)
+		if usr != nil {
+			uid = int(usr.Uid)
+			gid = int(usr.Gid)
+		}
+		if err = errors.Wrap(os.Lchown(path, uid, gid), "chown"); err != nil {
 			return
 		}
+	} else if usr != nil {
+		// TODO: map user and throw error only if mapped user != 0 and rootless mode
+		return errors.New("chown not supported in rootless mode... TODO: fix me by mapping users first")
 	}
+
+	// xattrs
 	xattrs, err := s.fsEval.Llistxattr(path)
 	if err != nil {
 		return
@@ -282,6 +283,7 @@ func (s *FileSystemBuilder) restoreMetadata(path string, meta os.FileInfo) (err 
 			return errors.Wrapf(err, "set xattr: %s", path)
 		}
 	}
+
 	return s.restoreTimeMetadata(path, atime, mtime)
 }
 

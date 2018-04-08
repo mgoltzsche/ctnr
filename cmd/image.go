@@ -266,7 +266,7 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 		}
 	}()
 	if len(flagImageBuildOps.ops) == 0 {
-		return errors.New("no build steps provided")
+		return errors.New("no build operations provided")
 	}
 	for _, op := range flagImageBuildOps.ops {
 		if err = op(imageBuilder); err != nil {

@@ -2,6 +2,8 @@ package idutils
 
 import (
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 type UserIds struct {
@@ -23,7 +25,30 @@ func ParseUser(v string) (r User) {
 	return
 }
 
+func (u User) ToIds() (r UserIds, err error) {
+	usr := u.User
+	grp := u.Group
+	if usr == "" {
+		usr = "0"
+		if grp == "" {
+			grp = "0"
+		}
+	}
+	uid, ue := parseUint(usr)
+	gid, ge := parseUint(grp)
+	if grp == "" || ue != nil || ge != nil {
+		err = errors.New("cannot derive uid/gid from " + u.String() + " without rootfs")
+	}
+	r.Uid = uid
+	r.Gid = gid
+	return
+}
+
 func (u User) Resolve(rootfs string) (r UserIds, err error) {
+	if r, err = u.ToIds(); err == nil {
+		return
+	}
+
 	usr := u.User
 	grp := u.Group
 	if usr == "" {

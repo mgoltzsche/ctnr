@@ -158,12 +158,11 @@ func (b *ImageBuilder) SetAuthor(author string) error {
 func (b *ImageBuilder) SetUser(user string) (err error) {
 	user = idutils.ParseUser(user).String()
 	b.config.Config.User = user
-	return b.cached("USER "+user, func(createdBy string) error {
-		// Validate user
-		if err := b.initBundle(); err != nil {
-			return err
+	return b.cached("USER "+user, func(createdBy string) (err error) {
+		if _, err = b.resolveUser(nil); err == nil {
+			err = b.commitConfig(createdBy)
 		}
-		return b.commitConfig(createdBy)
+		return
 	})
 }
 
@@ -296,12 +295,40 @@ func (b *ImageBuilder) Tag(tag string) (err error) {
 	return
 }
 
-func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest string) (err error) {
+func (b *ImageBuilder) resolveUser(u *idutils.User) (usrp *idutils.UserIds, err error) {
+	user := idutils.ParseUser(b.config.Config.User)
+	if u != nil {
+		user = *u
+	}
+	if user.String() == "" {
+		return nil, nil
+	}
+	usr, err := user.ToIds()
+	if err != nil {
+		if err = b.initBundle(); err == nil {
+			s, _ := b.bundle.Spec()
+			rootfs := filepath.Join(b.bundle.Dir(), s.Root.Path)
+			usr, err = user.Resolve(rootfs)
+		}
+	}
+	usrp = &usr
+	return
+}
+
+func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest string, user *idutils.User) (err error) {
 	defer exterrors.Wrapd(&err, "copy into image")
 
 	if len(srcPattern) == 0 {
 		return
 	}
+
+	usr, err := b.resolveUser(user)
+	if err != nil {
+		return
+	}
+
+	// TODO: Map user ID from container to host namespace
+
 	var rootfs string
 	if b.bundle == nil {
 		if err = os.MkdirAll(b.tempDir, 0750); err != nil {
@@ -338,7 +365,7 @@ func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest str
 	cpPairs := files.Map(srcFiles, dest)
 	fs := files.NewFileSystemBuilder(rootfs, b.rootless, b.loggers.Debug)
 	for _, p := range cpPairs {
-		if err = fs.Add(p.Source, p.Dest); err != nil {
+		if err = fs.Add(p.Source, p.Dest, usr); err != nil {
 			err = exterrors.Append(err, b.closeContainer())
 			return
 		}

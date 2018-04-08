@@ -52,7 +52,7 @@ func TestFileSystemBuilder(t *testing.T) {
 		{"link2", "dirp/link2"},
 		{"link3", "dirp/link3"},
 	} {
-		err := testee.Add(filepath.Join(ctxDir, p.src), p.dest)
+		err := testee.Add(filepath.Join(ctxDir, p.src), p.dest, nil)
 		require.NoError(t, err)
 	}
 	expectedStr := `
@@ -145,7 +145,7 @@ func TestFileSystemBuilderRootfsBoundsViolation(t *testing.T) {
 		ctxDir, rootfs := createFiles(t)
 		defer deleteFiles(ctxDir, rootfs)
 		testee := NewFileSystemBuilder(rootfs, true, log.New(os.Stdout, "", 0))
-		if err := testee.Add(filepath.Join(ctxDir, c.src), c.dest); err == nil {
+		if err := testee.Add(filepath.Join(ctxDir, c.src), c.dest, nil); err == nil {
 			t.Errorf(c.msg + ": " + c.src + " -> " + c.dest)
 		}
 	}

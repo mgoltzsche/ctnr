@@ -15,7 +15,10 @@
 package cmd
 
 import (
+	"strings"
+
 	"github.com/mgoltzsche/cntnr/image/builder"
+	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/spf13/pflag"
 )
 
@@ -43,7 +46,7 @@ func initImageBuildFlags(f *pflag.FlagSet) {
 	f.Var((*iCmd)(ops), "cmd", "Sets the new image's command")
 	f.Var((*iUser)(ops), "user", "Sets the new image's user")
 	f.Var((*iRun)(ops), "run", "Runs the provided command in the current image")
-	f.Var((*iAdd)(ops), "add", "Adds glob pattern matching files to image: SRCPATTERN... [DEST]")
+	f.Var((*iAdd)(ops), "add", "Adds glob pattern matching files to image: SRC... [DEST[:USER[:GROUP]]]")
 	f.Var((*iTag)(ops), "tag", "Tags the image")
 	f.BoolVar(&flagProot, "proot", false, "Enables PRoot")
 	f.BoolVar(&flagNoCache, "no-cache", false, "Disables caches")
@@ -76,17 +79,25 @@ func (o *iAdd) Set(expr string) (err error) {
 	}
 	var srcPattern []string
 	dest := ""
+	var usr *idutils.User
 	switch len(l) {
 	case 0:
-		return usageError("no value provided (expecting SRC... [DEST])")
+		return usageError("no source file pattern provided")
 	case 1:
 		srcPattern = []string{l[0]}
 	default:
 		srcPattern = l[0 : len(l)-1]
 		dest = l[len(l)-1]
+		destParts := strings.Split(dest, ":")
+		dest = destParts[0]
+		usrstr := strings.Join(destParts[1:], ":")
+		if usrstr != "" {
+			user := idutils.ParseUser(usrstr)
+			usr = &user
+		}
 	}
 	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
-		return b.CopyFile("", srcPattern, dest)
+		return b.CopyFile("", srcPattern, dest, usr)
 	})
 	return
 }

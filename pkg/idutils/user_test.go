@@ -53,8 +53,11 @@ func TestUserResolve(t *testing.T) {
 		{"9000", "testgroup", 9000, 7777, rootfs, true},
 		{"300", "testgroup", 300, 7777, rootfs, true},
 		{"300", "300", 300, 300, dir, true},
+		{"300", "", 300, 300, dir, true},
 		{"", "", 0, 0, dir, true},
 		{"unknownusr", "unknowngrp", 0, 0, rootfs, false},
+		{"unknownusr", "", 0, 0, rootfs, false},
+		{"", "unknowngrp", 0, 0, rootfs, false},
 	} {
 		u := User{c.user, c.group}
 		r, err := u.Resolve(c.rootfs)
