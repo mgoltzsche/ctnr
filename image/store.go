@@ -46,7 +46,7 @@ type ImageStoreRW interface {
 	MarkUsedImage(imageId digest.Digest) error
 	ImportImage(name string) (Image, error)
 	AddImageConfig(m ispecs.Image, parentImageId *digest.Digest) (Image, error)
-	NewLayerSource(rootfs string, fileFilter []string) (LayerSource, error)
+	NewLayerSource(rootfs string, addOnly bool) (LayerSource, error)
 	AddImageLayer(src LayerSource, parentImageId *digest.Digest, author, comment string) (Image, error)
 	TagImage(imageId digest.Digest, tag string) (Image, error)
 	UntagImage(tag string) error
@@ -54,7 +54,7 @@ type ImageStoreRW interface {
 }
 
 type LayerSource interface {
-	DiffHash() digest.Digest
+	DiffHash(filterPaths []string) (digest.Digest, error)
 }
 
 func GetImage(store ImageStoreRW, image string) (img Image, err error) {

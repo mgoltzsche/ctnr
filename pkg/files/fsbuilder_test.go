@@ -38,18 +38,23 @@ func TestFileSystemBuilder(t *testing.T) {
 	ctxDir, rootfs := createFiles(t)
 	defer deleteFiles(ctxDir, rootfs)
 	testee := NewFileSystemBuilder(rootfs, true, log.New(os.Stdout, "", 0))
-	_, err := testee.Add(absDirs(ctxDir, []string{"dir2"}), "dirx")
-	require.NoError(t, err)
-	_, err = testee.Add(absDirs(ctxDir, []string{"dir1/file1"}), "/bin/fn")
-	require.NoError(t, err)
-	_, err = testee.Add(absDirs(ctxDir, []string{"dir1/file2"}), "/")
-	require.NoError(t, err)
-	_, err = testee.Add(absDirs(ctxDir, []string{"dir1/file1", "dir1/file2"}), "/usr/bin/")
-	require.NoError(t, err)
-	_, err = testee.Add(absDirs(ctxDir, []string{"dir1"}), "dirp/")
-	require.NoError(t, err)
-	_, err = testee.Add(absDirs(ctxDir, []string{"dir1", "dir1/file1", "link1", "link2", "link3"}), "dirp/")
-	require.NoError(t, err)
+	for _, p := range []struct {
+		src  string
+		dest string
+	}{
+		{"dir2", "dirx"},
+		{"dir1", "dirp/dir1"},
+		{"dir1", "dirp/dir1"},
+		{"dir1/file1", "/bin/fn"},
+		{"dir1/file2", "/file2"},
+		{"dir1/file1", "dirp/file1"},
+		{"link1", "dirp/link1"},
+		{"link2", "dirp/link2"},
+		{"link3", "dirp/link3"},
+	} {
+		err := testee.Add(filepath.Join(ctxDir, p.src), p.dest)
+		require.NoError(t, err)
+	}
 	expectedStr := `
 		# .
 		. size=4096 type=dir mode=0700
@@ -83,38 +88,65 @@ func TestFileSystemBuilder(t *testing.T) {
 			link4 size=41 type=link mode=0777 link=../../dir2
 		..
 		..
-		# usr
-		usr type=dir mode=0755
-		# usr/bin
-		bin type=dir mode=0755
-		    file1 mode=0444
-		    file2 mode=0644
-		..
-		..
-		..
 	`
-	expected, err := mtree.ParseSpec(strings.NewReader(expectedStr))
+	expectedDh, err := mtree.ParseSpec(strings.NewReader(expectedStr))
 	require.NoError(t, err)
-	assertFsState(rootfs, expected, t)
+	assertFsState(rootfs, expectedDh, t)
+
+	// Assert files
+	expected := map[string]bool{}
+	actual := map[string]bool{}
+	for _, f := range []string{
+		"/file2",
+		"/bin",
+		"/bin/fn",
+		"/dirp",
+		"/dirp/file1",
+		"/dirp/link1",
+		"/dirp/link2",
+		"/dirp/link3",
+		"/dirp/dir1",
+		"/dirp/dir1/file1",
+		"/dirp/dir1/file2",
+		"/dirp/dir1/sdir1",
+		"/dirp/dir1/sdir1/linkInvalid",
+		"/dirx",
+		"/dirx/sdir2",
+		"/dirx/sdir2/sfile1",
+		"/dirx/sdir2/sfile2",
+		"/dirx/sdir2/link4",
+	} {
+		expected[f] = true
+	}
+	for _, f := range testee.Files() {
+		actual[f] = true
+		if !expected[f] {
+			t.Errorf("Files() provided unknown file %q", f)
+		}
+	}
+	for f, _ := range expected {
+		if !actual[f] {
+			t.Errorf("Files() did not provide %q", f)
+		}
+	}
 }
 
 func TestFileSystemBuilderRootfsBoundsViolation(t *testing.T) {
 	for _, c := range []struct {
-		src  []string
+		src  string
 		dest string
 		msg  string
 	}{
-		{[]string{"/dir2"}, "../outsiderootfs", "destination outside rootfs directory was not rejected"},
-		{[]string{"dir1/sdir1/linkInvalid"}, "/dirx", "linking outside rootfs directory was not rejected"},
-		//{[]string{"/dir2"}, "/dirx", "source path outside context directory was not rejected"},
-		//{[]string{"../outsidectx"}, "dirx", "relative source pattern outside context directory was not rejected"},
+		{"/dir2", "../outsiderootfs", "destination outside rootfs directory was not rejected"},
+		{"dir1/sdir1/linkInvalid", "/dirx", "linking outside rootfs directory was not rejected"},
+		//{"/dir2"}, "/dirx", "source path outside context directory was not rejected"},
+		//{"../outsidectx", "dirx", "relative source pattern outside context directory was not rejected"},
 	} {
 		ctxDir, rootfs := createFiles(t)
 		defer deleteFiles(ctxDir, rootfs)
 		testee := NewFileSystemBuilder(rootfs, true, log.New(os.Stdout, "", 0))
-		_, err := testee.Add(absDirs(ctxDir, c.src), c.dest)
-		if err == nil {
-			t.Errorf(c.msg)
+		if err := testee.Add(filepath.Join(ctxDir, c.src), c.dest); err == nil {
+			t.Errorf(c.msg + ": " + c.src + " -> " + c.dest)
 		}
 	}
 }
@@ -181,5 +213,6 @@ func assertFsState(rootfs string, expected *mtree.DirectoryHierarchy, t *testing
 		}
 		sort.Strings(s)
 		t.Error("Unexpected rootfs differences:\n  " + strings.Join(s, "\n  "))
+		t.Fail()
 	}
 }

@@ -77,17 +77,15 @@ func (s *BlobStoreOci) PutImageConfig(cfg ispecs.Image, parentManifest *digest.D
 		// It must be copied HERE to support efficient file system diff when
 		// committing an already existing container using this image as parent
 		// (happens in ImageBuilder)
-		dh := &mtree.DirectoryHierarchy{}
+		var dh *mtree.DirectoryHierarchy
 		if parentManifest != nil {
 			pdh, e := s.mtree.Get(*parentManifest)
 			if e == nil {
 				dh = pdh
+				err = s.mtree.Put(d.Digest, dh)
 			} else if !IsNotExist(e) {
 				err = e
 			}
-		}
-		if err == nil {
-			err = s.mtree.Put(d.Digest, dh)
 		}
 		err = errors.WithMessage(err, "put image config")
 	}
@@ -150,20 +148,28 @@ func (s *BlobStoreOci) UnpackLayers(manifestDigest digest.Digest, rootfs string)
 	if err = s.unpackLayers(&manifest, rootfs); err != nil {
 		return
 	}
-	// TODO: Create mtree only when none yet available
-	spec, err := s.mtree.Create(rootfs, nil)
+	exists, err := s.mtree.Exists(manifestDigest)
 	if err != nil {
 		return
 	}
-	if err = s.mtree.Put(manifestDigest, spec); err != nil {
-		return
+	if !exists {
+		var spec *mtree.DirectoryHierarchy
+		spec, err = s.mtree.Create(rootfs)
+		if err != nil {
+			return
+		}
+		err = s.mtree.Put(manifestDigest, spec)
 	}
 	return
 }
 
 // Writes the diff of rootfs to its parent as new layer into the store
 func (s *BlobStoreOci) PutImageLayer(src *LayerSource, parentManifestDigest *digest.Digest, author, createdBy string) (r *CommitResult, err error) {
-	s.debug.Println("Building layer from " + src.rootfs)
+	parentStr := ""
+	if parentManifestDigest != nil {
+		parentStr = " using parent " + (*parentManifestDigest).Hex()[:13]
+	}
+	s.debug.Println("Building layer from " + src.rootfs + parentStr)
 
 	defer func() {
 		err = errors.WithMessage(err, "generate layer blob")
@@ -176,7 +182,7 @@ func (s *BlobStoreOci) PutImageLayer(src *LayerSource, parentManifestDigest *dig
 	if parentManifestDigest != nil {
 		if manifest, err = s.ImageManifest(*parentManifestDigest); err == nil {
 			if r.Config, err = s.ImageConfig(manifest.Config.Digest); err == nil {
-				if !src.delta {
+				if !src.addOnly {
 					parentMtree, err = s.getMtree(*parentManifestDigest)
 				}
 			}
@@ -220,7 +226,7 @@ func (s *BlobStoreOci) PutImageLayer(src *LayerSource, parentManifestDigest *dig
 	}
 
 	// Save mtree for new manifest
-	if err == nil && !src.delta {
+	if err == nil && !src.addOnly {
 		err = s.mtree.Put(r.Descriptor.Digest, src.rootfsMtree)
 	}
 	return

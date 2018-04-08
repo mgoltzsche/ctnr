@@ -5,8 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +19,7 @@ type Logger interface {
 type FileSystemBuilder struct {
 	root        string
 	dirs        map[string]bool
+	files       []string
 	latestMtime time.Time
 	fsEval      fseval.FsEval
 	rootless    bool
@@ -35,50 +34,36 @@ func NewFileSystemBuilder(root string, rootless bool, logger Logger) *FileSystem
 	return &FileSystemBuilder{
 		root:     filepath.Clean(root),
 		dirs:     map[string]bool{},
+		files:    []string{},
 		fsEval:   fsEval,
 		rootless: rootless,
 		log:      logger,
 	}
 }
 
-func (s *FileSystemBuilder) Add(src []string, dest string) (r []string, err error) {
+func (s *FileSystemBuilder) Files() []string {
+	return s.files
+}
+
+/*func (s *FileSystemBuilder) Add(src []string, dest string) (r []string, err error) {
 	sort.Strings(src)
 	destc := filepath.Clean(dest)
 	if strings.Index(destc, "../") == 0 || strings.Index(destc, "/../") == 0 || destc == ".." || destc == "/.." {
 		return nil, errors.Errorf("destination %q is outside root directory", dest)
 	}
 
-	for _, file := range src {
-		destDir := dest
-		destFile := filepath.Base(file)
-		if len(src) == 1 && len(dest) > 0 && destDir[len(dest)-1] != '/' {
-			// Use dest as file name without appending src file name
-			// if there is only one source file and dest does not end with '/'
-			destDir = filepath.Dir(dest)
-			destFile = filepath.Base(dest)
+	for _, e := range ToSourceDestPairs(src, dest) {
+		if err = s.add(e[0], e[1]); err != nil {
+			return
 		}
-		if err = s.add(file, destDir, destFile); err != nil {
-			break
-		}
-		destFile = filepath.Join(s.root, destDir, destFile)
-		destFile, err = filepath.Rel(s.root, destFile)
-		if err != nil {
-			break
-		}
-		r = append(r, "/"+destFile)
 	}
-	if err == nil {
-		err = s.restoreTimeMetadata(s.root, s.latestMtime, s.latestMtime)
-	}
-	err = errors.Wrap(err, "add")
 	return
-}
+}*/
 
-func (s *FileSystemBuilder) add(src, destDir, destFile string) (err error) {
+func (s *FileSystemBuilder) Add(src, destFile string) (err error) {
 	src = filepath.Clean(src)
-	destDir = filepath.Join(s.root, destDir)
-	destFile = filepath.Join(destDir, destFile)
-	destDir = filepath.Dir(destFile)
+	destFile = filepath.Clean(destFile)
+	destDir := filepath.Dir(filepath.Join(s.root, destFile))
 	st, err := s.fsEval.Lstat(src)
 	if err != nil {
 		return errors.Wrap(err, "add")
@@ -87,22 +72,27 @@ func (s *FileSystemBuilder) add(src, destDir, destFile string) (err error) {
 		stu := st.Sys().(*syscall.Stat_t)
 		atime := time.Unix(int64(stu.Atim.Sec), int64(stu.Atim.Nsec))
 		mtime := st.ModTime()
-		if err = s.mkdirAll(destDir, 0755, atime, mtime); err != nil {
+		if err = s.mkdirAll(filepath.Dir(destFile), 0755, atime, mtime); err != nil {
 			return errors.Wrap(err, "add")
 		}
 		s.dirs[destDir] = true
 	}
-	return s.copy(src, st, destFile)
+	if err = s.copy(src, st, destFile); err == nil {
+		err = s.restoreTimeMetadata(s.root, s.latestMtime, s.latestMtime)
+	}
+	return errors.Wrap(err, "add")
 }
 
 // Recursively creates directories if they do not yet exist applying the provided mode, atime, mtime
 func (s *FileSystemBuilder) mkdirAll(path string, mode os.FileMode, atime, mtime time.Time) (err error) {
-	st, err := os.Stat(path)
+	path = filepath.Clean(string(filepath.Separator) + path)
+	absPath := filepath.Join(s.root, path)
+	st, err := os.Stat(absPath)
 	if err == nil {
 		if st.IsDir() {
 			return
 		} else {
-			if err = s.fsEval.Remove(path); err != nil {
+			if err = s.fsEval.Remove(absPath); err != nil {
 				return
 			}
 		}
@@ -112,13 +102,20 @@ func (s *FileSystemBuilder) mkdirAll(path string, mode os.FileMode, atime, mtime
 	if err = s.mkdirAll(filepath.Dir(path), mode, atime, mtime); err != nil {
 		return
 	}
-	if err = s.fsEval.Mkdir(path, mode); err != nil {
+	if err = s.fsEval.Mkdir(absPath, mode); err != nil {
 		return
 	}
-	return s.restoreTimeMetadata(path, atime, mtime)
+	if err = s.restoreTimeMetadata(absPath, atime, mtime); err == nil {
+		s.files = append(s.files, path)
+	}
+	return
 }
 
 func (s *FileSystemBuilder) copy(src string, si os.FileInfo, dest string) (err error) {
+	if err = checkWithin(filepath.Join(s.root, dest), s.root); err != nil {
+		return
+	}
+	dest = filepath.Clean(string(filepath.Separator) + dest)
 	switch {
 	case si.IsDir():
 		return s.copyDir(src, dest)
@@ -147,30 +144,32 @@ func (s *FileSystemBuilder) copyDir(src, dest string) (err error) {
 }
 
 func (s *FileSystemBuilder) copyLink(src string, si os.FileInfo, dest string) (err error) {
+	absDest := filepath.Join(s.root, dest)
 	target, err := s.fsEval.Readlink(src)
 	if err != nil {
 		return
 	}
 	target = filepath.Clean(target)
-	if !filepath.IsAbs(target) && !within(filepath.Join(filepath.Dir(dest), target), s.root) {
-		return errors.Errorf("link %s target %q outside root directory", dest, target)
+	if !filepath.IsAbs(target) && !within(filepath.Join(filepath.Dir(absDest), target), s.root) {
+		return errors.Errorf("link %s target %q outside root directory", absDest, target)
 	}
-	s.logCopy(src, dest, 0) // TODO: set correct link file mode
 	if err = s.createAllDirs(filepath.Dir(src), filepath.Dir(dest)); err != nil {
 		return
 	}
-	if e := s.fsEval.RemoveAll(dest); e != nil {
+	if e := s.fsEval.RemoveAll(absDest); e != nil {
 		return errors.Wrap(e, "copy file")
 	}
-	if err = s.fsEval.Symlink(target, dest); err != nil {
+	if err = s.fsEval.Symlink(target, absDest); err != nil {
 		return
 	}
-	err = s.restoreMetadata(dest, si)
+	if err = s.restoreMetadata(absDest, si); err == nil {
+		s.logCopy(src, dest, 0) // TODO: set correct link file mode
+	}
 	return
 }
 
 func (s *FileSystemBuilder) copyFile(src string, si os.FileInfo, dest string) (err error) {
-	s.logCopy(src, dest, si.Mode())
+	absDest := filepath.Join(s.root, dest)
 	var srcFile, destFile *os.File
 	if srcFile, err = os.Open(src); err != nil {
 		return
@@ -179,41 +178,41 @@ func (s *FileSystemBuilder) copyFile(src string, si os.FileInfo, dest string) (e
 	if err = s.createAllDirs(filepath.Dir(src), filepath.Dir(dest)); err != nil {
 		return
 	}
-	if e := s.fsEval.RemoveAll(dest); e != nil && !os.IsNotExist(e) {
+	if e := s.fsEval.RemoveAll(absDest); e != nil && !os.IsNotExist(e) {
 		return e
 	}
-	// TODO: use fseval to copy file metadata
-	if destFile, err = s.fsEval.Create(dest); err != nil {
+	if destFile, err = s.fsEval.Create(absDest); err != nil {
 		return
 	}
 	defer destFile.Close()
 	if _, err = io.Copy(destFile, srcFile); err != nil {
-		return errors.Wrapf(err, "copy %s => %s", src, dest)
+		return errors.Wrapf(err, "copy %s => %s", src, absDest)
 	}
-	if err = s.restoreMetadata(dest, si); err != nil {
-		return
+	if err = s.restoreMetadata(absDest, si); err == nil {
+		s.logCopy(src, dest, si.Mode())
 	}
-	return destFile.Sync()
+	return
 }
 
 func (s *FileSystemBuilder) createAllDirs(src, dest string) (err error) {
-	if s.dirs[dest] {
+	absDest := filepath.Join(s.root, dest)
+	if s.dirs[absDest] {
 		return
 	}
 	si, err := os.Stat(src)
 	if err != nil {
 		return
 	}
-	if di, e := os.Stat(dest); e == nil {
+	if di, e := os.Stat(absDest); e == nil {
 		if di.IsDir() {
-			if err = checkWithin(dest, s.root); err != nil {
+			if err = checkWithin(absDest, s.root); err != nil {
 				return
 			}
-			s.dirs[dest] = true
+			s.dirs[absDest] = true
 			return
 		} else {
 			// Remove file if it is no directory
-			if err = s.fsEval.Remove(dest); err != nil {
+			if err = s.fsEval.Remove(absDest); err != nil {
 				return
 			}
 		}
@@ -226,24 +225,21 @@ func (s *FileSystemBuilder) createAllDirs(src, dest string) (err error) {
 	} else {
 		return e
 	}
-	if err = checkWithin(dest, s.root); err != nil {
+	if err = checkWithin(absDest, s.root); err != nil {
 		return
 	}
-	s.logCopy(src, dest, si.Mode())
-	if err = s.fsEval.Mkdir(dest, si.Mode()); err != nil {
+	if err = s.fsEval.Mkdir(absDest, si.Mode()); err != nil {
 		return
 	}
-	err = s.restoreMetadata(dest, si)
-	s.dirs[dest] = true
+	if err = s.restoreMetadata(absDest, si); err == nil {
+		s.dirs[absDest] = true
+		s.logCopy(src, dest, si.Mode())
+	}
 	return
 }
 
 func (s *FileSystemBuilder) logCopy(src, dest string, mode os.FileMode) {
-	dest, err := filepath.Rel(s.root, dest)
-	if err != nil {
-		panic(err)
-	}
-	dest = "/" + dest
+	s.files = append(s.files, dest)
 	s.log.Printf("%s %s => %s", mode, src, dest)
 }
 

@@ -122,8 +122,8 @@ func (s *ImageStoreRW) MarkUsedImage(id digest.Digest) error {
 	return s.imageIds.MarkUsed(id)
 }
 
-func (s *ImageStoreRW) NewLayerSource(rootfs string, fileFilter []string) (image.LayerSource, error) {
-	return s.blobs.NewLayerSource(rootfs, fileFilter)
+func (s *ImageStoreRW) NewLayerSource(rootfs string, addOnly bool) (image.LayerSource, error) {
+	return s.blobs.NewLayerSource(rootfs, addOnly)
 }
 
 func (s *ImageStoreRW) AddImageLayer(src image.LayerSource, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {

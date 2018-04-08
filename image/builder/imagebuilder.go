@@ -137,7 +137,6 @@ func (b *ImageBuilder) initContainer() (err error) {
 	if err != nil {
 		return
 	}
-	// TODO: move container creation into bundle init method and update the process here only
 	b.stdio = run.NewStdContainerIO()
 	container, err := manager.NewContainer(&run.ContainerConfig{
 		Id:             b.bundle.ID(),
@@ -262,7 +261,7 @@ func (b *ImageBuilder) Run(cmd string) (err error) {
 			return
 		}
 		rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
-		src, err := b.images.NewLayerSource(rootfs, nil)
+		src, err := b.images.NewLayerSource(rootfs, false)
 		if err != nil {
 			return
 		}
@@ -329,7 +328,6 @@ func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest str
 		return
 	}
 
-	fs := files.NewFileSystemBuilder(rootfs, b.rootless, b.loggers.Debug)
 	workingDir := "/"
 	if b.image != nil {
 		cfg, e := b.image.Config()
@@ -341,25 +339,27 @@ func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest str
 	if !filepath.IsAbs(dest) {
 		dest = filepath.Join(workingDir, dest)
 	}
-	destFiles, err := fs.Add(srcFiles, dest)
-	if err != nil {
-		err = exterrors.Append(err, b.closeContainer())
-		return
+	cpPairs := files.Map(srcFiles, dest)
+	fs := files.NewFileSystemBuilder(rootfs, b.rootless, b.loggers.Debug)
+	for _, p := range cpPairs {
+		if err = fs.Add(p.Source, p.Dest); err != nil {
+			err = exterrors.Append(err, b.closeContainer())
+			return
+		}
 	}
 
-	commitSrc, err := b.images.NewLayerSource(rootfs, destFiles)
+	commitSrc, err := b.images.NewLayerSource(rootfs, b.bundle == nil)
 	if err != nil {
 		err = exterrors.Append(err, b.closeContainer())
 		return
 	}
-	createdBy := "COPY " + commitSrc.DiffHash().String()
-	return b.cached(createdBy, func(createdBy string) (err error) {
-		err = b.commitLayer(commitSrc, createdBy)
-		// Close container to force full mtree creation when the file system
-		// should be changed in a subsequent operation
-		// (requiring this image's mtree)
-		err = exterrors.Append(err, b.closeContainer())
+	hash, err := commitSrc.DiffHash(fs.Files())
+	if err != nil {
 		return
+	}
+	createdBy := "COPY " + hash.String()
+	return b.cached(createdBy, func(createdBy string) (err error) {
+		return b.commitLayer(commitSrc, createdBy)
 	})
 }
 
