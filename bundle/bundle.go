@@ -259,6 +259,9 @@ func createRootfs(rootfs string, image BundleImage) (err error) {
 
 func (b *LockedBundle) SetSpec(specgen SpecGenerator) (err error) {
 	spec, err := specgen.Spec(filepath.Join(b.Dir(), "rootfs"))
+	if err == nil {
+		err = createVolumeDirectories(spec, b.Dir())
+	}
 	if err != nil {
 		return errors.Wrap(err, "set bundle spec")
 	}
@@ -271,13 +274,13 @@ func (b *LockedBundle) SetSpec(specgen SpecGenerator) (err error) {
 	spec.Annotations[ANNOTATION_BUNDLE_ID] = b.ID()
 	confFile := filepath.Join(b.Dir(), "config.json")
 	if _, err = atomic.WriteJson(confFile, spec); err != nil {
-		err = errors.Wrapf(err, "update bundle %q spec", b.ID())
+		err = errors.Wrapf(err, "write bundle %q spec", b.ID())
 	}
 	b.spec = spec
 	return
 }
 
-/*func createVolumeDirectories(spec *rspecs.Spec, dir string) (err error) {
+func createVolumeDirectories(spec *rspecs.Spec, dir string) (err error) {
 	if spec != nil && spec.Mounts != nil {
 		for _, mount := range spec.Mounts {
 			if mount.Type == "bind" {
@@ -286,11 +289,14 @@ func (b *LockedBundle) SetSpec(specgen SpecGenerator) (err error) {
 					src = filepath.Join(dir, src)
 				}
 				relsrc := filepath.Clean(mount.Source)
-				if _, err = os.Stat(src); os.IsNotExist(err) && !filepath.IsAbs(relsrc) && strings.Index(relsrc, "..") != 0 {
-					err = errors.Errorf("bind mount source %q does not exist", mount.Source)
-					if err = os.MkdirAll(src, 0755); err != nil {
-						err = errors.New(err.Error())
-						break
+				if _, err = os.Stat(src); os.IsNotExist(err) {
+					withinBundleDir := !filepath.IsAbs(relsrc) && strings.Index(relsrc+string(filepath.Separator), ".."+string(filepath.Separator)) != 0
+					if withinBundleDir {
+						if err = os.MkdirAll(src, 0755); err != nil {
+							break
+						}
+					} else {
+						err = errors.Errorf("bind mount source %q does not exist", mount.Source)
 					}
 				} else if err != nil {
 					break
@@ -298,9 +304,11 @@ func (b *LockedBundle) SetSpec(specgen SpecGenerator) (err error) {
 			}
 		}
 	}
-	err = errors.Wrap(err, "volume directories")
+	if err != nil {
+		err = errors.New("volume directories: " + err.Error())
+	}
 	return
-}*/
+}
 
 // Reads image ID from cached spec
 func (b *LockedBundle) Image() *digest.Digest {
