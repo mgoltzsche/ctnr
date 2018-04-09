@@ -154,17 +154,23 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 ## Roadmap
 
 - separate OCI hook binary
-- CLI improvements: `image create`: set owner of `--add`ed files
 - Dockerfile support
-- Improved docker compose support
-- Improved container, bundle, image and build cache garbage collection
-- health check
-- systemd integration (cgroup, startup notification)
-- additional configurable read-only image stores
-- network manager daemon with ACL to be used by unprivileged users to configure their container networks
+- garbage collection for containers, build caches, mtrees
+- improved multi-user support (store per user group, file permissions, lock location)
+- integration tests
+- **0.7 beta release**
+- more integration and unit tests
+- improved garbage collection options for images
+- improved Docker Compose support
 - service discovery integration (hook / DNS; consul, etcd)
+- health check
 - daemon mode
-- _Far future: Make it available on platforms other than Linux_
+- systemd integration (cgroup, startup notification)
+- **1.0 release**
+- advanced logging
+- support for additional read-only image stores
+- _optional network manager daemon with ACL to be used by unprivileged users to configure their container networks_
+- _far future: make it available on platforms other than Linux_
 
 
 ## Experiments
