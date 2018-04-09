@@ -120,12 +120,11 @@ func (s *ImageIdStore) MarkUsed(id digest.Digest) (err error) {
 	return errors.WithMessage(err, "mark used image ID")
 }
 
-func (s *ImageIdStore) idFile(imageId digest.Digest) (f string, err error) {
-	if err = imageId.Validate(); err != nil {
-		err = errors.Errorf("invalid image ID %q: %s", imageId, err)
+func (s *ImageIdStore) idFile(imageId digest.Digest) (string, error) {
+	if err := imageId.Validate(); err != nil {
+		return "", errors.Errorf("invalid image ID %q: %s", imageId, err)
 	}
-	f = filepath.Join(s.dir, imageId.Algorithm().String()+"-"+imageId.Hex())
-	return
+	return filepath.Join(s.dir, imageId.Algorithm().String()+"-"+imageId.Hex()), nil
 }
 
 func decodeImageIdFileName(fileName string) (id digest.Digest, err error) {

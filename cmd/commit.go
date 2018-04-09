@@ -92,12 +92,12 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 	if err == nil {
 		if len(args) > 1 {
 			for _, tag := range args[1:] {
-				if _, err = lockedStore.TagImage(img.ID(), tag); err != nil {
+				if _, err = lockedStore.TagImage(imgId, tag); err != nil {
 					return
 				}
 			}
 		}
-		fmt.Println(img.ID())
+		fmt.Println(imgId)
 	}
 	return
 }
