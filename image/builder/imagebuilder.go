@@ -327,8 +327,6 @@ func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest str
 		return
 	}
 
-	// TODO: Map user ID from container to host namespace
-
 	var rootfs string
 	if b.bundle == nil {
 		if err = os.MkdirAll(b.tempDir, 0750); err != nil {
@@ -363,7 +361,11 @@ func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest str
 		dest = filepath.Join(workingDir, dest)
 	}
 	cpPairs := files.Map(srcFiles, dest)
-	fs := files.NewFileSystemBuilder(rootfs, b.rootless, b.loggers.Debug)
+	opts := files.FSOptions{
+		Rootless: b.rootless,
+		// TODO: Add uid/gid mappings to be used within user namespace of a privileged user's container
+	}
+	fs := files.NewFileSystemBuilder(rootfs, opts, b.loggers.Debug)
 	for _, p := range cpPairs {
 		if err = fs.Add(p.Source, p.Dest, usr); err != nil {
 			err = exterrors.Append(err, b.closeContainer())

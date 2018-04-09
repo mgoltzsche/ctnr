@@ -1,14 +1,35 @@
 package idutils
 
 import (
+	"strconv"
 	"strings"
 
+	idmap "github.com/openSUSE/umoci/pkg/idtools"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
 type UserIds struct {
 	Uid uint
 	Gid uint
+}
+
+func (u *UserIds) ToHost(uidMappings []specs.LinuxIDMapping, gidMappings []specs.LinuxIDMapping) (r UserIds, err error) {
+	uid, err := idmap.ToHost(int(u.Uid), uidMappings)
+	if err != nil {
+		return r, errors.Wrap(err, "map uid to host")
+	}
+	gid, err := idmap.ToHost(int(u.Gid), gidMappings)
+	if err != nil {
+		return r, errors.Wrap(err, "map gid to host")
+	}
+	r.Uid = uint(uid)
+	r.Gid = uint(gid)
+	return
+}
+
+func (u *UserIds) String() string {
+	return strconv.Itoa(int(u.Uid)) + ":" + strconv.Itoa(int(u.Gid))
 }
 
 type User struct {

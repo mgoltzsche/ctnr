@@ -10,11 +10,18 @@ import (
 
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/fseval"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
 type Logger interface {
 	Printf(fmt string, o ...interface{})
+}
+
+type FSOptions struct {
+	UIDMappings []specs.LinuxIDMapping
+	GIDMappings []specs.LinuxIDMapping
+	Rootless    bool
 }
 
 type FileSystemBuilder struct {
@@ -24,21 +31,25 @@ type FileSystemBuilder struct {
 	latestMtime time.Time
 	fsEval      fseval.FsEval
 	rootless    bool
+	uidMappings []specs.LinuxIDMapping
+	gidMappings []specs.LinuxIDMapping
 	log         Logger
 }
 
-func NewFileSystemBuilder(root string, rootless bool, logger Logger) *FileSystemBuilder {
+func NewFileSystemBuilder(root string, opts FSOptions, logger Logger) *FileSystemBuilder {
 	fsEval := fseval.DefaultFsEval
-	if rootless {
+	if opts.Rootless {
 		fsEval = fseval.RootlessFsEval
 	}
 	return &FileSystemBuilder{
-		root:     filepath.Clean(root),
-		dirs:     map[string]bool{},
-		files:    []string{},
-		fsEval:   fsEval,
-		rootless: rootless,
-		log:      logger,
+		root:        filepath.Clean(root),
+		dirs:        map[string]bool{},
+		files:       []string{},
+		fsEval:      fsEval,
+		rootless:    opts.Rootless,
+		uidMappings: opts.UIDMappings,
+		gidMappings: opts.GIDMappings,
+		log:         logger,
 	}
 }
 
@@ -47,6 +58,17 @@ func (s *FileSystemBuilder) Files() []string {
 }
 
 func (s *FileSystemBuilder) Add(src, destFile string, usr *idutils.UserIds) (err error) {
+	if s.rootless && usr != nil && (usr.Uid != 0 || usr.Gid != 0) {
+		return errors.Errorf("in rootless mode only own user ID can be used but %s provided", usr.String())
+	}
+	if usr != nil {
+		// Map user to host
+		var u idutils.UserIds
+		if u, err = usr.ToHost(s.uidMappings, s.gidMappings); err != nil {
+			return errors.Wrap(err, "add")
+		}
+		usr = &u
+	}
 	src = filepath.Clean(src)
 	destFile = filepath.Clean(destFile)
 	destDir := filepath.Dir(filepath.Join(s.root, destFile))
@@ -255,9 +277,6 @@ func (s *FileSystemBuilder) restoreMetadata(path string, meta os.FileInfo, usr *
 		if err = errors.Wrap(os.Lchown(path, uid, gid), "chown"); err != nil {
 			return
 		}
-	} else if usr != nil {
-		// TODO: map user and throw error only if mapped user != 0 and rootless mode
-		return errors.New("chown not supported in rootless mode... TODO: fix me by mapping users first")
 	}
 
 	// xattrs

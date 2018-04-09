@@ -37,7 +37,8 @@ func absDirs(baseDir string, file []string) []string {
 func TestFileSystemBuilder(t *testing.T) {
 	ctxDir, rootfs := createFiles(t)
 	defer deleteFiles(ctxDir, rootfs)
-	testee := NewFileSystemBuilder(rootfs, true, log.New(os.Stdout, "", 0))
+	opts := FSOptions{Rootless: true}
+	testee := NewFileSystemBuilder(rootfs, opts, log.New(os.Stdout, "", 0))
 	for _, p := range []struct {
 		src  string
 		dest string
@@ -144,7 +145,8 @@ func TestFileSystemBuilderRootfsBoundsViolation(t *testing.T) {
 	} {
 		ctxDir, rootfs := createFiles(t)
 		defer deleteFiles(ctxDir, rootfs)
-		testee := NewFileSystemBuilder(rootfs, true, log.New(os.Stdout, "", 0))
+		opts := FSOptions{Rootless: true}
+		testee := NewFileSystemBuilder(rootfs, opts, log.New(os.Stdout, "", 0))
 		if err := testee.Add(filepath.Join(ctxDir, c.src), c.dest, nil); err == nil {
 			t.Errorf(c.msg + ": " + c.src + " -> " + c.dest)
 		}
