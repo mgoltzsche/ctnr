@@ -1,0 +1,32 @@
+FROM alpine:3.7
+
+ENV "VAR1"="myval"
+ENV "VAR1"="myval1"
+ENV "VARX"="myvalx"
+ENV "VARA"="80" "VARB"="443"
+ENV "VARL"="long value"
+
+
+ENV "SVAR1"="myval1"
+ENV "SVAR2"="myval1"
+ENV "SVAR3"="$VAR1"
+ENV "SVAR4"="${VAR1}"
+
+COPY "./ctx" "myval1" "/dest" nil
+COPY "./ctx" "/src" "myval1" nil
+COPY "./ctx" "/src" "/dest" myval1
+
+EXPOSE 80 443
+
+LABEL "myvalx"="long value"
+
+STOPSIGNAL 80
+
+USER myval1
+
+VOLUME "myval1" "myvalx"
+
+WORKDIR myvalx
+
+
+RUN "/bin/sh" "-c" "echo $VAR1"

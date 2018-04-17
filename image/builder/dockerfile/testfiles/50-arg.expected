@@ -1,0 +1,22 @@
+FROM alpine:3.7
+ENV "MYVARX"="dval"
+ENV "MYVARY"="pval"
+
+COPY "./ctx" "dval" "/dest" nil
+COPY "./ctx" "/src" "dval" nil
+COPY "./ctx" "/src" "/dest" dval
+
+EXPOSE 80 443/tcp
+
+LABEL "dval"="pval"
+
+STOPSIGNAL dval
+
+USER dval
+
+VOLUME "dval" "pval"
+
+WORKDIR dval
+
+RUN "argd"="dval" "argp"="pval" "port1"="80" "port2"="443/tcp""/bin/sh" "-c" "echo $argd"
+

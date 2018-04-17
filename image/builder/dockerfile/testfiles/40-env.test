@@ -1,0 +1,38 @@
+FROM alpine:3.7
+
+ENV VAR1 myval
+ENV VAR1 myval1
+ENV VARX=myvalx
+ENV VARA=80 VARB=443
+ENV VARL="long value"
+
+
+# env substitution
+
+ENV SVAR1=$VAR1
+ENV SVAR2=${VAR1}
+ENV SVAR3=\$VAR1
+ENV SVAR4=\${VAR1}
+
+# TODO: test ADD substitution
+
+COPY $VAR1 /dest
+COPY /src $VAR1
+COPY --chown=$VAR1 /src /dest
+
+EXPOSE $VARA $VARB
+
+LABEL $VARX=$VARL
+
+STOPSIGNAL $VARA
+
+USER $SVAR1
+
+VOLUME $SVAR1 $VARX
+
+WORKDIR $VARX
+
+
+# require no substitution
+
+RUN echo $VAR1

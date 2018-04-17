@@ -1,0 +1,3 @@
+FROM alpine:3.7
+VOLUME "/etc/app"
+VOLUME "/etc/app" "/data/dir"

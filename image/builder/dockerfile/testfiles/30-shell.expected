@@ -1,0 +1,10 @@
+FROM alpine:3.7
+RUN "/install.sh" "-a"
+ENTRYPOINT "/entrypoint.sh" "-x"
+CMD "/entrypoint.sh" "-x"
+RUN "/bin/bash" "-c" "/install.sh -a"
+ENTRYPOINT "/bin/bash" "-c" "/entrypoint.sh -x"
+CMD "/bin/bash" "-c" "/entrypoint.sh -x"
+RUN "/bin/sh" "-c" "/install.sh -a"
+ENTRYPOINT "/bin/sh" "-c" "/entrypoint.sh -x"
+CMD "/bin/sh" "-c" "/entrypoint.sh -x"

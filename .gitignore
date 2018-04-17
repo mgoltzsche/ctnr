@@ -2,3 +2,6 @@
 /dist/
 /vendor/
 test-resources/volumes/
+
+# Dockerfile shell words parser workaround
+image/builder/dockerfile/shell/parser.go

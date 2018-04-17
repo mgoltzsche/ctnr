@@ -1,0 +1,3 @@
+FROM alpine:3.7
+CMD ["/entrypoint.sh", "-x"]
+CMD /entrypoint.sh -x

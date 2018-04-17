@@ -46,6 +46,7 @@ func initImageBuildFlags(f *pflag.FlagSet) {
 	f.Var((*iCmd)(ops), "cmd", "Sets the new image's command")
 	f.Var((*iUser)(ops), "user", "Sets the new image's user")
 	f.Var((*iRun)(ops), "run", "Runs the provided command in the current image")
+	f.Var((*iRunShell)(ops), "run-sh", "Runs the provided commands using a shell in the current image")
 	f.Var((*iAdd)(ops), "add", "Adds glob pattern matching files to image: SRC... [DEST[:USER[:GROUP]]]")
 	f.Var((*iTag)(ops), "tag", "Tags the image")
 	f.BoolVar(&flagProot, "proot", false, "Enables PRoot")
@@ -55,9 +56,15 @@ func initImageBuildFlags(f *pflag.FlagSet) {
 type iRun imageBuildFlags
 
 func (o *iRun) Set(cmd string) (err error) {
-	err = checkNonEmpty(cmd)
+	if err = checkNonEmpty(cmd); err != nil {
+		return
+	}
+	p, err := parseStringEntries(cmd)
+	if err != nil {
+		return
+	}
 	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
-		return b.Run(cmd)
+		return b.Run(p, nil)
 	})
 	return
 }
@@ -67,6 +74,26 @@ func (o *iRun) Type() string {
 }
 
 func (o *iRun) String() string {
+	return ""
+}
+
+type iRunShell imageBuildFlags
+
+func (o *iRunShell) Set(cmd string) (err error) {
+	if err = checkNonEmpty(cmd); err != nil {
+		return
+	}
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.Run([]string{"/bin/sh", "-c", cmd}, nil)
+	})
+	return
+}
+
+func (o *iRunShell) Type() string {
+	return "string"
+}
+
+func (o *iRunShell) String() string {
 	return ""
 }
 

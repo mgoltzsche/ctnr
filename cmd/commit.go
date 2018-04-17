@@ -76,6 +76,9 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 		imgId digest.Digest
 		img   image.Image
 	)
+	if flagComment == "" {
+		flagComment = "commit"
+	}
 	if img, err = lockedStore.AddImageLayer(src, lockedBundle.Image(), flagAuthor, flagComment); err == nil {
 		imgId = img.ID()
 		err = lockedBundle.SetParentImageId(&imgId)

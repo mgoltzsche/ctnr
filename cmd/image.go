@@ -213,7 +213,11 @@ func runImageCatConfig(cmd *cobra.Command, args []string) (err error) {
 	if len(args) != 1 {
 		return usageError("No IMAGE argument provided")
 	}
-	img, err := image.GetLocalImage(store, args[0])
+	lockedStore, err := openImageStore()
+	if err != nil {
+		return
+	}
+	img, err := image.GetLocalImage(lockedStore, args[0])
 	if err != nil {
 		return
 	}

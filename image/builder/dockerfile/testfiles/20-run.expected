@@ -1,0 +1,3 @@
+FROM alpine:3.7
+RUN "/install.sh" "-a"
+RUN "/bin/sh" "-c" "/install.sh -a"

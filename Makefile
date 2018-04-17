@@ -28,12 +28,12 @@ all: binary-static cni-plugins-static
 binary-static: .buildimage
 	${DOCKERRUN} ${BUILDIMAGE} make binary BUILDTAGS="${BUILDTAGS_STATIC}" LDFLAGS="${LDFLAGS_STATIC}"
 
-binary: dependencies
+binary: dependencies .dockerfileshellworkaround
 	# Building application:
 	GOPATH="${GOPATH}" \
 	go build -o dist/bin/${BINARY} -a -ldflags "${LDFLAGS}" -tags "${BUILDTAGS}" "${PKGNAME}"
 
-test: dependencies
+test: dependencies .dockerfileshellworkaround
 	# Run tests. TODO: more tests
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/pkg/errors"
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/pkg/files"
@@ -41,6 +41,7 @@ test: dependencies
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/model"
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/model/compose"
 	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/image/store"
+	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/image/builder/dockerfile"
 
 format:
 	# Format the go code
@@ -99,6 +100,10 @@ ifeq ($(shell [ ! -d vendor -o "${UPDATE_DEPENDENCIES}" = TRUE ] && echo 0),0)
 else
 	# Skipping dependency update
 endif
+
+.dockerfileshellworkaround:
+	# This can be removed when https://github.com/containers/image/issues/445 is done
+	sed -E 's/^package dockerfile$$/package shell/g' vendor/github.com/docker/docker/builder/dockerfile/shell_parser.go > image/builder/dockerfile/shell/parser.go
 
 update-dependencies:
 	# Update dependencies
@@ -160,9 +165,9 @@ LITEIDE_PKGS=g++ qt5-qttools qt5-qtbase-dev qt5-qtbase-x11 qt5-qtwebkit xkeyboar
 	cntnr image create \
 		--from=docker-daemon:${BUILDIMAGE} \
 		--author='Max Goltzsche <max.goltzsche@gmail.com>' \
-		--run='cd / && git clone https://github.com/visualfc/liteide.git \
+		--run-sh='cd / && git clone https://github.com/visualfc/liteide.git \
 			&& apk add --update --no-cache ${LITEIDE_PKGS} || /usr/lib/qt5/bin/qmake -help >/dev/null' \
-		--run='cd /liteide/build && ./update_pkg.sh \
+		--run-sh='cd /liteide/build && ./update_pkg.sh \
 			&& cd /liteide/build && QTDIR=/usr/lib/qt5 ./build_linux.sh \
 			&& rm -rf /usr/local/bin; ln -s /liteide/build/liteide/bin /usr/local/bin' \
 		--tag=${LITEIDEIMAGE}

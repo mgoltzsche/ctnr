@@ -1,0 +1,3 @@
+FROM alpine:3.7
+COPY entrypoint.sh /entrypoint.sh
+COPY --chown=root:root entrypoint.sh *.conf /

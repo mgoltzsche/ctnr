@@ -6,8 +6,10 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/mgoltzsche/cntnr/bundle"
@@ -23,6 +25,8 @@ import (
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
+
+var portsRegex = regexp.MustCompile("^(( |^)[1-9][0-9]*(/[a-z0-9]+)?)+$")
 
 type ImageBuildConfig struct {
 	Images   image.ImageStoreRW
@@ -172,17 +176,22 @@ func (b *ImageBuilder) AddEnv(env map[string]string) error {
 	if len(env) == 0 {
 		return errors.New("no env vars provided")
 	}
-	l := make([]string, 0, len(env))
-	for k, v := range env {
-		l = append(l, k+"="+v)
-	}
-	sort.Strings(l)
+	l := kvEntries(env)
 	createdBy := "ENV"
 	for _, e := range l {
-		createdBy += fmt.Sprintf(" %q", e)
+		createdBy += " " + strconv.Quote(e)
 	}
 	b.config.Config.Env = append(b.config.Config.Env, l...)
 	return b.cached(createdBy, b.commitConfig)
+}
+
+func kvEntries(m map[string]string) []string {
+	l := make([]string, 0, len(m))
+	for k, v := range m {
+		l = append(l, k+"="+v)
+	}
+	sort.Strings(l)
+	return l
 }
 
 func (b *ImageBuilder) SetWorkingDir(dir string) error {
@@ -212,6 +221,71 @@ func (b *ImageBuilder) SetCmd(cmd []string) (err error) {
 	return b.cached("CMD "+string(cmdJson), b.commitConfig)
 }
 
+func (b *ImageBuilder) SetStopSignal(signal string) (err error) {
+	b.config.Config.StopSignal = signal
+	return b.cached("STOPSIGNAL "+signal, b.commitConfig)
+}
+
+func (b *ImageBuilder) AddLabels(labels map[string]string) (err error) {
+	if len(labels) == 0 {
+		return errors.New("no labels provided")
+	}
+	if b.config.Config.Labels == nil {
+		b.config.Config.Labels = map[string]string{}
+	}
+	for k, v := range labels {
+		b.config.Config.Labels[k] = v
+	}
+	l := make([]string, 0, len(labels))
+	for k, v := range labels {
+		l = append(l, k+"="+v)
+	}
+	sort.Strings(l)
+	createdBy := "LABEL"
+	for _, e := range l {
+		createdBy += fmt.Sprintf(" %q", e)
+	}
+	return b.cached(createdBy, b.commitConfig)
+}
+
+func (b *ImageBuilder) AddExposedPorts(ports []string) (err error) {
+	if b.config.Config.ExposedPorts == nil {
+		b.config.Config.ExposedPorts = map[string]struct{}{}
+	}
+	if err = ValidateExposedPorts(ports); err != nil {
+		return
+	}
+	sort.Strings(ports)
+	createdBy := "EXPOSE"
+	for _, port := range ports {
+		createdBy += " " + port
+		b.config.Config.ExposedPorts[port] = struct{}{}
+	}
+	return b.cached(createdBy, b.commitConfig)
+}
+
+func (b *ImageBuilder) AddVolumes(volumes []string) (err error) {
+	if b.config.Config.Volumes == nil {
+		b.config.Config.Volumes = map[string]struct{}{}
+	}
+	sort.Strings(volumes)
+	createdBy := "VOLUME"
+	for _, volume := range volumes {
+		createdBy += " " + volume
+		b.config.Config.Volumes[volume] = struct{}{}
+	}
+	return b.cached(createdBy, b.commitConfig)
+}
+
+func ValidateExposedPorts(ports []string) error {
+	for _, port := range ports {
+		if !portsRegex.Match([]byte(port)) {
+			return errors.Errorf("expecting PORT[/PROTOCOL] but was %q", port)
+		}
+	}
+	return nil
+}
+
 func (b *ImageBuilder) FromImage(imageName string) (err error) {
 	b.loggers.Info.Println("FROM", imageName)
 	if b.image != nil {
@@ -230,13 +304,20 @@ func (b *ImageBuilder) setImage(img *image.Image) (err error) {
 	return
 }
 
-func (b *ImageBuilder) Run(cmd string) (err error) {
+func (b *ImageBuilder) Run(args []string, addEnv map[string]string) (err error) {
 	if b.image == nil {
 		err = errors.New("cannot run a command in an empty image")
 		return
 	}
 
-	createdBy := fmt.Sprintf("RUN /bin/sh -c %q", cmd)
+	env := kvEntries(addEnv)
+	createdBy := "RUN"
+	for _, e := range env {
+		createdBy += " " + strconv.Quote(e)
+	}
+	for _, arg := range args {
+		createdBy += " " + strconv.Quote(arg)
+	}
 	return b.cached(createdBy, func(createdBy string) (err error) {
 		if err = b.initContainer(); err != nil {
 			return
@@ -247,7 +328,7 @@ func (b *ImageBuilder) Run(cmd string) (err error) {
 		if err != nil {
 			return
 		}
-		proc, err := b.newProcess(cmd, spec)
+		proc, err := b.newProcess(args, env, spec)
 		if err != nil {
 			return
 		}
@@ -264,7 +345,7 @@ func (b *ImageBuilder) Run(cmd string) (err error) {
 	})
 }
 
-func (b *ImageBuilder) newProcess(cmd string, spec *rspecs.Spec) (pr *rspecs.Process, err error) {
+func (b *ImageBuilder) newProcess(args []string, addEnv []string, spec *rspecs.Spec) (pr *rspecs.Process, err error) {
 	u := idutils.ParseUser(b.config.Config.User)
 	rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
 	usr, err := u.Resolve(rootfs)
@@ -277,8 +358,8 @@ func (b *ImageBuilder) newProcess(cmd string, spec *rspecs.Spec) (pr *rspecs.Pro
 		GID: uint32(usr.Gid),
 		// TODO: resolve additional group ids
 	}
-	p.Args = []string{"/bin/sh", "-c", cmd}
-	p.Env = b.config.Config.Env
+	p.Args = args
+	p.Env = append(b.config.Config.Env, addEnv...)
 	p.Cwd = b.config.Config.WorkingDir
 	return &p, nil
 }
