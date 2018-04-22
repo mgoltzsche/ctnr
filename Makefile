@@ -6,7 +6,7 @@ REPODIR=$(shell pwd)
 GOPATH=${REPODIR}/build
 LITEIDE_WORKSPACE=${GOPATH}/liteide-workspace
 PKGNAME=github.com/mgoltzsche/cntnr
-PKGRELATIVEROOT=$(shell echo /build/src/${PKGNAME} | sed -E 's/\/+[^\/]*/..\//g')
+PKGRELATIVEROOT=$(shell echo /src/${PKGNAME} | sed -E 's/\/+[^\/]*/..\//g')
 VENDORLOCK=${REPODIR}/vendor/ready
 BINARY=cntnr
 
@@ -20,6 +20,7 @@ CNI_VERSION=0.6.0
 CNIGOPATH=${GOPATH}/cni
 
 COBRA=${GOPATH}/bin/cobra
+PACKAGES:=$(shell go list $(BUILDFLAGS) . | grep -v github.com/mgoltzsche/cntnr/vendor)
 
 export PATH := dist/bin:$(PATH)
 
@@ -34,16 +35,14 @@ binary: dependencies .dockerfileshellworkaround
 	go build -o dist/bin/${BINARY} -a -ldflags "${LDFLAGS}" -tags "${BUILDTAGS}" "${PKGNAME}"
 
 test: dependencies .dockerfileshellworkaround
-	# Run tests. TODO: more tests
-	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/pkg/errors"
-	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/pkg/files"
-	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/pkg/idutils"
-	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/model"
-	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/model/compose"
-	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/image/store"
-	GOPATH="${GOPATH}" go test -tags "${BUILDTAGS}" "${PKGNAME}/image/builder/dockerfile"
+	# Run tests
+	export GOPATH="${GOPATH}"; \
+	go test -tags "${BUILDTAGS}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS}" ./... | grep -Ev '/vendor/|[^/]+_old/'`
 
-format:
+test-coverage: test
+	GOPATH="${GOPATH}" go tool cover -html="${GOPATH}/coverage.out"
+
+fmt:
 	# Format the go code
 	(find . -mindepth 1 -maxdepth 1 -type d; ls *.go) | grep -Ev '^(./vendor|./dist|./build|./.git)(/.*)?$$' | xargs -n1 gofmt -w
 
@@ -111,14 +110,10 @@ update-dependencies:
 	# In case LiteIDE is running it must be restarted to apply the changes
 
 .workspace:
-ifeq ($(shell [ -d "${GOPATH}" ] || echo 1), 1)
 	# Preparing build directory:
-	mkdir -p vendor "${GOPATH}/src/${PKGNAME}"
-	cd "${GOPATH}/src/${PKGNAME}" && ln -sf ${PKGRELATIVEROOT}* .
-	rm -f "${GOPATH}/src/${PKGNAME}/build"
-else
-	# Skipping build directory preparation since it already exists
-endif
+	[ -d "${GOPATH}" ] || \
+		(mkdir -p vendor "$(shell dirname "${GOPATH}/src/${PKGNAME}")" \
+		&& ln -sf "${PKGRELATIVEROOT}" "${GOPATH}/src/${PKGNAME}")
 
 cobra: .workspace
 	# Build cobra CLI to manage the application's CLI
@@ -149,10 +144,10 @@ liteide: dependencies
 ide: .liteideimage
 	# Make sure to lock the build path to the top-level directory
 	cntnr bundle create -b cntnr-liteide --update=true -w /work \
-		--mount "${REPODIR}:/work/src/github.com/mgoltzsche/cntnr" \
-		--mount "${REPODIR}/liteide.ini:/root/.config/liteide/liteide.ini" \
-		--mount /etc/machine-id:/etc/machine-id:ro \
-		--mount /tmp/.X11-unix:/tmp/.X11-unix \
+		--mount "src=${REPODIR},dst=/work/src/github.com/mgoltzsche/cntnr" \
+		--mount "src=${REPODIR}/liteide.ini,dst=/root/.config/liteide/liteide.ini" \
+		--mount src=/etc/machine-id,dst=/etc/machine-id,opt=ro \
+		--mount src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
 		--env DISPLAY=$$DISPLAY \
 		--env GOPATH=/work \
 		${LITEIDEIMAGE} \

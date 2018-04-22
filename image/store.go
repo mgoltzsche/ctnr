@@ -5,6 +5,7 @@ import (
 	"time"
 
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -49,7 +50,9 @@ type ImageStoreRW interface {
 	MarkUsedImage(imageId digest.Digest) error
 	ImportImage(name string) (Image, error)
 	AddImageConfig(m ispecs.Image, parentImageId *digest.Digest) (Image, error)
-	NewLayerSource(rootfs string, addOnly bool) (LayerSource, error)
+	NewLayerSource(rootfs string) (LayerSource, error)
+	NewLayerSourceOverlayed(rootfs, addDir string, addPattern []string, dest string, usr *idutils.UserIds) (LayerSource, error)
+	NewLayerSourceFromImage(rootfs string, img Image, filePattern []string, dest string, usr *idutils.UserIds) (LayerSource, error)
 	// Creates a new layer or returns errEmptyLayerDiff if nothing has changed
 	AddImageLayer(src LayerSource, parentImageId *digest.Digest, author, comment string) (Image, error)
 	TagImage(imageId digest.Digest, tag string) (Image, error)
@@ -58,7 +61,8 @@ type ImageStoreRW interface {
 }
 
 type LayerSource interface {
-	DiffHash(filterPaths []string) (digest.Digest, error)
+	DiffHash() (digest.Digest, error)
+	Close() error
 }
 
 const (

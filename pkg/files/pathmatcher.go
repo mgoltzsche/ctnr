@@ -24,7 +24,9 @@ func Glob(rootDir string, pattern []string) (files []string, err error) {
 	}
 	rootDir = filepath.Clean(rootDir)
 	for _, p := range pattern {
-		p = filepath.Join(rootDir, p)
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(rootDir, p)
+		}
 		if !within(p, rootDir) {
 			return files, errors.Errorf("file pattern %q is outside context directory", p)
 		}

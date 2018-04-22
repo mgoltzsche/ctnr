@@ -14,6 +14,8 @@ import (
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/cntnr/pkg/files"
+	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
@@ -27,18 +29,21 @@ var _ image.ImageStoreRW = &ImageStoreRW{}
 
 type ImageStoreRW struct {
 	*ImageStoreRO
+	fsCache       *ImageFSROCache
 	systemContext *types.SystemContext
 	//trustPolicy        *signature.PolicyContext
 	trustPolicy TrustPolicyContext
+	rootless    bool
+	temp        string
 	lock        lock.Locker
-	warn        log.Logger
+	loggers     log.Loggers
 }
 
-func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, warn log.Logger) (r *ImageStoreRW, err error) {
+func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, fsCache *ImageFSROCache, tmpDir string, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, rootless bool, loggers log.Loggers) (r *ImageStoreRW, err error) {
 	if err = locker.Lock(); err != nil {
 		err = errors.Wrap(err, "open read/write image store")
 	}
-	return &ImageStoreRW{roStore.WithNonAtomicAccess(), systemContext, trustPolicy, locker, warn}, err
+	return &ImageStoreRW{roStore.WithNonAtomicAccess(), fsCache, systemContext, trustPolicy, rootless, tmpDir, locker, loggers}, err
 }
 
 func (s *ImageStoreRW) Close() (err error) {
@@ -122,8 +127,35 @@ func (s *ImageStoreRW) MarkUsedImage(id digest.Digest) error {
 	return s.imageIds.MarkUsed(id)
 }
 
-func (s *ImageStoreRW) NewLayerSource(rootfs string, addOnly bool) (image.LayerSource, error) {
-	return s.blobs.NewLayerSource(rootfs, addOnly)
+func (s *ImageStoreRW) NewLayerSource(rootfs string) (r image.LayerSource, err error) {
+	return s.blobs.NewLayerSource(rootfs, nil, false)
+}
+
+func (s *ImageStoreRW) NewLayerSourceOverlayed(rootfs, srcDir string, srcPattern []string, dest string, usr *idutils.UserIds) (r image.LayerSource, err error) {
+	opts := files.FSOptions{
+		Rootless: s.rootless,
+		// TODO: Add uid/gid mappings to be used within user namespace of a privileged user's container
+	}
+	deleteRootfs := false
+	if rootfs == "" {
+		if rootfs, err = ioutil.TempDir(s.temp, ".tmp-imgsrc-"); err != nil {
+			return nil, errors.New("layer source: " + err.Error())
+		}
+		deleteRootfs = true
+	}
+	fs := files.NewFileSystemBuilder(rootfs, opts, s.loggers.Debug)
+	if err = fs.AddAll(srcDir, srcPattern, dest, usr); err != nil {
+		return nil, errors.Wrap(err, "layer source")
+	}
+	return s.blobs.NewLayerSource(rootfs, fs.Files(), deleteRootfs)
+}
+
+func (s *ImageStoreRW) NewLayerSourceFromImage(rootfs string, img image.Image, filePattern []string, dest string, usr *idutils.UserIds) (r image.LayerSource, err error) {
+	imagefs, err := s.fsCache.GetRootfs(&img)
+	if err != nil {
+		return
+	}
+	return s.NewLayerSourceOverlayed(rootfs, imagefs, filePattern, dest, usr)
 }
 
 func (s *ImageStoreRW) AddImageLayer(src image.LayerSource, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {

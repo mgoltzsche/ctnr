@@ -57,6 +57,20 @@ func (s *FileSystemBuilder) Files() []string {
 	return s.files
 }
 
+func (s *FileSystemBuilder) AddAll(srcfs string, pattern []string, dest string, usr *idutils.UserIds) (err error) {
+	srcFiles, err := Glob(srcfs, pattern)
+	if err != nil {
+		return
+	}
+	cpPairs := Map(srcFiles, dest)
+	for _, p := range cpPairs {
+		if err = s.Add(p.Source, p.Dest, usr); err != nil {
+			return
+		}
+	}
+	return
+}
+
 func (s *FileSystemBuilder) Add(src, destFile string, usr *idutils.UserIds) (err error) {
 	if s.rootless && usr != nil && (usr.Uid != 0 || usr.Gid != 0) {
 		return errors.Errorf("in rootless mode only own user ID can be used but %s provided", usr.String())

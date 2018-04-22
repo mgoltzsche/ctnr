@@ -1,3 +1,7 @@
 FROM alpine:3.7
-COPY "./ctx" "entrypoint.sh" "/entrypoint.sh" nil
-COPY "./ctx" "entrypoint.sh" "*.conf" "/" root:root
+NAME 0
+
+COPY dir="./ctx" "entrypoint.sh" "/entrypoint.sh" nil
+COPY dir="./ctx" "entrypoint.sh" "*.conf" "/" root:root
+COPY image="0" "file1" "file2" "/" nil
+COPY image="0" "file1" "file2" "/" root:root

@@ -3,19 +3,18 @@ package builder
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/files"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
@@ -40,19 +39,23 @@ type ImageBuildConfig struct {
 }
 
 type ImageBuilder struct {
-	images    image.ImageStoreRW
-	bundles   bundle.BundleStore
-	config    ispecs.Image
-	image     *image.Image
-	cache     ImageBuildCache
-	bundle    *bundle.LockedBundle
-	container run.Container
-	stdio     run.ContainerIO
-	tempDir   string
-	runRoot   string
-	rootless  bool
-	proot     string
-	loggers   log.Loggers
+	images        image.ImageStoreRW
+	bundles       bundle.BundleStore
+	config        ispecs.Image
+	image         *image.Image
+	cache         ImageBuildCache
+	bundle        *bundle.LockedBundle
+	container     run.Container
+	lockedBundles []*bundle.LockedBundle
+	namedFs       map[string]string
+	namedImages   map[string]image.Image
+	buildNames    []string
+	stdio         run.ContainerIO
+	tempDir       string
+	runRoot       string
+	rootless      bool
+	proot         string
+	loggers       log.Loggers
 }
 
 func NewImageBuilder(cfg ImageBuildConfig) (r *ImageBuilder) {
@@ -78,26 +81,40 @@ func NewImageBuilder(cfg ImageBuildConfig) (r *ImageBuilder) {
 	r.config.Created = &now
 	r.config.Architecture = runtime.GOARCH
 	r.config.OS = runtime.GOOS
+	r.namedFs = map[string]string{}
+	r.namedImages = map[string]image.Image{}
 	return
 }
 
-func (b *ImageBuilder) Image() *digest.Digest {
-	if b.image == nil {
-		return nil
-	} else {
-		id := b.image.ID()
-		return &id
+func (b *ImageBuilder) Close() (err error) {
+	err = b.closeContainerAndBundle()
+	for _, b := range b.lockedBundles {
+		err = exterrors.Append(err, b.Close())
 	}
+	b.lockedBundles = nil
+	err = errors.WithMessage(err, "close image builder")
+	return
+}
+
+func (b *ImageBuilder) closeContainerAndBundle() (err error) {
+	err = b.closeContainer()
+	return exterrors.Append(err, b.closeBundle())
 }
 
 func (b *ImageBuilder) closeContainer() (err error) {
 	if b.container != nil {
 		err = b.container.Close()
 		b.container = nil
-	} else if b.bundle != nil {
-		err = b.bundle.Close()
 	}
-	b.bundle = nil
+	err = exterrors.Append(err, b.closeBundle())
+	return
+}
+
+func (b *ImageBuilder) closeBundle() (err error) {
+	if b.bundle != nil {
+		err = b.bundle.Close()
+		b.bundle = nil
+	}
 	return
 }
 
@@ -123,6 +140,7 @@ func (b *ImageBuilder) initBundle() (err error) {
 	bundle, err := b.bundles.CreateBundle(bb, false)
 	if err == nil {
 		b.bundle = bundle
+		b.lockedBundles = append(b.lockedBundles, bundle)
 	}
 	return
 }
@@ -146,10 +164,67 @@ func (b *ImageBuilder) initContainer() (err error) {
 		Id:             b.bundle.ID(),
 		Bundle:         b.bundle,
 		Io:             b.stdio,
-		DestroyOnClose: true,
+		DestroyOnClose: false,
 	})
 	if err == nil {
 		b.container = container
+	}
+	return
+}
+
+func (b *ImageBuilder) Image() *digest.Digest {
+	if b.image == nil {
+		return nil
+	} else {
+		id := b.image.ID()
+		return &id
+	}
+}
+
+func (b *ImageBuilder) BuildName(name string) {
+	_, fsNameExists := b.namedFs[name]
+	_, imgNameExists := b.namedImages[name]
+	if fsNameExists || imgNameExists {
+		b.loggers.Warn.Printf("shadowing build name %q", name)
+	}
+	b.buildNames = append(b.buildNames, name)
+}
+
+func (b *ImageBuilder) FromImage(imageName string) (err error) {
+	if err = b.closeContainer(); err != nil {
+		return
+	}
+	if len(b.buildNames) > 0 {
+		// Map name to image/bundle rootfs for efficient subsequent copy operations
+		if b.bundle != nil {
+			spec, err := b.bundle.Spec()
+			if err != nil {
+				return err
+			}
+			if spec.Root != nil {
+				rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
+				for _, name := range b.buildNames {
+					b.namedFs[name] = rootfs
+				}
+				b.bundle = nil
+			} else {
+				b.loggers.Warn.Printf("build names %+v refer to an image without file system", b.buildNames)
+			}
+			b.buildNames = nil
+		} else if b.image != nil {
+			for _, name := range b.buildNames {
+				b.namedImages[name] = *b.image
+			}
+			b.buildNames = nil
+		}
+	}
+	if err = b.closeBundle(); err != nil {
+		return
+	}
+	b.loggers.Info.Println("FROM", imageName)
+	img, err := image.GetImage(b.images, imageName)
+	if err == nil {
+		err = b.setImage(&img)
 	}
 	return
 }
@@ -171,8 +246,6 @@ func (b *ImageBuilder) SetUser(user string) (err error) {
 }
 
 func (b *ImageBuilder) AddEnv(env map[string]string) error {
-	// TODO: resolve env (and arg) expressions in all config change operations (see https://docs.docker.com/engine/reference/builder/#environment-replacement)
-	//       => do that in a separate Dockerfile processor
 	if len(env) == 0 {
 		return errors.New("no env vars provided")
 	}
@@ -286,18 +359,6 @@ func ValidateExposedPorts(ports []string) error {
 	return nil
 }
 
-func (b *ImageBuilder) FromImage(imageName string) (err error) {
-	b.loggers.Info.Println("FROM", imageName)
-	if b.image != nil {
-		return errors.New("base image must be defined as first build step")
-	}
-	img, err := image.GetImage(b.images, imageName)
-	if err == nil {
-		err = b.setImage(&img)
-	}
-	return
-}
-
 func (b *ImageBuilder) setImage(img *image.Image) (err error) {
 	b.image = img
 	b.config, err = img.Config()
@@ -337,11 +398,13 @@ func (b *ImageBuilder) Run(args []string, addEnv map[string]string) (err error) 
 			return
 		}
 		rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
-		src, err := b.images.NewLayerSource(rootfs, false)
+		src, err := b.images.NewLayerSource(rootfs)
 		if err != nil {
 			return
 		}
-		return b.commitLayer(src, createdBy)
+		err = b.commitLayer(src, createdBy)
+		err = exterrors.Append(err, src.Close())
+		return
 	})
 }
 
@@ -371,7 +434,68 @@ func (b *ImageBuilder) Tag(tag string) (err error) {
 	img, err := b.images.TagImage(b.image.ID(), tag)
 	if err == nil {
 		b.image = &img
+		b.namedImages[tag] = *b.image
 		b.loggers.Info.WithField("img", b.image.ID()).WithField("tag", tag).Println("Tagged image")
+	}
+	return
+}
+
+func (b *ImageBuilder) AddFiles(srcDir string, srcPattern []string, dest string, user *idutils.User) (err error) {
+	return b.addFiles(srcPattern, dest, user, func(rootfs, dest string, usr *idutils.UserIds) (image.LayerSource, error) {
+		return b.images.NewLayerSourceOverlayed(rootfs, srcDir, srcPattern, dest, usr)
+	})
+}
+
+func (b *ImageBuilder) AddFilesFromImage(srcImage string, srcPattern []string, dest string, user *idutils.User) (err error) {
+	if fs := b.namedFs[srcImage]; fs != "" {
+		return b.AddFiles(fs, srcPattern, dest, user)
+	}
+	img, ok := b.namedImages[srcImage]
+	if !ok {
+		if img, err = image.GetImage(b.images, srcImage); err != nil {
+			return
+		}
+	}
+	return b.addFiles(srcPattern, dest, user, func(rootfs, dest string, usr *idutils.UserIds) (image.LayerSource, error) {
+		return b.images.NewLayerSourceFromImage(rootfs, img, srcPattern, dest, usr)
+	})
+}
+
+type layerSourceFactory func(string, string, *idutils.UserIds) (image.LayerSource, error)
+
+func (b *ImageBuilder) addFiles(srcPattern []string, dest string, user *idutils.User, factory layerSourceFactory) (err error) {
+	// TODO: also support HTTP URLs as src
+	defer exterrors.Wrapd(&err, "add files")
+	if len(srcPattern) == 0 {
+		return
+	}
+	rootfs, dest, usr, err := b.fsState(dest, user)
+	if err != nil {
+		return
+	}
+	src, err := factory(rootfs, dest, usr)
+	if err != nil {
+		err = exterrors.Append(err, b.closeContainerAndBundle())
+		return
+	}
+	defer func() {
+		err = exterrors.Append(err, src.Close())
+	}()
+	hash, err := src.DiffHash()
+	if err != nil {
+		return
+	}
+	createdBy := "COPY " + hash.String()
+	return b.cached(createdBy, func(createdBy string) (err error) {
+		return b.commitLayer(src, createdBy)
+	})
+}
+
+func (b *ImageBuilder) fsState(dest string, user *idutils.User) (rootfs, dir string, usr *idutils.UserIds, err error) {
+	if rootfs, err = b.getRootfs(); err == nil {
+		if dir, err = b.resolveDestDir(dest); err == nil {
+			usr, err = b.resolveUser(user)
+		}
 	}
 	return
 }
@@ -396,77 +520,36 @@ func (b *ImageBuilder) resolveUser(u *idutils.User) (usrp *idutils.UserIds, err 
 	return
 }
 
-func (b *ImageBuilder) CopyFile(contextDir string, srcPattern []string, dest string, user *idutils.User) (err error) {
-	defer exterrors.Wrapd(&err, "copy into image")
-
-	if len(srcPattern) == 0 {
-		return
-	}
-
-	usr, err := b.resolveUser(user)
-	if err != nil {
-		return
-	}
-
-	var rootfs string
+func (b *ImageBuilder) getRootfs() (rootfs string, err error) {
 	if b.bundle == nil {
-		if err = os.MkdirAll(b.tempDir, 0750); err != nil {
-			return errors.New(err.Error())
-		}
-		if rootfs, err = ioutil.TempDir(b.tempDir, ".img-build-"); err != nil {
-			return errors.New(err.Error())
-		}
-		defer func() {
-			if e := os.RemoveAll(rootfs); e != nil {
-				b.loggers.Error.Println(e)
-			}
-		}()
-	} else {
-		s, _ := b.bundle.Spec()
+		return
+	}
+	s, err := b.bundle.Spec()
+	if err == nil {
 		rootfs = filepath.Join(b.bundle.Dir(), s.Root.Path)
 	}
-	srcFiles, err := files.Glob(contextDir, srcPattern)
-	if err != nil {
-		return
-	}
+	return
+}
 
-	workingDir := "/"
-	if b.image != nil {
-		cfg, e := b.image.Config()
-		if e != nil {
-			return e
+// Resolve dir against current image's working dir
+func (b *ImageBuilder) resolveDestDir(dir string) (r string, err error) {
+	if filepath.IsAbs(dir) {
+		r = dir
+	} else {
+		workingDir := "/"
+		if b.image != nil {
+			cfg, e := b.image.Config()
+			if e != nil {
+				return "", e
+			}
+			workingDir = cfg.Config.WorkingDir
 		}
-		workingDir = cfg.Config.WorkingDir
-	}
-	if !filepath.IsAbs(dest) {
-		dest = filepath.Join(workingDir, dest)
-	}
-	cpPairs := files.Map(srcFiles, dest)
-	opts := files.FSOptions{
-		Rootless: b.rootless,
-		// TODO: Add uid/gid mappings to be used within user namespace of a privileged user's container
-	}
-	fs := files.NewFileSystemBuilder(rootfs, opts, b.loggers.Debug)
-	for _, p := range cpPairs {
-		if err = fs.Add(p.Source, p.Dest, usr); err != nil {
-			err = exterrors.Append(err, b.closeContainer())
-			return
+		r = filepath.Join(workingDir, dir)
+		if len(dir) > 0 && strings.LastIndex(dir, "/") == len(dir)-1 {
+			r += "/"
 		}
 	}
-
-	commitSrc, err := b.images.NewLayerSource(rootfs, b.bundle == nil)
-	if err != nil {
-		err = exterrors.Append(err, b.closeContainer())
-		return
-	}
-	hash, err := commitSrc.DiffHash(fs.Files())
-	if err != nil {
-		return
-	}
-	createdBy := "COPY " + hash.String()
-	return b.cached(createdBy, func(createdBy string) (err error) {
-		return b.commitLayer(commitSrc, createdBy)
-	})
+	return
 }
 
 func (b *ImageBuilder) commitLayer(src image.LayerSource, createdBy string) (err error) {
@@ -516,7 +599,7 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 	defer func() {
 		if err != nil {
 			// Release bundle when operation failed
-			err = exterrors.Append(err, b.closeContainer())
+			err = exterrors.Append(err, b.closeContainerAndBundle())
 		}
 	}()
 
@@ -528,12 +611,14 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 	var cachedImgId digest.Digest
 	cachedImgId, err = b.cache.Get(parentImgId, uniqCreatedBy)
 	if err == nil {
-		if cachedImg, e := b.images.Image(cachedImgId); e == nil {
-			// TODO: distinguish between image not found and serious error
+		cachedImg, e := b.images.Image(cachedImgId)
+		if e == nil {
 			b.loggers.Info.WithField("img", cachedImg.ID()).Printf("Using cached image")
 			err = b.setImage(&cachedImg)
 			err = errors.Wrap(err, "cached image")
 			return
+		} else if !image.IsImageIdNotExist(e) {
+			return errors.WithMessage(e, "load cached image")
 		}
 	} else if !IsCacheKeyNotExist(err) {
 		// if no "entry not found" error
@@ -550,11 +635,5 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 
 	b.loggers.Info.WithField("img", (*b.image).ID()).Printf("Built new image")
 
-	return
-}
-
-func (b *ImageBuilder) Close() (err error) {
-	err = b.closeContainer()
-	err = errors.WithMessage(err, "close image builder")
 	return
 }

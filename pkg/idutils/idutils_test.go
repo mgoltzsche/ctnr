@@ -44,6 +44,7 @@ func TestLookupGid(t *testing.T) {
 		{"testgroup", 7777, rootfs, true},
 		{"9", 9, dir, true},
 		{"unknowngroup", 0, rootfs, false},
+		{"-1", 0, rootfs, false},
 	} {
 		gid, err := LookupGid(c.name, c.rootfs)
 		if c.resolve {
@@ -73,6 +74,7 @@ func TestLookupUser(t *testing.T) {
 		{"myuser", 9000, 7, rootfs, true},
 		{"9", 9, 9, dir, true},
 		{"unknownuser", 0, 0, rootfs, false},
+		{"-1", 0, 0, rootfs, false},
 	} {
 		u, err := LookupUser(c.name, c.rootfs)
 		if c.resolve {

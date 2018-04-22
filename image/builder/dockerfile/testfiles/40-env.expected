@@ -1,4 +1,5 @@
 FROM alpine:3.7
+NAME 0
 
 ENV "VAR1"="myval"
 ENV "VAR1"="myval1"
@@ -12,9 +13,10 @@ ENV "SVAR2"="myval1"
 ENV "SVAR3"="$VAR1"
 ENV "SVAR4"="${VAR1}"
 
-COPY "./ctx" "myval1" "/dest" nil
-COPY "./ctx" "/src" "myval1" nil
-COPY "./ctx" "/src" "/dest" myval1
+COPY dir="./ctx" "myval1" "/dest" nil
+COPY dir="./ctx" "/src" "myval1" nil
+COPY dir="./ctx" "/src" "/dest" myval1
+COPY image="myval1" "/src" "/dest" nil
 
 EXPOSE 80 443
 
@@ -30,3 +32,7 @@ WORKDIR myvalx
 
 
 RUN "/bin/sh" "-c" "echo $VAR1"
+ENTRYPOINT "/bin/sh" "-c" "echo $VAR1"
+ENTRYPOINT "/bin/echo" "$VAR1"
+CMD "/bin/sh" "-c" "echo $VAR1"
+CMD "/bin/echo" "$VAR1"

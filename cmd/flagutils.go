@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	shellwords "github.com/mattn/go-shellwords"
+	"github.com/mgoltzsche/cntnr/model"
 	"github.com/pkg/errors"
 )
 
@@ -86,4 +87,72 @@ func mapToString(m map[string]string) string {
 		}
 	}
 	return s
+}
+
+// Parses a docker-like mount expression or falls back to the docker-like volume expression.
+// See https://docs.docker.com/storage/bind-mounts/#choosing-the--v-or-mount-flag
+func ParseMount(expr string) (r model.VolumeMount, err error) {
+	// Parse kv pairs
+	r.Type = model.MOUNT_TYPE_BIND
+	r.Options = []string{}
+	for _, e := range strings.Split(expr, ",") {
+		kv := strings.SplitN(e, "=", 2)
+		k := strings.ToLower(strings.Trim(kv[0], " "))
+		v := ""
+		if len(kv) == 2 {
+			v = strings.Trim(kv[1], " ")
+		}
+		switch {
+		case k == "type":
+			r.Type = model.MountType(v)
+		case k == "source" || k == "src":
+			r.Source = v
+		case k == "destination" || k == "dst" || k == "target":
+			r.Target = v
+		case k == "readonly":
+			r.Options = append(r.Options, "ro")
+		case k == "volume-opt" || k == "opt":
+			r.Options = append(r.Options, v)
+		default:
+			return r, errors.Errorf("unsupported mount key %q", k)
+		}
+	}
+	if r.Type == "" {
+		if r.Source == "" {
+			return r, errors.New("no mount type specified")
+		}
+		if r.IsNamedVolume() {
+			r.Type = "volume"
+		} else {
+			r.Type = "bind"
+		}
+	}
+	if r.Target == "" {
+		err = errors.Errorf("no volume mount target specified but %q", expr)
+	}
+	return
+}
+
+// Parses a volume mount.
+// See https://docs.docker.com/storage/volumes/#choose-the--v-or---mount-flag
+func ParseBindMount(expr string) (r model.VolumeMount, err error) {
+	r.Type = model.MOUNT_TYPE_BIND
+	r.Options = []string{}
+	s := strings.SplitN(expr, ":", 3)
+	switch len(s) {
+	case 1:
+		r.Source = ""
+		r.Target = s[0]
+	case 2:
+		r.Source = s[0]
+		r.Target = s[1]
+	default:
+		r.Source = s[0]
+		r.Target = s[1]
+		r.Options = strings.Split(s[2], ",")
+	}
+	if r.Target == "" {
+		err = errors.Errorf("no volume mount target specified but %q", expr)
+	}
+	return
 }

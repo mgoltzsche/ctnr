@@ -3,7 +3,6 @@ package model
 import (
 	"encoding/json"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -164,77 +163,6 @@ func (m VolumeMount) String() string {
 		s += ",opt=" + o
 	}
 	return s
-}
-
-// Parses a docker-like mount expression, see https://docs.docker.com/storage/bind-mounts/#choosing-the--v-or-mount-flag
-func ParseMount(expr string) (r VolumeMount, err error) {
-	// Check bind mount format
-	if strings.Index(expr, "=") == -1 || (strings.Index(expr, ",") == -1 && strings.Index(expr, ":") != -1) {
-		if r, err = ParseBindMount(expr); err != nil {
-			err = errors.Errorf("invalid mount expression %q")
-		}
-		return
-	}
-
-	// Parse kv pairs
-	r.Type = MOUNT_TYPE_BIND
-	r.Options = []string{}
-	for _, e := range strings.Split(expr, ",") {
-		kv := strings.SplitN(e, "=", 2)
-		k := strings.ToLower(strings.Trim(kv[0], " "))
-		v := ""
-		if len(kv) == 2 {
-			v = strings.Trim(kv[1], " ")
-		}
-		switch {
-		case k == "type":
-			r.Type = MountType(v)
-		case k == "source" || k == "src":
-			r.Source = v
-		case k == "destination" || k == "dst" || k == "target":
-			r.Target = v
-		case k == "readonly":
-			r.Options = append(r.Options, "ro")
-		case k == "volume-opt" || k == "opt":
-			r.Options = append(r.Options, v)
-		default:
-			return r, errors.Errorf("unsupported mount key %q", k)
-		}
-	}
-	if r.Type == "" {
-		if r.Source == "" {
-			return r, errors.New("no mount type specified")
-		}
-		if r.IsNamedVolume() {
-			r.Type = "volume"
-		} else {
-			r.Type = "bind"
-		}
-	}
-	if r.Target == "" {
-		err = errors.Errorf("no volume mount target specified but %q", expr)
-	}
-	return
-}
-
-func ParseBindMount(expr string) (r VolumeMount, err error) {
-	r.Type = MOUNT_TYPE_BIND
-	r.Options = []string{}
-	s := strings.Split(expr, ":")
-	switch len(s) {
-	case 0:
-	case 1:
-		r.Source = ""
-		r.Target = s[0]
-	default:
-		r.Source = s[0]
-		r.Target = s[1]
-		r.Options = s[2:]
-	}
-	if r.Target == "" {
-		err = errors.Errorf("no volume mount target specified but %q", expr)
-	}
-	return
 }
 
 type Volume struct {

@@ -1,2 +1,4 @@
 FROM alpine:3.7
+NAME 0
+
 AUTHOR "Max Goltzsche <max.goltzsche@gmail.com>"

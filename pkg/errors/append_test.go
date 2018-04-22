@@ -34,5 +34,10 @@ func TestAppend(t *testing.T) {
 		if cause := orgerrors.Cause(actual); cause != c.cause {
 			t.Errorf("cause not preserved for Append(%q, %q): expected %q but was %q", c.a, c.b, c.cause, cause)
 		}
+		if c.a != nil && c.b != nil {
+			if len(actual.(*multiError).Additional()) == 0 {
+				t.Errorf("Append(%q, %q).Additional() did return 0 entries", c.a, c.b)
+			}
+		}
 	}
 }

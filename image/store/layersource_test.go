@@ -19,26 +19,26 @@ func TestDiffHash(t *testing.T) {
 	defer os.RemoveAll(rootfs)
 
 	// Assert hash reproducable
-	testee := testeeFromRootfs(rootfs)
-	hash1, err := testee.DiffHash(nil)
+	testee := testeeFromRootfs(rootfs, nil)
+	hash1, err := testee.DiffHash()
 	require.NoError(t, err)
 	time.Sleep(time.Duration(500000000))
-	testee = testeeFromRootfs(rootfs)
-	hash2, err := testee.DiffHash(nil)
+	testee = testeeFromRootfs(rootfs, nil)
+	hash2, err := testee.DiffHash()
 	require.NoError(t, err)
 	assert.Equal(t, hash1, hash2, "Same content must result in the same hash")
 
 	// Assert changed content -> different hash
 	err = ioutil.WriteFile(filepath.Join(rootfs, "dir", "file"), []byte("content"), 0640)
 	require.NoError(t, err)
-	testee = testeeFromRootfs(rootfs)
-	hash2, err = testee.DiffHash(nil)
+	testee = testeeFromRootfs(rootfs, nil)
+	hash2, err = testee.DiffHash()
 	require.NoError(t, err)
 	assert.NotEqual(t, hash1, hash2, "Different content should result in different hash")
 
 	// Assert filtered source should result in same hash
-	testee = testeeFromRootfs(rootfs)
-	hash2, err = testee.DiffHash([]string{"/dir/sdir/f1", "/dir/sdir/f2", "/x"})
+	testee = testeeFromRootfs(rootfs, []string{"/dir/sdir/f1", "/dir/sdir/f2", "/x"})
+	hash2, err = testee.DiffHash()
 	require.NoError(t, err)
 	assert.Equal(t, hash1, hash2, "Filtered content must result in same hash")
 }
@@ -60,7 +60,7 @@ func mockRootfs(files []string) (rootfs string) {
 	return
 }
 
-func testeeFromRootfs(rootfs string) *LayerSource {
+func testeeFromRootfs(rootfs string, paths []string) *LayerSource {
 	dh, err := mtree.Walk(rootfs, nil, mtreeKeywords, fseval.RootlessFsEval)
 	if err != nil {
 		panic(err)
@@ -68,5 +68,6 @@ func testeeFromRootfs(rootfs string) *LayerSource {
 	return &LayerSource{
 		rootfs:      rootfs,
 		rootfsMtree: dh,
+		paths:       paths,
 	}
 }

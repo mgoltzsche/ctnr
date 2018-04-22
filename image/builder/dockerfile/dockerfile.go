@@ -16,11 +16,13 @@ import (
 )
 
 type ImageBuilder interface {
+	BuildName(string)
 	AddEnv(map[string]string) error
 	AddExposedPorts([]string) error
 	AddLabels(map[string]string) error
 	AddVolumes([]string) error
-	CopyFile(contextDir string, srcPattern []string, dest string, user *idutils.User) error
+	AddFiles(srcDir string, srcPattern []string, dest string, user *idutils.User) error
+	AddFilesFromImage(srcImage string, srcPattern []string, dest string, user *idutils.User) error
 	FromImage(name string) error
 	Run(args []string, addEnv map[string]string) error
 	SetAuthor(string) error
@@ -32,15 +34,16 @@ type ImageBuilder interface {
 }
 
 type DockerfileBuilder struct {
-	ops       []func(ImageBuilder) error
-	ctxDir    string
-	buildArgs map[string]string
-	envMap    map[string]bool
-	runEnvMap map[string]string
-	varScope  map[string]string
-	shell     []string
-	lex       *shell.ShellLex
-	warn      log.Logger
+	ops        []func(ImageBuilder) error
+	ctxDir     string
+	buildArgs  map[string]string
+	envMap     map[string]bool
+	runEnvMap  map[string]string
+	varScope   map[string]string
+	shell      []string
+	lex        *shell.ShellLex
+	imageCount int
+	warn       log.Logger
 }
 
 func LoadDockerfile(src io.Reader, ctxDir string, args map[string]string, warn log.Logger) (b *DockerfileBuilder, err error) {
@@ -56,13 +59,20 @@ func LoadDockerfile(src io.Reader, ctxDir string, args map[string]string, warn l
 	}
 	lex := shell.NewShellLex(r.EscapeToken)
 	sh := []string{"/bin/sh", "-c"}
-	b = &DockerfileBuilder{nil, ctxDir, args, map[string]bool{}, map[string]string{}, map[string]string{}, sh, lex, warn}
+	b = &DockerfileBuilder{ctxDir: ctxDir, buildArgs: args, shell: sh, lex: lex, warn: warn}
+	b.resetState()
 	for _, n := range r.AST.Children {
 		if err = b.readNode(n); err != nil {
 			return
 		}
 	}
 	return
+}
+
+func (s *DockerfileBuilder) resetState() {
+	s.envMap = map[string]bool{}
+	s.runEnvMap = map[string]string{}
+	s.varScope = map[string]string{}
 }
 
 func (s *DockerfileBuilder) Apply(b ImageBuilder) (err error) {
@@ -127,15 +137,24 @@ func (s *DockerfileBuilder) add(op func(ImageBuilder) error) {
 // See https://docs.docker.com/engine/reference/builder/#from
 func (s *DockerfileBuilder) from(n *parser.Node) (err error) {
 	v, err := readInstructionNode(n)
-	// TODO: support multi-stage build with image name (e.g. 'FROM alpine:3.7 as builder'...)
 	if err == nil {
 		if err = s.subst(v); err == nil {
-			if len(v) != 1 || v[0] == "" {
-				return errors.Errorf("from: expected image but was %+v", v)
+			if len(v) != 1 && len(v) != 3 || v[0] == "" || (len(v) == 3 && v[1] != "as") {
+				return errors.Errorf("from: expected 'image [as name]' but was %+v", v)
 			}
+			s.resetState()
 			image := v[0]
 			s.add(func(b ImageBuilder) error {
-				return b.FromImage(image)
+				err = b.FromImage(image)
+				if err == nil {
+					name := strconv.Itoa(s.imageCount)
+					s.imageCount++
+					b.BuildName(name)
+					if len(v) == 3 {
+						b.BuildName(v[2])
+					}
+				}
+				return err
 			})
 		}
 	}
@@ -145,12 +164,14 @@ func (s *DockerfileBuilder) from(n *parser.Node) (err error) {
 // See https://docs.docker.com/engine/reference/builder/#copy
 func (s *DockerfileBuilder) copy(n *parser.Node) (err error) {
 	chown := "--chown"
-	v, err := readInstructionNode(n, &chown)
+	from := "--from"
+	v, err := readInstructionNode(n, &chown, &from)
 	if err == nil {
-		flags := []string{chown}
+		flags := []string{chown, from}
 		err = s.subst(flags)
 		if err == nil {
 			chown = flags[0]
+			from = flags[1]
 			if err = s.subst(v); err == nil {
 				srcPattern := v
 				dest := ""
@@ -164,7 +185,11 @@ func (s *DockerfileBuilder) copy(n *parser.Node) (err error) {
 					usr = &u
 				}
 				s.add(func(b ImageBuilder) error {
-					return b.CopyFile(s.ctxDir, srcPattern, dest, usr)
+					if from == "" {
+						return b.AddFiles(s.ctxDir, srcPattern, dest, usr)
+					} else {
+						return b.AddFilesFromImage(from, srcPattern, dest, usr)
+					}
 				})
 			}
 		}

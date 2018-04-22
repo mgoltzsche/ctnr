@@ -16,9 +16,9 @@ docker run -ti --privileged --name cnestedpriv --rm \
 ```
 dist/bin/cntnr run -b outerc --update -t \
 	--cap-add=SYS_ADMIN \
-	--mount=./dist/bin/cntnr:/bin/cntnr:exec:ro \
-	--mount=./dist/cni-plugins:/cni \
-	--mount=/boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic \
+	--mount=src=./dist/bin/cntnr,dst=/bin/cntnr:exec:ro \
+	--mount=src=/dist/cni-plugins,dst=/cni \
+	--mount=src=/boot/config-4.4.0-104-generic,dst=/boot/config-4.4.0-104-generic \
 	docker://alpine:3.7
 > cntnr run -t --rootless --no-new-keyring --no-pivot --network=host docker://alpine:3.7
 ```

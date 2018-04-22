@@ -40,6 +40,7 @@ func initImageBuildFlags(f *pflag.FlagSet) {
 	ops := &flagImageBuildOps
 	f.Var((*iFromImage)(ops), "from", "Extends the provided parent image (must come first)")
 	f.Var((*iAuthor)(ops), "author", "Sets the new image's author")
+	f.Var((*iLabel)(ops), "label", "Adds labels to the image")
 	f.Var((*iEnv)(ops), "env", "Adds environment variables to the image")
 	f.Var((*iWorkDir)(ops), "workdir", "Sets the new image's working directory")
 	f.Var((*iEntrypoint)(ops), "entrypoint", "Sets the new image's entrypoint")
@@ -99,6 +100,7 @@ func (o *iRunShell) String() string {
 
 type iAdd imageBuildFlags
 
+// TODO: support passing src image
 func (o *iAdd) Set(expr string) (err error) {
 	l, err := parseStringEntries(expr)
 	if err != nil {
@@ -124,7 +126,7 @@ func (o *iAdd) Set(expr string) (err error) {
 		}
 	}
 	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
-		return b.CopyFile("", srcPattern, dest, usr)
+		return b.AddFiles(".", srcPattern, dest, usr)
 	})
 	return
 }
@@ -265,6 +267,27 @@ func (o *iCmd) Type() string {
 }
 
 func (o *iCmd) String() string {
+	return ""
+}
+
+type iLabel imageBuildFlags
+
+func (o *iLabel) Set(v string) (err error) {
+	labels := map[string]string{}
+	if err = addMapEntries(v, &labels); err == nil && len(labels) == 0 {
+		err = usageError("no labels provided (expecting KEY=VAL ...)")
+	}
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		return b.AddLabels(labels)
+	})
+	return
+}
+
+func (o *iLabel) Type() string {
+	return "KEY=VALUE"
+}
+
+func (o *iLabel) String() string {
 	return ""
 }
 

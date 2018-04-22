@@ -45,8 +45,8 @@ func (c *bundleFlags) InitContainerFlags(f *pflag.FlagSet) {
 	c.InitProcessFlags(f)
 	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default' or 'unconfined'")
 	f.Var((*cMountCgroups)(c), "mount-cgroups", "mounts the host's cgroups with the given option: ro|rw|no")
-	f.Var((*cVolumeMount)(c), "mount", "mounts a volume: type=T,src=S,dst=D,opt=O")
-	f.VarP((*cVolumeMount)(c), "volume", "v", "mounts a volume: TARGET|SOURCE:TARGET[:OPTIONS]")
+	f.Var((*cMount)(c), "mount", "mounts a volume: type=T,src=S,dst=D,opt=O")
+	f.VarP((*cVolumeMount)(c), "volume", "v", "bind mounts a volume: TARGET|SOURCE:TARGET[:OPTIONS]")
 	f.MarkHidden("volume")
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.BoolVar(&c.readonly, "readonly", false, "mounts the root file system in read only mode")
@@ -328,16 +328,44 @@ func (c *cExpose) String() string {
 	return entriesToString((*bundleFlags)(c).curr().Entrypoint)
 }
 
-type cVolumeMount bundleFlags
+type cMount bundleFlags
 
-func (c *cVolumeMount) Set(s string) (err error) {
-	v, err := model.ParseMount(s)
+func (c *cMount) Set(s string) (err error) {
+	v, err := ParseMount(s)
 	if err != nil {
 		return
 	}
 	v.Source, err = filepath.Abs(v.Source)
 	if err != nil {
+		err = errors.New(err.Error())
+	}
+	r := &(*bundleFlags)(c).curr().Volumes
+	*r = append(*r, v)
+	return
+}
+
+func (c *cMount) Type() string {
+	return "string..."
+}
+
+func (c *cMount) String() string {
+	s := ""
+	for _, v := range (*bundleFlags)(c).curr().Volumes {
+		s += strings.Trim(" "+v.String(), " ")
+	}
+	return s
+}
+
+type cVolumeMount bundleFlags
+
+func (c *cVolumeMount) Set(s string) (err error) {
+	v, err := ParseBindMount(s)
+	if err != nil {
 		return
+	}
+	v.Source, err = filepath.Abs(v.Source)
+	if err != nil {
+		err = errors.New(err.Error())
 	}
 	r := &(*bundleFlags)(c).curr().Volumes
 	*r = append(*r, v)

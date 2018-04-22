@@ -48,10 +48,12 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 	dir, err = filepath.Abs(dir)
 	if err == nil {
 		blobDir := filepath.Join(dir, "blobs")
-		mtreeDir := filepath.Join(dir, "mtree")
+		mtreeDir := filepath.Join(dir, ".mtree")
 		imageRepoDir := filepath.Join(dir, "image-repos")
+		fsCacheDir := filepath.Join(dir, ".rofs-cache")
 		imageIdDir := filepath.Join(dir, "image-ids")
 		bundleDir := filepath.Join(dir, "bundles")
+		tempDir := filepath.Join(dir, ".temp")
 		fsEval := fseval.DefaultFsEval
 		if rootless {
 			fsEval = fseval.RootlessFsEval
@@ -60,7 +62,8 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 		blobStore := istore.NewBlobStore(blobDir, loggers.Debug)
 		blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, loggers.Debug)
 		rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), loggers.Warn)
-		r.ImageStore, err = istore.NewImageStore(rostore, systemContext, trustPolicy, loggers.Warn)
+		fsCache := istore.NewImageFSROCache(fsCacheDir)
+		r.ImageStore, err = istore.NewImageStore(rostore, fsCache, tempDir, systemContext, trustPolicy, rootless, loggers)
 		if err == nil {
 			r.BundleStore, err = bstore.NewBundleStore(bundleDir, loggers.Info, loggers.Debug)
 		}

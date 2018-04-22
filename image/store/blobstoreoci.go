@@ -183,7 +183,7 @@ func (s *BlobStoreOci) PutImageLayer(src *LayerSource, parentManifestDigest *dig
 	if parentManifestDigest != nil {
 		if manifest, err = s.ImageManifest(*parentManifestDigest); err == nil {
 			if r.Config, err = s.ImageConfig(manifest.Config.Digest); err == nil {
-				if !src.addOnly {
+				if !src.deltafs {
 					parentMtree, err = s.getMtree(*parentManifestDigest)
 				}
 			}
@@ -227,7 +227,7 @@ func (s *BlobStoreOci) PutImageLayer(src *LayerSource, parentManifestDigest *dig
 	}
 
 	// Save mtree for new manifest
-	if err == nil && !src.addOnly {
+	if err == nil && !src.deltafs {
 		err = s.mtree.Put(r.Descriptor.Digest, src.rootfsMtree)
 	}
 	return

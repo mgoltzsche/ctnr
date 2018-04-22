@@ -10,7 +10,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	//"github.com/mgoltzsche/cntnr/pkg/sliceutils"
+
+	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/stretchr/testify/require"
 	"github.com/vbatts/go-mtree"
@@ -39,21 +40,24 @@ func TestFileSystemBuilder(t *testing.T) {
 	defer deleteFiles(ctxDir, rootfs)
 	opts := FSOptions{Rootless: true}
 	testee := NewFileSystemBuilder(rootfs, opts, log.New(os.Stdout, "", 0))
+	err := os.Mkdir(filepath.Join(rootfs, "dirp"), 0750)
+	require.NoError(t, err)
 	for _, p := range []struct {
 		src  string
 		dest string
+		usr  *idutils.UserIds
 	}{
-		{"dir2", "dirx"},
-		{"dir1", "dirp/dir1"},
-		{"dir1", "dirp/dir1"},
-		{"dir1/file1", "/bin/fn"},
-		{"dir1/file2", "/file2"},
-		{"dir1/file1", "dirp/file1"},
-		{"link1", "dirp/link1"},
-		{"link2", "dirp/link2"},
-		{"link3", "dirp/link3"},
+		{"dir2", "dirx", nil},
+		{"dir1", "dirp/dir1", nil},
+		{"dir1", "dirp/dir1", nil},
+		{"dir1/file1", "/bin/fn", nil},
+		{"dir1/file2", "/file2", nil},
+		{"dir1/file1", "dirp/file1", &idutils.UserIds{0, 0}},
+		{"link1", "dirp/link1", nil},
+		{"link2", "dirp/link2", nil},
+		{"link3", "dirp/link3", nil},
 	} {
-		err := testee.Add(filepath.Join(ctxDir, p.src), p.dest, nil)
+		err := testee.Add(filepath.Join(ctxDir, p.src), p.dest, p.usr)
 		require.NoError(t, err)
 	}
 	expectedStr := `
@@ -65,7 +69,7 @@ func TestFileSystemBuilder(t *testing.T) {
 		    fn mode=0444
 		..
 		# dirp
-		dirp size=4096 type=dir mode=0755
+		dirp size=4096 type=dir mode=0750
 			file1 mode=0444
 		    link1 size=10 type=link mode=0777 link=/dir2
 		    link2 size=42 type=link mode=0777 link=dir2
@@ -101,7 +105,6 @@ func TestFileSystemBuilder(t *testing.T) {
 		"/file2",
 		"/bin",
 		"/bin/fn",
-		"/dirp",
 		"/dirp/file1",
 		"/dirp/link1",
 		"/dirp/link2",

@@ -19,6 +19,7 @@ ENV SVAR4=\${VAR1}
 COPY $VAR1 /dest
 COPY /src $VAR1
 COPY --chown=$VAR1 /src /dest
+COPY --from=$VAR1 /src /dest
 
 EXPOSE $VARA $VARB
 
@@ -36,3 +37,7 @@ WORKDIR $VARX
 # require no substitution
 
 RUN echo $VAR1
+ENTRYPOINT echo $VAR1
+ENTRYPOINT [ "/bin/echo", "$VAR1" ]
+CMD echo $VAR1
+CMD [ "/bin/echo", "$VAR1" ]
