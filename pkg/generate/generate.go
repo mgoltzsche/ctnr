@@ -187,7 +187,7 @@ func (b *SpecBuilder) applyEntrypoint() {
 		args = []string{}
 	}
 	if b.prootPath != "" {
-		args = append([]string{"/dev/proot/proot"}, args...)
+		args = append([]string{"/dev/proot/proot", "-0"}, args...)
 	}
 	b.SetProcessArgs(args)
 }
