@@ -292,5 +292,6 @@ func (s *BlobStoreOci) unpackLayer(id digest.Digest, dest string) (err error) {
 	if err != nil {
 		return errors.New(err.Error())
 	}
+	// TODO: add uid/gid mappings
 	return layer.UnpackLayer(dest, reader, &layer.MapOptions{Rootless: true})
 }

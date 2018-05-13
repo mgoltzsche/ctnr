@@ -132,10 +132,7 @@ func (s *ImageStoreRW) NewLayerSource(rootfs string) (r image.LayerSource, err e
 }
 
 func (s *ImageStoreRW) NewLayerSourceOverlayed(rootfs, srcDir string, srcPattern []string, dest string, usr *idutils.UserIds) (r image.LayerSource, err error) {
-	opts := files.FSOptions{
-		Rootless: s.rootless,
-		// TODO: Add uid/gid mappings to be used within user namespace of a privileged user's container
-	}
+	// TODO: Add uid/gid mappings to be used within user namespace of a privileged user's container
 	deleteRootfs := false
 	if rootfs == "" {
 		if rootfs, err = ioutil.TempDir(s.temp, ".tmp-imgsrc-"); err != nil {
@@ -143,10 +140,17 @@ func (s *ImageStoreRW) NewLayerSourceOverlayed(rootfs, srcDir string, srcPattern
 		}
 		deleteRootfs = true
 	}
+	opts := files.NewFSOptions(s.rootless)
 	fs := files.NewFileSystemBuilder(rootfs, opts, s.loggers.Debug)
 	if err = fs.AddAll(srcDir, srcPattern, dest, usr); err != nil {
 		return nil, errors.Wrap(err, "layer source")
 	}
+	// TODO: replace layer source with FsBuilder completely.
+	// To achieve this make FsEntry
+	//   a) serializable (to be able to cache it) and
+	//   b) diffable to compare it with another and create a new tree containing the changes to write into an archive while
+	//   c) mirroring the file system's previous state during new file insertion to resolve links correctly
+	//      without needing to actually unpack it
 	return s.blobs.NewLayerSource(rootfs, fs.Files(), deleteRootfs)
 }
 

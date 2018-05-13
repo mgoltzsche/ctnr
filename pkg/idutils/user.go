@@ -1,12 +1,19 @@
 package idutils
 
 import (
+	"os"
 	"strconv"
 	"strings"
 
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	idmap "github.com/openSUSE/umoci/pkg/idtools"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
+)
+
+var (
+	MapIdentity IdMappings = idIdentity("identity")
+	MapRootless            = NewIdMappings([]specs.LinuxIDMapping{{uint32(os.Geteuid()), 0, 1}}, []specs.LinuxIDMapping{{uint32(os.Getegid()), 0, 1}})
 )
 
 type UserIds struct {
@@ -14,17 +21,70 @@ type UserIds struct {
 	Gid uint
 }
 
-func (u *UserIds) ToHost(uidMappings []specs.LinuxIDMapping, gidMappings []specs.LinuxIDMapping) (r UserIds, err error) {
-	uid, err := idmap.ToHost(int(u.Uid), uidMappings)
-	if err != nil {
-		return r, errors.Wrap(err, "map uid to host")
+type IdMappings interface {
+	UidToHost(int) (int, error)
+	GidToHost(int) (int, error)
+	UidToContainer(int) (int, error)
+	GidToContainer(int) (int, error)
+}
+
+type idIdentity string
+
+func (m idIdentity) UidToHost(uid int) (int, error)      { return uid, nil }
+func (m idIdentity) GidToHost(gid int) (int, error)      { return gid, nil }
+func (m idIdentity) UidToContainer(uid int) (int, error) { return uid, nil }
+func (m idIdentity) GidToContainer(gid int) (int, error) { return gid, nil }
+
+type idMappings struct {
+	uidMappings []specs.LinuxIDMapping
+	gidMappings []specs.LinuxIDMapping
+}
+
+func NewIdMappings(uidMappings, gidMappings []specs.LinuxIDMapping) IdMappings {
+	return &idMappings{uidMappings, gidMappings}
+}
+
+func (m *idMappings) UidToHost(uid int) (muid int, err error) {
+	muid, err = idmap.ToHost(uid, m.uidMappings)
+	err = errors.Wrap(err, "map uid to host")
+	return
+}
+
+func (m *idMappings) GidToHost(gid int) (mgid int, err error) {
+	mgid, err = idmap.ToHost(gid, m.gidMappings)
+	err = errors.Wrap(err, "map uid to host")
+	return
+}
+
+func (m *idMappings) UidToContainer(uid int) (muid int, err error) {
+	muid, err = idmap.ToContainer(uid, m.uidMappings)
+	err = errors.Wrap(err, "map uid to host")
+	return
+}
+
+func (m *idMappings) GidToContainer(gid int) (mgid int, err error) {
+	mgid, err = idmap.ToContainer(gid, m.gidMappings)
+	err = errors.Wrap(err, "map uid to host")
+	return
+}
+
+func (u *UserIds) ToHost(m IdMappings) (r UserIds, err error) {
+	uid, err := m.UidToHost(int(u.Uid))
+	gid, err2 := m.GidToHost(int(u.Gid))
+	if err = exterrors.Append(err, err2); err == nil {
+		r.Uid = uint(uid)
+		r.Gid = uint(gid)
 	}
-	gid, err := idmap.ToHost(int(u.Gid), gidMappings)
-	if err != nil {
-		return r, errors.Wrap(err, "map gid to host")
+	return
+}
+
+func (u *UserIds) ToContainer(m IdMappings) (r UserIds, err error) {
+	uid, err := m.UidToContainer(int(u.Uid))
+	gid, err2 := m.GidToContainer(int(u.Gid))
+	if err = exterrors.Append(err, err2); err == nil {
+		r.Uid = uint(uid)
+		r.Gid = uint(gid)
 	}
-	r.Uid = uint(uid)
-	r.Gid = uint(gid)
 	return
 }
 

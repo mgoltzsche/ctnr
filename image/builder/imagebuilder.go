@@ -465,6 +465,7 @@ type layerSourceFactory func(string, string, *idutils.UserIds) (image.LayerSourc
 
 func (b *ImageBuilder) addFiles(srcPattern []string, dest string, user *idutils.User, factory layerSourceFactory) (err error) {
 	// TODO: also support HTTP URLs as src
+	// TODO: unpack local archives when provided as source
 	defer exterrors.Wrapd(&err, "add files")
 	if len(srcPattern) == 0 {
 		return

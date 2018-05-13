@@ -10,18 +10,11 @@ import (
 
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/fseval"
-	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
 type Logger interface {
 	Printf(fmt string, o ...interface{})
-}
-
-type FSOptions struct {
-	UIDMappings []specs.LinuxIDMapping
-	GIDMappings []specs.LinuxIDMapping
-	Rootless    bool
 }
 
 type FileSystemBuilder struct {
@@ -31,8 +24,7 @@ type FileSystemBuilder struct {
 	latestMtime time.Time
 	fsEval      fseval.FsEval
 	rootless    bool
-	uidMappings []specs.LinuxIDMapping
-	gidMappings []specs.LinuxIDMapping
+	idMappings  idutils.IdMappings
 	log         Logger
 }
 
@@ -42,14 +34,13 @@ func NewFileSystemBuilder(root string, opts FSOptions, logger Logger) *FileSyste
 		fsEval = fseval.RootlessFsEval
 	}
 	return &FileSystemBuilder{
-		root:        filepath.Clean(root),
-		dirs:        map[string]bool{},
-		files:       []string{},
-		fsEval:      fsEval,
-		rootless:    opts.Rootless,
-		uidMappings: opts.UIDMappings,
-		gidMappings: opts.GIDMappings,
-		log:         logger,
+		root:       filepath.Clean(root),
+		dirs:       map[string]bool{},
+		files:      []string{},
+		fsEval:     fsEval,
+		rootless:   opts.Rootless,
+		idMappings: opts.IdMappings,
+		log:        logger,
 	}
 }
 
@@ -73,12 +64,12 @@ func (s *FileSystemBuilder) AddAll(srcfs string, pattern []string, dest string, 
 
 func (s *FileSystemBuilder) Add(src, destFile string, usr *idutils.UserIds) (err error) {
 	if s.rootless && usr != nil && (usr.Uid != 0 || usr.Gid != 0) {
-		return errors.Errorf("in rootless mode only own user ID can be used but %s provided", usr.String())
+		return errors.Errorf("in rootless mode only UID 0 can be used but %s provided", usr.String())
 	}
 	if usr != nil {
 		// Map user to host
 		var u idutils.UserIds
-		if u, err = usr.ToHost(s.uidMappings, s.gidMappings); err != nil {
+		if u, err = usr.ToHost(s.idMappings); err != nil {
 			return errors.Wrap(err, "add")
 		}
 		usr = &u
@@ -340,12 +331,5 @@ func realPath(file string) (f string, err error) {
 		file, err = realPath(filepath.Dir(file))
 		f = filepath.Join(file, fileName)
 	}
-	return
-}
-
-func fileTime(st os.FileInfo) (atime, mtime time.Time) {
-	stu := st.Sys().(*syscall.Stat_t)
-	atime = time.Unix(int64(stu.Atim.Sec), int64(stu.Atim.Nsec))
-	mtime = st.ModTime()
 	return
 }

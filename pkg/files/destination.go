@@ -12,15 +12,16 @@ type CopyPair struct {
 func Map(src []string, dest string) []CopyPair {
 	r := make([]CopyPair, len(src))
 	for i, file := range src {
+		file = filepath.Clean(file)
 		destDir := dest
 		destFile := filepath.Base(file)
-		if len(src) == 1 && len(dest) > 0 && destDir[len(dest)-1] != '/' {
+		if len(src) == 1 && len(dest) > 0 && dest[len(dest)-1] != '/' {
 			// Use dest as file name without appending src file name
 			// if there is only one source file and dest does not end with '/'
-			destDir = filepath.Dir(dest)
-			destFile = filepath.Base(dest)
+			destDir, destFile = filepath.Split(dest)
 		}
-		r[i] = CopyPair{filepath.Clean(file), filepath.Clean("/" + filepath.Join(destDir, destFile))}
+		destFile = filepath.Join(destDir, destFile)
+		r[i] = CopyPair{file, filepath.Clean("/" + destFile)}
 	}
 	return r
 }

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/stretchr/testify/require"
 	"github.com/vbatts/go-mtree"
@@ -24,6 +23,7 @@ var mtreeTestkeywords = []mtree.Keyword{
 	"gid",
 	"mode",
 	"link",
+	"nlink",
 	"xattr",
 }
 
@@ -35,35 +35,118 @@ func absDirs(baseDir string, file []string) []string {
 	return files
 }
 
-func TestFileSystemBuilder(t *testing.T) {
-	ctxDir, rootfs := createFiles(t)
+func TestFsBuilder(t *testing.T) {
+	tmpDir, rootfs := createTestFileSystem(t)
+	defer os.RemoveAll(tmpDir)
+
+	tarFile := filepath.Join(tmpDir, "archive.tar")
+	tarDir(t, rootfs, "-cf", tarFile)
+
+	// Test add all
+	destfs := filepath.Join(tmpDir, "destfs")
+	opts := NewFSOptions(true)
+	warn := log.New(os.Stdout, "warn: ", 0)
+	testee := NewFsBuilder(opts)
+	testee.AddAll(rootfs, []string{"."}, "/", nil)
+
+	writer := NewDirWriter(destfs, opts, warn)
+	err := testee.Write(writer)
+	require.NoError(t, err)
+	assertFsState(t, destfs, "", expectedTestfsState)
+
+	// Test hash
+	hash1, err := testee.Hash()
+	require.NoError(t, err)
+	if string(hash1) == "" {
+		t.Error("returned empty hash")
+		t.FailNow()
+	}
+
+	// Test add files
+	srcFile := filepath.Join(tmpDir, "sourcefile")
+	err = ioutil.WriteFile(srcFile, []byte("content"), 0644)
+	require.NoError(t, err)
+	testee.AddFiles(srcFile, "addedfile", nil)
+	err = testee.Write(writer)
+	require.NoError(t, err)
+	if fi, err := os.Stat(filepath.Join(destfs, "addedfile")); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("should write 'addedfile' but returned error or did not write regular file. err: %s", err)
+		t.FailNow()
+	}
+	testee.AddFiles(srcFile, "addDir/", nil)
+	err = testee.Write(writer)
+	require.NoError(t, err)
+	if fi, err := os.Stat(filepath.Join(destfs, "addDir/sourcefile")); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("should write 'sourcefile' into 'addDir/' but returned error or did not write regular file. err: %s", err)
+		t.FailNow()
+	}
+
+	// Test hash changed
+	hash2, err := testee.Hash()
+	require.NoError(t, err)
+	if hash1 == hash2 {
+		t.Errorf("hash did not change after files changed")
+	}
+
+	// TODO: test and support URL source and archive
+
+	/*ctxDir, rootfs := createFiles(t)
 	defer deleteFiles(ctxDir, rootfs)
-	opts := FSOptions{Rootless: true}
-	testee := NewFileSystemBuilder(rootfs, opts, log.New(os.Stdout, "", 0))
+	warn := log.New(os.Stdout, "", 0)
+	opts := NewFSOptions(true)
+	testee := NewFsBuilder(opts)
 	err := os.Mkdir(filepath.Join(rootfs, "dirp"), 0750)
 	require.NoError(t, err)
-	for _, p := range []struct {
-		src  string
-		dest string
-		usr  *idutils.UserIds
-	}{
-		{"dir2", "dirx", nil},
-		{"dir1", "dirp/dir1", nil},
-		{"dir1", "dirp/dir1", nil},
-		{"dir1/file1", "/bin/fn", nil},
-		{"dir1/file2", "/file2", nil},
-		{"dir1/file1", "dirp/file1", &idutils.UserIds{0, 0}},
-		{"link1", "dirp/link1", nil},
-		{"link2", "dirp/link2", nil},
-		{"link3", "dirp/link3", nil},
-	} {
-		err := testee.Add(filepath.Join(ctxDir, p.src), p.dest, p.usr)
-		require.NoError(t, err)
+	apply := func() {
+		for _, p := range []struct {
+			src  string
+			dest string
+			usr  *idutils.UserIds
+		}{
+			{"dir2", "dirx", nil},
+			{"dir1", "dirp/dir1", nil},
+			{"dir1/", "dirp/dir1", nil},
+			{"dir1/file1", "/bin/fn", nil},
+			{"dir1/file2/", "/file2", nil},
+			{"dir1/file1", "dirp/file1", &idutils.UserIds{0, 0}},
+			{"link1", "dirp/link1", nil},
+			{"link2", "dirp/link2", nil},
+			{"link3/", "dirp/link3", nil},
+		} {
+			testee.AddFiles(filepath.Join(ctxDir, p.src), p.dest, p.usr)
+		}
 	}
-	expectedStr := `
+	apply()
+
+	// Test Hash()
+	hash1, err := testee.Hash()
+	require.NoError(t, err)
+	testee = NewFsBuilder(opts)
+	apply()
+	hash2, err := testee.Hash()
+	require.NoError(t, err)
+	if hash1 != hash2 {
+		t.Errorf("Hash(): must be idempotent")
+		t.FailNow()
+	}
+	testee.AddFiles(filepath.Join(ctxDir, "/dir1/file2"), "/bin/fn", nil)
+	hash2, err = testee.Hash()
+	require.NoError(t, err)
+	if hash1 == hash2 {
+		t.Errorf("Hash(): must return changed value when content changed")
+		t.FailNow()
+	}
+	testee = NewFsBuilder(opts)
+	apply()
+
+	// Test Write()
+	w := NewDirWriter(rootfs, opts, warn)
+	err = testee.Write(w)
+	require.NoError(t, err)
+	assertFsState(t, rootfs, "", `
 		# .
 		. size=4096 type=dir mode=0700
-		    file2 size=52 mode=0644
+		    file2 size=52 mode=0754
 		# bin
 		bin type=dir mode=0755
 		    fn mode=0444
@@ -77,7 +160,7 @@ func TestFileSystemBuilder(t *testing.T) {
 		# dirp/dir1
 		dir1 size=4096 type=dir mode=0754
 		    file1 size=52 mode=0444
-		    file2 size=52 mode=0644
+		    file2 size=52 mode=0754
 		# dirp/dir1/sdir1
 		sdir1 size=4096 type=dir mode=0700
 		    linkInvalid size=41 type=link mode=0777 link=../../../dir2
@@ -93,49 +176,11 @@ func TestFileSystemBuilder(t *testing.T) {
 			link4 size=41 type=link mode=0777 link=../../dir2
 		..
 		..
-	`
-	expectedDh, err := mtree.ParseSpec(strings.NewReader(expectedStr))
-	require.NoError(t, err)
-	assertFsState(rootfs, expectedDh, t)
-
-	// Assert files
-	expected := map[string]bool{}
-	actual := map[string]bool{}
-	for _, f := range []string{
-		"/file2",
-		"/bin",
-		"/bin/fn",
-		"/dirp/file1",
-		"/dirp/link1",
-		"/dirp/link2",
-		"/dirp/link3",
-		"/dirp/dir1",
-		"/dirp/dir1/file1",
-		"/dirp/dir1/file2",
-		"/dirp/dir1/sdir1",
-		"/dirp/dir1/sdir1/linkInvalid",
-		"/dirx",
-		"/dirx/sdir2",
-		"/dirx/sdir2/sfile1",
-		"/dirx/sdir2/sfile2",
-		"/dirx/sdir2/link4",
-	} {
-		expected[f] = true
-	}
-	for _, f := range testee.Files() {
-		actual[f] = true
-		if !expected[f] {
-			t.Errorf("Files() provided unknown file %q", f)
-		}
-	}
-	for f, _ := range expected {
-		if !actual[f] {
-			t.Errorf("Files() did not provide %q", f)
-		}
-	}
+	`)*/
 }
 
-func TestFileSystemBuilderRootfsBoundsViolation(t *testing.T) {
+// TODO: enable again
+/*func TestFileSystemBuilderRootfsBoundsViolation(t *testing.T) {
 	for _, c := range []struct {
 		src  string
 		dest string
@@ -148,13 +193,14 @@ func TestFileSystemBuilderRootfsBoundsViolation(t *testing.T) {
 	} {
 		ctxDir, rootfs := createFiles(t)
 		defer deleteFiles(ctxDir, rootfs)
-		opts := FSOptions{Rootless: true}
-		testee := NewFileSystemBuilder(rootfs, opts, log.New(os.Stdout, "", 0))
-		if err := testee.Add(filepath.Join(ctxDir, c.src), c.dest, nil); err == nil {
+		opts := NewFSOptions(true)
+		testee := NewFsBuilder(opts)
+		testee.AddFiles(filepath.Join(ctxDir, c.src), c.dest, nil)
+		if err := testee.Write(newWriterMock(t)); err == nil {
 			t.Errorf(c.msg + ": " + c.src + " -> " + c.dest)
 		}
 	}
-}
+}*/
 
 func createFiles(t *testing.T) (ctxDir, root string) {
 	ctxDir, err := ioutil.TempDir("", ".cntnr-test-fs-ctx-")
@@ -171,7 +217,7 @@ func createFiles(t *testing.T) (ctxDir, root string) {
 	require.NoError(t, err)
 	createFile(filepath.Join(ctxDir, "script.sh"), 0544)
 	createFile(filepath.Join(ctxDir, "dir1", "file1"), 0444)
-	createFile(filepath.Join(ctxDir, "dir1", "file2"), 1444)
+	createFile(filepath.Join(ctxDir, "dir1", "file2"), 0754)
 	createFile(filepath.Join(ctxDir, "dir2", "sdir2", "sfile1"), 0444)
 	createFile(filepath.Join(ctxDir, "dir2", "sdir2", "sfile2"), 0640)
 	// TODO: make mode 770 work (currently write permissions are not set on group/others when writing dir/file)
@@ -202,10 +248,13 @@ func createSymlink(name, dest string) {
 	}
 }
 
-func assertFsState(rootfs string, expected *mtree.DirectoryHierarchy, t *testing.T) {
+func assertFsState(t *testing.T, rootfs, rootPath, expectedDirectoryHierarchy string) {
+	expectedDirectoryHierarchy = strings.Replace(expectedDirectoryHierarchy, "$ROOT", rootPath, -1)
+	expectedDh, err := mtree.ParseSpec(strings.NewReader(expectedDirectoryHierarchy))
+	require.NoError(t, err)
 	dh, err := mtree.Walk(rootfs, nil, mtreeTestkeywords, fseval.DefaultFsEval)
 	require.NoError(t, err)
-	diff, err := mtree.Compare(expected, dh, mtreeTestkeywords)
+	diff, err := mtree.Compare(expectedDh, dh, mtreeTestkeywords)
 	require.NoError(t, err)
 	if len(diff) > 0 {
 		var buf bytes.Buffer
