@@ -21,6 +21,10 @@ type UserIds struct {
 	Gid uint
 }
 
+func (u UserIds) IsZero() bool {
+	return u.Uid == 0 && u.Gid == 0
+}
+
 type IdMappings interface {
 	UidToHost(int) (int, error)
 	GidToHost(int) (int, error)

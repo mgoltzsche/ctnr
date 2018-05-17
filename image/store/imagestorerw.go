@@ -14,7 +14,7 @@ import (
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/files"
+	"github.com/mgoltzsche/cntnr/pkg/fs"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	"github.com/mgoltzsche/cntnr/pkg/log"
@@ -140,8 +140,8 @@ func (s *ImageStoreRW) NewLayerSourceOverlayed(rootfs, srcDir string, srcPattern
 		}
 		deleteRootfs = true
 	}
-	opts := files.NewFSOptions(s.rootless)
-	fs := files.NewFileSystemBuilder(rootfs, opts, s.loggers.Debug)
+	opts := fs.NewFSOptions(s.rootless)
+	fs := fs.NewFileSystemBuilder(rootfs, opts, s.loggers.Debug)
 	if err = fs.AddAll(srcDir, srcPattern, dest, usr); err != nil {
 		return nil, errors.Wrap(err, "layer source")
 	}
