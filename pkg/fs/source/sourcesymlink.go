@@ -15,12 +15,12 @@ func NewSourceSymlink(attrs fs.FileAttrs) fs.Source {
 	return &sourceSymlink{attrs}
 }
 
-func (s *sourceSymlink) Equal(o fs.Source) (bool, error) {
-	return s.Attrs().Equal(o.Attrs()), nil
-}
-
 func (s *sourceSymlink) Attrs() fs.NodeInfo {
 	return fs.NodeInfo{fs.TypeSymlink, s.attrs}
+}
+
+func (s *sourceSymlink) DeriveAttrs() (fs.DerivedAttrs, error) {
+	return fs.DerivedAttrs{}, nil
 }
 
 func (s *sourceSymlink) Write(path, name string, w fs.Writer, written map[fs.Source]string) (err error) {

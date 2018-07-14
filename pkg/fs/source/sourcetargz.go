@@ -8,25 +8,21 @@ import (
 	"github.com/pkg/errors"
 )
 
-var _ fs.BlobSource = NewSourceTarGz("")
+var _ fs.Source = NewSourceTarGz("")
 
 type sourceTarGz sourceTar
 
-func NewSourceTarGz(file string) fs.BlobSource {
+func NewSourceTarGz(file string) fs.Source {
 	s := sourceTarGz(sourceTar{file, ""})
 	return &s
-}
-
-func (s *sourceTarGz) Equal(o fs.Source) (bool, error) {
-	return (*sourceTar)(s).Equal(o)
 }
 
 func (s *sourceTarGz) Attrs() fs.NodeInfo {
 	return (*sourceTar)(s).Attrs()
 }
 
-func (s *sourceTarGz) DerivedAttrs() (fs.NodeAttrs, error) {
-	return (*sourceTar)(s).DerivedAttrs()
+func (s *sourceTarGz) DeriveAttrs() (fs.DerivedAttrs, error) {
+	return (*sourceTar)(s).DeriveAttrs()
 }
 
 func (s *sourceTarGz) Write(dest, name string, w fs.Writer, _ map[fs.Source]string) (err error) {

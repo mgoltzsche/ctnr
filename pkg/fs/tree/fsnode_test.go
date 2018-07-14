@@ -137,6 +137,7 @@ func TestFsNode(t *testing.T) {
 	diff, err := parsed.Diff(node)
 	require.NoError(t, err)
 	if !assert.Equal(t, []string{}, testutils.MockWrites(t, diff).Written, "a.Diff(a) should be empty") {
+		fmt.Println("##\n", nodeStr)
 		t.FailNow()
 	}
 	// Assert fs.Diff(fs) has empty string representation
@@ -144,6 +145,13 @@ func TestFsNode(t *testing.T) {
 	err = diff.WriteTo(&buf, fs.AttrsCompare)
 	require.NoError(t, err)
 	if !assert.Equal(t, []string{". type=dir", ""}, strings.Split(buf.String(), "\n"), "string(fs.Diff(fs))") {
+		t.FailNow()
+	}
+	// Assert fs.Diff(fs).Empty() is true
+	if !assert.True(t, NewFS().Empty(), "NewFS().Empty()") {
+		t.FailNow()
+	}
+	if !assert.True(t, diff.Empty(), "fs.Diff(fs).Empty()") {
 		t.FailNow()
 	}
 	// Assert parsed.Diff(changedParsed) == changes
@@ -159,6 +167,9 @@ func TestFsNode(t *testing.T) {
 	changes, err := parsed.Diff(changedParsed)
 	require.NoError(t, err)
 	if !assert.Equal(t, expectedOps, testutils.MockWrites(t, changes).Written, "diff of nodes written after changes applied to parsed node structure") {
+		t.FailNow()
+	}
+	if !assert.False(t, changes.Empty(), "fs.Diff(changedFs).Empty()") {
 		t.FailNow()
 	}
 	// Assert parsed.Diff(otherFS) == change
@@ -285,7 +296,7 @@ func newFsNodeTree(t *testing.T, withOverlay bool) *FsNode {
 	srcLink := newSrcFile2()
 	srcArchive1 := &testutils.SourceOverlayMock{testutils.NewSourceMock(fs.TypeOverlay, fs.FileAttrs{UserIds: *usr1, Size: 98765, FileTimes: times}, "sha256:hex3")}
 	srcArchive2 := &testutils.SourceOverlayMock{testutils.NewSourceMock(fs.TypeOverlay, fs.FileAttrs{UserIds: *usr1, Size: 87658, FileTimes: times}, "sha256:hex4")}
-	tt := fsNodeTester{t, NewFS()}
+	tt := fsNodeTester{t, newFS()}
 	tt.add(srcDir1, "")
 	tt.add(srcDir1, "/emptydir")
 	tt.add(srcDir1, "/root/empty dir")
@@ -500,6 +511,32 @@ func expectedNodeOps() []string {
 	return expectedLines
 }
 
+func TestFsNodeEqual(t *testing.T) {
+	attrs1 := fs.NodeAttrs{fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0644}}, fs.DerivedAttrs{"hash"}}
+	attrs2 := attrs1
+	eq := func() bool {
+		node1, err := NewFS().AddUpper("/file", &attrs1)
+		require.NoError(t, err)
+		node2, err := NewFS().AddUpper("/file", &attrs2)
+		require.NoError(t, err)
+		eq, err := node1.(*FsNode).Equal(node2.(*FsNode))
+		require.NoError(t, err)
+		return eq
+	}
+	if !assert.True(t, eq(), "two files should equal") {
+		t.FailNow()
+	}
+	attrs2.NodeType = fs.TypeDir
+	if !assert.False(t, eq(), "two files should not equal when type changes") {
+		t.FailNow()
+	}
+	attrs2.NodeType = fs.TypeFile
+	attrs2.Hash = "changed"
+	if !assert.False(t, eq(), "two files should not equal when hash changes") {
+		t.FailNow()
+	}
+}
+
 func treePaths(node *FsNode, m map[string]bool) {
 	if node.NodeType != fs.TypeWhiteout {
 		m[node.Path()] = true
@@ -545,14 +582,10 @@ func (s *fsNodeTester) assertResolve(path string, expectedPath string, expectedS
 		s.t.Errorf("node %s path %s should resolve to %s but was %q", node.Path(), path, expectedPath, nPath)
 		s.t.FailNow()
 	}
-	if expectedSrc != nil {
-		eq, err := node.source.Equal(expectedSrc)
-		require.NoError(s.t, err)
-		if !eq {
-			a := node.source.Attrs()
-			s.t.Errorf("unexpected source {%s} at %s", (&a).AttrString(fs.AttrsAll), nPath)
-			s.t.FailNow()
-		}
+	if expectedSrc != nil && !node.source.Attrs().Equal(expectedSrc.Attrs()) {
+		a := node.source.Attrs()
+		s.t.Errorf("unexpected source {%s} at %s", (&a).AttrString(fs.AttrsAll), nPath)
+		s.t.FailNow()
 	}
 	return &fsNodeTester{s.t, node}
 }

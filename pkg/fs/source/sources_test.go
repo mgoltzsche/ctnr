@@ -78,22 +78,20 @@ func TestSources(t *testing.T) {
 		}
 
 		// Test hash
-		if bsrc, ok := src.(fs.BlobSource); ok {
-			wa, err := bsrc.DerivedAttrs()
-			require.NoError(t, err)
-			hash1 := wa.Hash
+		wa, err := src.DeriveAttrs()
+		require.NoError(t, err)
+		hash1 := wa.Hash
 
-			src, err = c.factory(c.file, fi, &idutils.UserIds{99997, 99997})
-			require.NoError(t, err)
-			wa, err = src.(fs.BlobSource).DerivedAttrs()
-			require.NoError(t, err)
-			hash2 := wa.Hash
-			if hash2 == "" && c.t != fs.TypeSymlink {
-				t.Errorf("%s: source hash is empty", c.file)
-			}
-			if hash1 != hash2 {
-				t.Errorf("%s: hash1 != hash1", c.file)
-			}
+		src, err = c.factory(c.file, fi, &idutils.UserIds{99997, 99997})
+		require.NoError(t, err)
+		wa, err = src.DeriveAttrs()
+		require.NoError(t, err)
+		hash2 := wa.Hash
+		if hash2 == "" && c.t != fs.TypeSymlink {
+			t.Errorf("%s: source hash is empty", c.file)
+		}
+		if hash1 != hash2 {
+			t.Errorf("%s: hash1 != hash1", c.file)
 		}
 
 		// Test write

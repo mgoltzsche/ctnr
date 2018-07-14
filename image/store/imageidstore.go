@@ -80,7 +80,7 @@ func (s *ImageIdStore) ImageID(imageID digest.Digest) (r ImageID, err error) {
 	} else if os.IsNotExist(err) {
 		err = image.ErrorImageIdNotExist("image ID %s does not exist", imageID)
 	} else {
-		err = errors.Errorf("lookup image ID %q: %s", imageID, err)
+		err = errors.Wrapf(err, "lookup image ID %q", imageID)
 	}
 	return
 }
@@ -89,7 +89,7 @@ func (s *ImageIdStore) ImageIDs() (r []ImageID, err error) {
 	fl, e := ioutil.ReadDir(s.dir)
 	r = make([]ImageID, 0, len(fl))
 	if e != nil && !os.IsNotExist(err) {
-		return r, errors.New("image IDs: " + e.Error())
+		return r, errors.Wrap(e, "image IDs")
 	}
 	if len(fl) > 0 {
 		for _, f := range fl {

@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	dirAttrs               = fs.FileAttrs{Mode: os.ModeDir | 0755}
-	_        fs.BlobSource = &sourceTar{}
+	dirAttrs           = fs.FileAttrs{Mode: os.ModeDir | 0755}
+	_        fs.Source = &sourceTar{}
 )
 
 type sourceTar struct {
@@ -26,10 +26,6 @@ type sourceTar struct {
 
 func NewSourceTar(file string) *sourceTar {
 	return &sourceTar{file, ""}
-}
-
-func (s *sourceTar) Equal(o fs.Source) (bool, error) {
-	return false, nil
 }
 
 func (s *sourceTar) Attrs() fs.NodeInfo {
@@ -56,7 +52,7 @@ func (s *sourceTar) Hash() (string, error) {
 	return s.hash, nil
 }
 
-func (s *sourceTar) DerivedAttrs() (a fs.NodeAttrs, err error) {
+func (s *sourceTar) DeriveAttrs() (a fs.DerivedAttrs, err error) {
 	a.Hash, err = s.Hash()
 	return
 }

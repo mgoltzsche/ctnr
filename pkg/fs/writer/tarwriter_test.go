@@ -43,8 +43,8 @@ func TestTarWriter(t *testing.T) {
 	dirAttrs := fs.FileAttrs{Mode: os.ModeDir | 0755, UserIds: idutils.UserIds{0, 0}, FileTimes: times}
 	dirAttrs2 := dirAttrs
 	dirAttrs2.Mode = os.ModeDir | 0775
-	fileAttrsA := fs.NodeAttrs{fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0640, UserIds: idutils.UserIds{0, 0}, Size: 1, FileTimes: times}}, ""}
-	fileAttrsB := fs.NodeAttrs{fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0755, UserIds: idutils.UserIds{0, 0}, Size: 3, FileTimes: times}}, ""}
+	fileAttrsA := fs.NodeAttrs{NodeInfo: fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0640, UserIds: idutils.UserIds{0, 0}, Size: 1, FileTimes: times}}}
+	fileAttrsB := fs.NodeAttrs{NodeInfo: fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0755, UserIds: idutils.UserIds{0, 0}, Size: 3, FileTimes: times}}}
 	linkAttrs := fs.FileAttrs{Mode: os.ModeSymlink, UserIds: idutils.UserIds{0, 0}, FileTimes: times}
 	fifoAttrs := fs.DeviceAttrs{fs.FileAttrs{Mode: syscall.S_IFIFO | 0640, UserIds: idutils.UserIds{0, 0}, FileTimes: times}, 1, 1}
 	fileA := source.NewSourceFile(fs.NewReadableBytes([]byte("a")), fileAttrsA.FileAttrs)

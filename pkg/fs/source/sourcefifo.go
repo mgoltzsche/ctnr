@@ -18,6 +18,10 @@ func (s *sourceFifo) Attrs() fs.NodeInfo {
 	return fs.NodeInfo{fs.TypeFifo, s.attrs.FileAttrs}
 }
 
+func (s *sourceFifo) DeriveAttrs() (fs.DerivedAttrs, error) {
+	return fs.DerivedAttrs{}, nil
+}
+
 func (s *sourceFifo) Write(path, name string, w fs.Writer, written map[fs.Source]string) (err error) {
 	if linkDest, ok := written[s]; ok {
 		err = w.Link(path, linkDest)
@@ -26,7 +30,4 @@ func (s *sourceFifo) Write(path, name string, w fs.Writer, written map[fs.Source
 		err = w.Fifo(path, s.attrs)
 	}
 	return
-}
-func (s *sourceFifo) Equal(o fs.Source) (bool, error) {
-	return s.Attrs().Equal(o.Attrs()), nil
 }

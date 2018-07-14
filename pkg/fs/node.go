@@ -30,6 +30,7 @@ func NewFSOptions(rootless bool) FSOptions {
 type FsNode interface {
 	Name() string
 	Path() string
+	Empty() bool
 	SetSource(src Source)
 	Node(path string) (FsNode, error)
 	Mkdirs(path string) (FsNode, error)

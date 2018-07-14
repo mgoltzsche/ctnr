@@ -12,7 +12,7 @@ import (
 )
 
 func ParseFsSpec(b []byte) (r fs.FsNode, err error) {
-	r = NewFS()
+	r = newFS()
 	current := r
 	pathMap := map[string]*fs.NodeAttrs{}
 	for i, line := range strings.Split(string(b), "\n") {

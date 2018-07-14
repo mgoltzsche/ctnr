@@ -127,6 +127,33 @@ func (s *ImageStoreRW) MarkUsedImage(id digest.Digest) error {
 	return s.imageIds.MarkUsed(id)
 }
 
+func (s *ImageStoreRW) FS(imageId digest.Digest) (r fs.FsNode, err error) {
+	imgId, err := s.imageIds.ImageID(imageId)
+	if err != nil {
+		return nil, errors.Wrap(err, "load image fs spec: resolve image ID")
+	}
+	return s.blobs.LayerFS(imgId.ManifestDigest)
+}
+
+func (s *ImageStoreRW) AddLayer(rootfs fs.FsNode, parentImageId *digest.Digest, author, createdByOp string) (img image.Image, err error) {
+	if parentImageId != nil {
+		pImgId, err := s.imageIds.ImageID(*parentImageId)
+		if err != nil {
+			return img, errors.Wrap(err, "add image layer: resolve parent image ID")
+		}
+		parentImageId = &pImgId.ManifestDigest
+	}
+	c, err := s.blobs.AddLayer(rootfs, parentImageId, author, createdByOp)
+	if err != nil {
+		return
+	}
+	if err = s.imageIds.Add(c.Manifest.Config.Digest, c.Descriptor.Digest); err != nil {
+		return img, errors.WithMessage(err, "add image layer")
+	}
+	now := time.Now()
+	return image.NewImage(c.Descriptor.Digest, "", "", now, now, c.Manifest, &c.Config, s), nil
+}
+
 func (s *ImageStoreRW) NewLayerSource(rootfs string) (r image.LayerSource, err error) {
 	return s.blobs.NewLayerSource(rootfs, nil, false)
 }

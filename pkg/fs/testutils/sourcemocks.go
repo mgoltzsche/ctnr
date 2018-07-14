@@ -13,16 +13,13 @@ type SourceMock struct {
 }
 
 func NewSourceMock(t fs.NodeType, a fs.FileAttrs, hash string) *SourceMock {
-	r := SourceMock{fs.NodeAttrs{fs.NodeInfo{t, a}, hash}, fs.NewReadableBytes([]byte("mockcontent")), nil}
+	r := SourceMock{fs.NodeAttrs{fs.NodeInfo{t, a}, fs.DerivedAttrs{Hash: hash}}, fs.NewReadableBytes([]byte("mockcontent")), nil}
 	return &r
 }
 
-func (s *SourceMock) Equal(o fs.Source) (bool, error) {
-	return s.NodeAttrs.Equal(o)
-}
 func (s *SourceMock) Attrs() fs.NodeInfo { return s.NodeInfo }
-func (s *SourceMock) DerivedAttrs() (fs.NodeAttrs, error) {
-	return s.NodeAttrs, s.Err
+func (s *SourceMock) DeriveAttrs() (fs.DerivedAttrs, error) {
+	return s.DerivedAttrs, s.Err
 }
 func (s *SourceMock) Write(dest, name string, w fs.Writer, written map[fs.Source]string) (err error) {
 	a := s.NodeAttrs

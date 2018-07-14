@@ -43,20 +43,23 @@ func (w *StringWriter) LowerNode(path, name string, a *fs.NodeAttrs) (err error)
 }
 
 func (w *StringWriter) Lazy(path, name string, src fs.LazySource, _ map[fs.Source]string) (err error) {
-	a, err := src.DerivedAttrs()
-	if err != nil {
-		return errors.Wrap(err, "generate lazy fs node string")
+	var a fs.DerivedAttrs
+	if w.attrs&fs.AttrsHash != 0 {
+		if a, err = src.DeriveAttrs(); err != nil {
+			return errors.Wrapf(err, "stringwriter: lazy %s", path)
+		}
 	}
-	return w.writeAttrs(name, &a)
+	return w.writeAttrs(name, &fs.NodeAttrs{src.Attrs(), a})
 }
 
 func (w *StringWriter) File(path string, src fs.FileSource) (r fs.Source, err error) {
-	// TODO: use derived attrs for string generation only if w.attrs == AttrsHash
-	a, err := src.DerivedAttrs()
-	if err != nil {
-		return
+	var a fs.DerivedAttrs
+	if w.attrs&fs.AttrsHash != 0 {
+		if a, err = src.DeriveAttrs(); err != nil {
+			return nil, errors.Wrapf(err, "stringwriter: file %s", path)
+		}
 	}
-	err = w.writeAttrs(path, &a)
+	err = w.writeAttrs(path, &fs.NodeAttrs{src.Attrs(), a})
 	return src, err
 }
 
@@ -69,19 +72,19 @@ func (w *StringWriter) LowerLink(path, target string, a *fs.NodeAttrs) (err erro
 }
 
 func (w *StringWriter) Symlink(path string, a fs.FileAttrs) (err error) {
-	return w.writeAttrs(path, &fs.NodeAttrs{fs.NodeInfo{fs.TypeSymlink, a}, ""})
+	return w.writeAttrs(path, &fs.NodeAttrs{fs.NodeInfo{fs.TypeSymlink, a}, fs.DerivedAttrs{}})
 }
 
 func (w *StringWriter) Fifo(path string, a fs.DeviceAttrs) (err error) {
-	return w.writeAttrs(path, &fs.NodeAttrs{fs.NodeInfo{fs.TypeFifo, a.FileAttrs}, ""})
+	return w.writeAttrs(path, &fs.NodeAttrs{fs.NodeInfo{fs.TypeFifo, a.FileAttrs}, fs.DerivedAttrs{}})
 }
 
 func (w *StringWriter) Device(path string, a fs.DeviceAttrs) (err error) {
-	return w.writeAttrs(path, &fs.NodeAttrs{fs.NodeInfo{fs.TypeDevice, a.FileAttrs}, ""})
+	return w.writeAttrs(path, &fs.NodeAttrs{fs.NodeInfo{fs.TypeDevice, a.FileAttrs}, fs.DerivedAttrs{}})
 }
 
 func (w *StringWriter) Dir(path, name string, a fs.FileAttrs) (err error) {
-	return w.writeAttrs(name, &fs.NodeAttrs{fs.NodeInfo{fs.TypeDir, a}, ""})
+	return w.writeAttrs(name, &fs.NodeAttrs{fs.NodeInfo{fs.TypeDir, a}, fs.DerivedAttrs{}})
 }
 
 func (w *StringWriter) Mkdir(path string) (err error) {

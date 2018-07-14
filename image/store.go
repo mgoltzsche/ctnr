@@ -5,6 +5,7 @@ import (
 	"time"
 
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/cntnr/pkg/fs"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -55,6 +56,12 @@ type ImageStoreRW interface {
 	NewLayerSourceFromImage(rootfs string, img Image, filePattern []string, dest string, usr *idutils.UserIds) (LayerSource, error)
 	// Creates a new layer or returns errEmptyLayerDiff if nothing has changed
 	AddImageLayer(src LayerSource, parentImageId *digest.Digest, author, comment string) (Image, error)
+	// TODO:
+	//   a1) apply new interface
+	//   a2) add ADD impl using FsNode to Dockerfile builder and write integration test
+	//   b) replace MtreeStore with FsNodeStore
+	FS(imageId digest.Digest) (fs.FsNode, error)
+	AddLayer(rootfs fs.FsNode, parentImageId *digest.Digest, author, createdByOp string) (Image, error)
 	TagImage(imageId digest.Digest, tag string) (Image, error)
 	UntagImage(tag string) error
 	Close() error

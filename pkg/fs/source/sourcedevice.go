@@ -18,6 +18,10 @@ func (s *sourceDevice) Attrs() fs.NodeInfo {
 	return fs.NodeInfo{fs.TypeDevice, s.attrs.FileAttrs}
 }
 
+func (s *sourceDevice) DeriveAttrs() (fs.DerivedAttrs, error) {
+	return fs.DerivedAttrs{}, nil
+}
+
 func (s *sourceDevice) Write(path, name string, w fs.Writer, written map[fs.Source]string) (err error) {
 	if linkDest, ok := written[s]; ok {
 		err = w.Link(path, linkDest)
@@ -26,8 +30,4 @@ func (s *sourceDevice) Write(path, name string, w fs.Writer, written map[fs.Sour
 		err = w.Device(path, s.attrs)
 	}
 	return
-}
-
-func (s *sourceDevice) Equal(o fs.Source) (bool, error) {
-	return s.Attrs().Equal(o.Attrs()), nil
 }

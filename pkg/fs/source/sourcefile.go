@@ -18,7 +18,7 @@ func NewSourceFile(reader fs.Readable, attrs fs.FileAttrs) *sourceFile {
 }
 
 func NewSourceFileHashed(reader fs.Readable, attrs fs.FileAttrs, hash string) *sourceFile {
-	return &sourceFile{reader, fs.NodeAttrs{fs.NodeInfo{fs.TypeFile, attrs}, hash}}
+	return &sourceFile{reader, fs.NodeAttrs{fs.NodeInfo{fs.TypeFile, attrs}, fs.DerivedAttrs{Hash: hash}}}
 }
 
 func (s *sourceFile) Attrs() fs.NodeInfo {
@@ -49,9 +49,9 @@ func (s *sourceFile) Hash() (h string, err error) {
 	return s.attrs.Hash, nil
 }
 
-func (s *sourceFile) DerivedAttrs() (fs.NodeAttrs, error) {
+func (s *sourceFile) DeriveAttrs() (fs.DerivedAttrs, error) {
 	_, err := s.Hash()
-	return s.attrs, err
+	return s.attrs.DerivedAttrs, err
 }
 
 func (s *sourceFile) Write(path, name string, w fs.Writer, written map[fs.Source]string) (err error) {
@@ -68,7 +68,7 @@ func (s *sourceFile) Equal(o fs.Source) (bool, error) {
 	if !s.attrs.NodeInfo.Equal(o.Attrs()) {
 		return false, nil
 	}
-	oa, err := o.(fs.BlobSource).DerivedAttrs()
+	oa, err := o.DeriveAttrs()
 	if err != nil {
 		return false, errors.Wrap(err, "equal")
 	}

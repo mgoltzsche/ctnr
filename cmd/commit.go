@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 
 	"github.com/mgoltzsche/cntnr/image"
+	"github.com/mgoltzsche/cntnr/pkg/fs/tree"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -65,12 +66,10 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 	if spec.Root == nil {
 		return errors.Errorf("bundle %q has no root path", bundleId)
 	}
-	rootfs := filepath.Join(b.Dir(), spec.Root.Path)
-	src, err := lockedStore.NewLayerSource(rootfs)
+	rootfs, err := tree.FromDir(filepath.Join(b.Dir(), spec.Root.Path), flagRootless)
 	if err != nil {
 		return
 	}
-	defer src.Close()
 
 	// Try to create new image
 	var (
@@ -80,7 +79,7 @@ func runCommit(cmd *cobra.Command, args []string) (err error) {
 	if flagComment == "" {
 		flagComment = "commit"
 	}
-	if img, err = lockedStore.AddImageLayer(src, lockedBundle.Image(), flagAuthor, flagComment); err == nil {
+	if img, err = lockedStore.AddLayer(rootfs, lockedBundle.Image(), flagAuthor, flagComment); err == nil {
 		imgId = img.ID()
 		err = lockedBundle.SetParentImageId(&imgId)
 	} else if image.IsEmptyLayerDiff(err) {

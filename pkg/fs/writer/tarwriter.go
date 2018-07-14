@@ -50,7 +50,7 @@ func (w *TarGzWriter) Close() error {
 }*/
 
 func (w *TarWriter) Close() error {
-	return w.writer.Close()
+	return errors.Wrap(w.writer.Close(), "close tar writer")
 }
 
 func (w *TarWriter) Parent() error                                        { return nil }

@@ -27,6 +27,9 @@ type sourceParentDir string
 func (s sourceParentDir) Attrs() fs.NodeInfo {
 	return fs.NodeInfo{fs.TypeDir, fs.FileAttrs{Mode: os.ModeDir | 0755}}
 }
+func (s sourceParentDir) DeriveAttrs() (fs.DerivedAttrs, error) {
+	return fs.DerivedAttrs{}, nil
+}
 func (s sourceParentDir) Write(dest, name string, w fs.Writer, written map[fs.Source]string) error {
 	return w.Mkdir(dest)
 }
@@ -37,6 +40,9 @@ func (s sourceParentDir) Equal(other fs.Source) (bool, error) {
 type sourceNoop string
 
 func (s sourceNoop) Attrs() fs.NodeInfo { return fs.NodeInfo{NodeType: fs.TypeDir} }
+func (s sourceNoop) DeriveAttrs() (fs.DerivedAttrs, error) {
+	return fs.DerivedAttrs{}, nil
+}
 func (s sourceNoop) Write(dest, name string, w fs.Writer, written map[fs.Source]string) error {
 	return nil
 }
@@ -46,7 +52,7 @@ func (s sourceNoop) Equal(other fs.Source) (bool, error) {
 
 type FsNode struct {
 	name string
-	fs.NodeAttrs
+	fs.NodeInfo
 	source   fs.Source
 	parent   *FsNode
 	pathNode *FsNode
@@ -55,7 +61,11 @@ type FsNode struct {
 	overlay  bool
 }
 
-func NewFS() *FsNode {
+func NewFS() fs.FsNode {
+	return newFS()
+}
+
+func newFS() *FsNode {
 	fs := &FsNode{name: "."}
 	fs.pathNode = fs
 	fs.SetSource(srcParentDir)
@@ -63,7 +73,7 @@ func NewFS() *FsNode {
 }
 
 func (f *FsNode) String() (p string) {
-	return f.Path() + " " + f.NodeAttrs.AttrString(fs.AttrsAll)
+	return f.Path() + " " + f.NodeInfo.AttrString(fs.AttrsAll)
 }
 
 func (f *FsNode) Name() string {
@@ -77,6 +87,10 @@ func (f *FsNode) Path() (p string) {
 		p = filepath.Join(f.parent.Path(), f.name)
 	}
 	return
+}
+
+func (f *FsNode) Empty() bool {
+	return f.source == srcParentDir
 }
 
 // Generates the file system's hash including the provided attribute set.
@@ -113,7 +127,7 @@ func (f *FsNode) write(w fs.Writer, written map[fs.Source]string) (err error) {
 // adding hardlinked files to diff as well (to preserve hardlinks and stay
 // compatible with external tar tools when writing diff into tar file).
 func (f *FsNode) Diff(o fs.FsNode) (r fs.FsNode, err error) {
-	node := NewFS()
+	node := newFS()
 	from := map[string]*FsNode{}
 	to := map[string]*FsNode{}
 	unchangedSourceMap := map[fs.Source][]string{}
@@ -134,7 +148,7 @@ func (f *FsNode) Diff(o fs.FsNode) (r fs.FsNode, err error) {
 			}
 			added.parent.applyParents(v.parent)
 		} else {
-			eq, err := v.source.Equal(old.source)
+			eq, err := v.Equal(old)
 			if err != nil {
 				return nil, errors.WithMessage(err, "diff")
 			}
@@ -187,6 +201,21 @@ func (f *FsNode) Diff(o fs.FsNode) (r fs.FsNode, err error) {
 	return node, err
 }
 
+func (f *FsNode) Equal(o *FsNode) (bool, error) {
+	if !f.source.Attrs().Equal(o.source.Attrs()) {
+		return false, nil
+	}
+	fa, err := f.source.DeriveAttrs()
+	if err != nil {
+		return false, errors.Wrap(err, "equal")
+	}
+	oa, err := o.source.DeriveAttrs()
+	if err != nil {
+		return false, errors.Wrap(err, "equal")
+	}
+	return fa.Hash == oa.Hash, nil
+}
+
 func (f *FsNode) applyParents(o *FsNode) {
 	if f != nil && f.source != o.source {
 		f.SetSource(o.source)
@@ -229,9 +258,8 @@ func (f *FsNode) findChild(name string) *FsNode {
 }
 
 func (f *FsNode) SetSource(src fs.Source) {
-	a := src.Attrs()
 	f.source = src
-	f.NodeAttrs = fs.NodeAttrs{fs.NodeInfo{a.NodeType, a.FileAttrs}, ""}
+	f.NodeInfo = src.Attrs()
 	if f.NodeType != fs.TypeDir {
 		f.child = nil
 	}

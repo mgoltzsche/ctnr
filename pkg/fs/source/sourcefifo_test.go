@@ -39,20 +39,4 @@ func TestSourceFifo(t *testing.T) {
 
 	// Test write
 	assertSourceWriteWithHardlinkSupport(t, testee, "/file type=fifo usr=1:33 mode=664 mtime=1516669302 atime=1516669362")
-
-	// Test Equal()
-	eq, err := testee.Equal(testee)
-	require.NoError(t, err)
-	require.True(t, eq, "Equal(): should equal same instance")
-	other := NewSourceFifo(fs.DeviceAttrs{fileAttrs, 0, 0})
-	eq, err = testee.Equal(other)
-	require.NoError(t, err)
-	require.True(t, eq, "Equal(): should equal when copy provided")
-	other.attrs.Mode = 0600
-	eq, err = testee.Equal(other)
-	require.NoError(t, err)
-	require.False(t, eq, "Equal(): should not equal when changed")
-	eq, err = testee.Equal(NewSourceDir(fs.FileAttrs{Mode: os.ModeDir | 0600}))
-	require.NoError(t, err)
-	require.False(t, eq, "Equal(): should not equal when no BlobSource provided")
 }

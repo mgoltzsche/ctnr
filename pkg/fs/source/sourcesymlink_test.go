@@ -28,17 +28,4 @@ func TestSourceSymlink(t *testing.T) {
 
 	// Test write
 	assertSourceWriteWithHardlinkSupport(t, &testee, "/file type=symlink usr=1:33 link=../symlinkdest mtime=1516669302 atime=1516669362")
-
-	// Test Equal()
-	eq, err := (&testee).Equal(&testee)
-	require.NoError(t, err)
-	require.True(t, eq, "Equal(): should equal same instance")
-	other := testee
-	eq, err = (&testee).Equal(&other)
-	require.NoError(t, err)
-	require.True(t, eq, "Equal(): should equal its copy")
-	other.attrs.Symlink = "changed"
-	eq, err = (&testee).Equal(&other)
-	require.NoError(t, err)
-	require.False(t, eq, "Equal(): should not equal when changed")
 }

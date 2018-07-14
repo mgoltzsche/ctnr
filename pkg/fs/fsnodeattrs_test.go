@@ -96,7 +96,7 @@ func TestNodeAttrsString(t *testing.T) {
 				},
 			},
 		},
-		"sha256:hex",
+		DerivedAttrs{"sha256:hex"},
 	}
 	actual := testee.AttrString(AttrsAll)
 	expected := "type=file usr=33:99 mode=750 size=123 link=sdest xattr.k1=v1 xattr.k2=v2 mtime=1516669302 atime=1519347762 hash=sha256:hex"

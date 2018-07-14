@@ -9,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// TODO: remove or use for bundles with readonly file system
 type ImageFSROCache struct {
 	dir string
 }

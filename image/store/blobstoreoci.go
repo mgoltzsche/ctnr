@@ -9,6 +9,10 @@ import (
 	"path/filepath"
 
 	"github.com/mgoltzsche/cntnr/image"
+	"github.com/mgoltzsche/cntnr/pkg/fs"
+	"github.com/mgoltzsche/cntnr/pkg/fs/source"
+	"github.com/mgoltzsche/cntnr/pkg/fs/tree"
+	fswriter "github.com/mgoltzsche/cntnr/pkg/fs/writer"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/openSUSE/umoci/oci/layer"
 	digest "github.com/opencontainers/go-digest"
@@ -129,6 +133,126 @@ func (s *BlobStoreOci) putJsonBlob(o interface{}) (d digest.Digest, size int64, 
 		return d, size, errors.New("put json blob: " + err.Error())
 	}
 	return s.putBlob(&buf)
+}
+
+// TODO: use this also for image file system extraction
+func (s *BlobStoreOci) LayerFS(manifestDigest digest.Digest) (r fs.FsNode, err error) {
+	defer func() {
+		err = errors.Wrap(err, "load fs from layers")
+	}()
+	manifest, err := s.ImageManifest(manifestDigest)
+	if err != nil {
+		return
+	}
+	r = tree.NewFS()
+	for _, l := range manifest.Layers {
+		d := l.Digest
+		layerFile := filepath.Join(s.blobDir, d.Algorithm().String(), d.Hex())
+		if _, err = r.AddUpper("/", source.NewSourceTarGz(layerFile)); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (s *BlobStoreOci) NormalizedLayerFS(manifestDigest digest.Digest) (r fs.FsNode, err error) {
+	// TODO: cache whole operation (storing FsNode instead of mtree)
+	if r, err = s.LayerFS(manifestDigest); err != nil {
+		return
+	}
+	normalizer := fswriter.NewFsNodeWriter(tree.NewFS(), fs.HashingNilWriter())
+	if err = r.Write(&fs.ExpandingWriter{normalizer}); err != nil {
+		return nil, errors.Wrap(err, "normalize layer fs")
+	}
+	r = normalizer.FS()
+	return
+}
+
+func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.Digest, author, createdBy string) (r *CommitResult, err error) {
+	// Load parent
+	//parentFs := tree.NewFS()
+	var parentFs fs.FsNode
+	r = &CommitResult{}
+	if parentManifestDigest != nil {
+		var parentManifest ispecs.Manifest
+		parentManifest, err = s.ImageManifest(*parentManifestDigest)
+		if err == nil {
+			if r.Config, err = s.ImageConfig(parentManifest.Config.Digest); err == nil && len(parentManifest.Layers) > 0 {
+				parentFs, err = s.NormalizedLayerFS(*parentManifestDigest)
+			}
+		}
+		if err != nil {
+			return nil, errors.WithMessage(err, "put layer: parent")
+		}
+
+		var layerStr bytes.Buffer
+		if err = parentFs.WriteTo(&layerStr, fs.AttrsMtime); err != nil {
+			return nil, errors.WithMessage(err, "put layer")
+		}
+		//os.Stdout.WriteString("##### parentfs:\n" + layerStr.String() + "\n")
+	}
+	// Create new layer as delta from parent
+	layerFs, err := parentFs.Diff(rootfs)
+	if err != nil {
+		return nil, errors.WithMessage(err, "put layer")
+	}
+
+	if layerFs.Empty() {
+		// TODO: set r.Descriptor and return r without error
+		return nil, image.ErrorEmptyLayerDiff("empty layer")
+	}
+	var layerStr bytes.Buffer
+	if err = layerFs.WriteTo(&layerStr, fs.AttrsMtime); err != nil {
+		return nil, errors.WithMessage(err, "put layer")
+	}
+	s.debug.Printf("Adding layer:\n  parent manifest: %s\n  contents:\n%s", parentManifestDigest, layerStr.String())
+
+	// Save layer
+	tarReader := s.generateTar(layerFs)
+	defer tarReader.Close()
+	layerDescriptor, diffIdDigest, err := s.BlobStore.PutLayer(tarReader)
+	if err != nil {
+		return
+	}
+
+	// Create new config and manifest
+	if createdBy == "" {
+		createdBy = "layer"
+	}
+	r.Config.History = append(r.Config.History, ispecs.History{
+		Author:     author,
+		CreatedBy:  createdBy,
+		EmptyLayer: false,
+	})
+	r.Config.RootFS.DiffIDs = append(r.Config.RootFS.DiffIDs, diffIdDigest)
+	r.Descriptor, r.Manifest, err = s.putImageConfig(r.Config, parentManifestDigest, func(m *ispecs.Manifest) {
+		m.Layers = append(m.Layers, layerDescriptor)
+	})
+	r.Descriptor.MediaType = ispecs.MediaTypeImageManifest
+	r.Descriptor.Platform = &ispecs.Platform{
+		Architecture: r.Config.Architecture,
+		OS:           r.Config.OS,
+	}
+	return
+}
+
+func (s *BlobStoreOci) generateTar(rootfs fs.FsNode) io.ReadCloser {
+	reader, writer := io.Pipe()
+	go func() (err error) {
+		// Close writer with the returned error.
+		defer func() {
+			writer.CloseWithError(errors.Wrap(err, "generate layer tar"))
+		}()
+		// Writer tar
+		tarWriter := fswriter.NewTarWriter(writer)
+		defer func() {
+			if e := tarWriter.Close(); e != nil && err == nil {
+				err = e
+			}
+		}()
+		return rootfs.Write(tarWriter)
+	}()
+	return reader
 }
 
 // Unpacks all layers contained in the referenced manifest into rootfs

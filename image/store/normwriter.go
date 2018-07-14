@@ -5,15 +5,15 @@ import (
 	"io"
 )
 
-type writer struct {
+type mtreeNormWriter struct {
 	w io.Writer
 }
 
 func normWriter(w io.Writer) io.Writer {
-	return &writer{w}
+	return &mtreeNormWriter{w}
 }
 
-func (w *writer) Write(b []byte) (n int, err error) {
+func (w *mtreeNormWriter) Write(b []byte) (n int, err error) {
 	lines := bytes.Split(b, []byte("\n"))
 	for _, line := range lines {
 		line = bytes.TrimSpace(line)

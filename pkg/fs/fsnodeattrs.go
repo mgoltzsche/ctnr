@@ -35,7 +35,7 @@ var (
 	TypeDevice   NodeType = "dev"
 	TypeWhiteout NodeType = "whiteout"
 	nameRegex             = regexp.MustCompile("^[a-zA-Z0-9\\-_\\.,]+$")
-	nilWriter             = noopWriter("noop writer")
+	nilWriter             = hashingNilWriter("noop writer")
 	_            Source   = &NodeAttrs{}
 )
 
@@ -113,7 +113,11 @@ type FileTimes struct {
 
 type NodeAttrs struct {
 	NodeInfo
-	Hash string // can be ""
+	DerivedAttrs
+}
+
+type DerivedAttrs struct {
+	Hash string
 }
 
 type NodeInfo struct {
@@ -135,27 +139,11 @@ type DeviceAttrs struct {
 	Devminor int64
 }
 
-func (s *NodeAttrs) Equal(src Source) (bool, error) {
-	if !s.NodeInfo.Equal(src.Attrs()) {
-		return false, nil
-	}
-	if bs, ok := src.(BlobSource); ok {
-		da, err := bs.DerivedAttrs()
-		if err != nil {
-			return false, errors.Wrap(err, "equal")
-		}
-		return da.Hash == s.Hash, nil
-	} else if s.Hash != "" {
-		return false, nil
-	}
-	return true, nil
-}
-
 func (s *NodeAttrs) Attrs() NodeInfo {
 	return s.NodeInfo
 }
-func (s *NodeAttrs) DerivedAttrs() (NodeAttrs, error) {
-	return *s, nil
+func (s *NodeAttrs) DeriveAttrs() (DerivedAttrs, error) {
+	return s.DerivedAttrs, nil
 }
 func (s *NodeAttrs) Write(path, name string, w Writer, written map[Source]string) (err error) {
 	if linkDest, ok := written[s]; ok {

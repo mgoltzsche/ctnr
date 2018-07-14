@@ -21,6 +21,12 @@ type FsBuilder struct {
 	err     error
 }
 
+func FromDir(rootfs string, rootless bool) (fs.FsNode, error) {
+	b := NewFsBuilder(NewFS(), fs.NewFSOptions(rootless))
+	b.AddDir(rootfs, "/", nil)
+	return b.FS()
+}
+
 func NewFsBuilder(fs fs.FsNode, opts fs.FSOptions) *FsBuilder {
 	fsEval := fseval.DefaultFsEval
 	if opts.Rootless {

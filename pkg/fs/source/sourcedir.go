@@ -23,14 +23,14 @@ func (s *SourceDir) Attrs() fs.NodeInfo {
 	return fs.NodeInfo{fs.TypeDir, s.attrs}
 }
 
+func (s *SourceDir) DeriveAttrs() (fs.DerivedAttrs, error) {
+	return fs.DerivedAttrs{}, nil
+}
+
 func (s *SourceDir) Write(dest, name string, w fs.Writer, _ map[fs.Source]string) error {
 	return w.Dir(dest, name, s.attrs)
 }
 
 func (s *SourceDir) String() string {
 	return "sourceDir{" + s.attrs.String() + "}"
-}
-
-func (s *SourceDir) Equal(o fs.Source) (bool, error) {
-	return s.Attrs().Equal(o.Attrs()), nil
 }

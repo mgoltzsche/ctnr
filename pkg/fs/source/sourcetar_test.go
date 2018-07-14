@@ -61,18 +61,18 @@ func TestSourceTar(t *testing.T) {
 		t.Error("type != TypeOverlay")
 		t.FailNow()
 	}
-	wa, err := testee.DerivedAttrs()
+	wa, err := testee.DeriveAttrs()
 	require.NoError(t, err)
 	hash1 := wa.Hash
 	testee = NewSourceTar(tarFile2)
-	wa, err = testee.DerivedAttrs()
+	wa, err = testee.DeriveAttrs()
 	require.NoError(t, err)
 	hash2 := wa.Hash
 	if hash1 == hash2 {
 		t.Error("hash1 == hash2")
 	}
 	testee = NewSourceTar(tarFile1)
-	wa, err = testee.DerivedAttrs()
+	wa, err = testee.DeriveAttrs()
 	require.NoError(t, err)
 	hash2 = wa.Hash
 	if hash1 != hash2 {

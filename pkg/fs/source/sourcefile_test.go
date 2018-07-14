@@ -34,11 +34,11 @@ func TestSourceFile(t *testing.T) {
 		t.Error("type != TypeFile")
 		t.FailNow()
 	}
-	wa, err := testee.DerivedAttrs()
-	require.NoError(t, err)
-	if wa.Mode != mode {
-		t.Errorf("DerivedAttrs() mode %s != %s", wa.Mode, mode)
+	if a.Mode != mode {
+		t.Errorf("DerivedAttrs() mode %s != %s", a.Mode, mode)
 	}
+	wa, err := testee.DeriveAttrs()
+	require.NoError(t, err)
 	if wa.Hash == "" {
 		t.Errorf("DerivedAttrs() hash == ''")
 	}
@@ -46,7 +46,7 @@ func TestSourceFile(t *testing.T) {
 	// Test hash
 	hash1 := wa.Hash
 	testee = NewSourceFile(fs.NewFileReader(srcFile, fsEval), fileAttrs)
-	wa, err = testee.DerivedAttrs()
+	wa, err = testee.DeriveAttrs()
 	require.NoError(t, err)
 	hash2 := wa.Hash
 	if hash1 != hash2 {
@@ -56,7 +56,7 @@ func TestSourceFile(t *testing.T) {
 	require.NoError(t, err)
 	fileAttrs.UserIds = idutils.UserIds{1, 33}
 	testee = NewSourceFile(fs.NewFileReader(srcFile, fsEval), fileAttrs)
-	wa, err = testee.DerivedAttrs()
+	wa, err = testee.DeriveAttrs()
 	require.NoError(t, err)
 	hash2 = wa.Hash
 	if hash1 == hash2 {
@@ -65,20 +65,4 @@ func TestSourceFile(t *testing.T) {
 
 	// Test write
 	assertSourceWriteWithHardlinkSupport(t, testee, "/file type=file usr=1:33 mode=754 mtime=1516669302 atime=1516669362 hash="+hash2)
-
-	// Test Equal()
-	eq, err := testee.Equal(testee)
-	require.NoError(t, err)
-	require.True(t, eq, "Equal(): should equal same instance")
-	other := NewSourceFile(fs.NewFileReader(srcFile, fsEval), fileAttrs)
-	eq, err = testee.Equal(other)
-	require.NoError(t, err)
-	require.True(t, eq, "Equal(): should equal when copy provided")
-	other.attrs.Hash = "changed"
-	eq, err = testee.Equal(other)
-	require.NoError(t, err)
-	require.False(t, eq, "Equal(): should not equal when changed")
-	eq, err = testee.Equal(NewSourceDir(fs.FileAttrs{Mode: os.ModeDir | 0644}))
-	require.NoError(t, err)
-	require.False(t, eq, "Equal(): should not equal when no BlobSource provided")
 }

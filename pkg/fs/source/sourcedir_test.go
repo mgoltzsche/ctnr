@@ -42,20 +42,4 @@ func TestSourceDir(t *testing.T) {
 	if actual != expected {
 		t.Errorf("expected\n  %q\nbut was\n  %q", expected, actual)
 	}
-
-	// Test Equal()
-	eq, err := testee.Equal(testee)
-	require.NoError(t, err)
-	require.True(t, eq, "Equal(): should equal same instance")
-	other := NewSourceDir(fs.FileAttrs{Mode: mode, UserIds: usr, FileTimes: times})
-	eq, err = testee.Equal(other)
-	require.NoError(t, err)
-	require.True(t, eq, "Equal(): should equal when copy provided")
-	other = NewSourceDir(fs.FileAttrs{Mode: 444, FileTimes: times})
-	eq, err = testee.Equal(other)
-	require.NoError(t, err)
-	require.False(t, eq, "Equal(): should not equal when changed")
-	eq, err = testee.Equal(NewSourceFile(fs.NewReadableBytes([]byte("content")), fs.FileAttrs{Mode: 0444}))
-	require.NoError(t, err)
-	require.False(t, eq, "Equal(): should not equal when no dir source provided")
 }

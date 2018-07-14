@@ -48,7 +48,7 @@ func (s *WriterMock) LowerNode(path, name string, a *fs.NodeAttrs) error {
 }
 func (s *WriterMock) Lazy(path, name string, src fs.LazySource, _ map[fs.Source]string) error {
 	a := src.Attrs()
-	da, err := src.DerivedAttrs()
+	da, err := src.DeriveAttrs()
 	require.NoError(s.t, err)
 	require.True(s.t, a.Symlink == "", "%s: link != ''", path)
 	require.NotNil(s.t, src, "%s: source not provided", path)
@@ -61,7 +61,7 @@ func (s *WriterMock) Lazy(path, name string, src fs.LazySource, _ map[fs.Source]
 func (s *WriterMock) File(path string, src fs.FileSource) (fs.Source, error) {
 	require.NotNil(s.t, src, "%s: source not provided", path)
 	a := src.Attrs()
-	da, err := src.DerivedAttrs()
+	da, err := src.DeriveAttrs()
 	require.NoError(s.t, err)
 	require.True(s.t, a.Mode != 0 || strings.Contains(path, "blockA"), "%s: mode != 0", path)
 	require.True(s.t, a.Symlink == "", "%s: link != ''", path)

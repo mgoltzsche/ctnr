@@ -89,7 +89,7 @@ func TestFsBuilder(t *testing.T) {
 		{[]string{"rootfs"}, "/all/", false, expectedRootfsOps},
 		// TODO: add URL source test case
 	} {
-		testee := NewFsBuilder(NewFS(), opts)
+		testee := NewFsBuilder(newFS(), opts)
 		testee.AddAll(tmpDir, c.src, c.dest, nil)
 		w := testutils.NewWriterMock(t, fs.AttrsAll)
 		err := testee.Write(w)
@@ -103,9 +103,9 @@ func TestFsBuilder(t *testing.T) {
 	}
 
 	// Test error
-	testee := NewFsBuilder(NewFS(), opts)
+	testee := NewFsBuilder(newFS(), opts)
 	testee.AddAll(tmpDir, []string{"not-existing"}, "/", nil)
-	err = testee.Write(fs.NoopWriter())
+	err = testee.Write(fs.HashingNilWriter())
 	require.Error(t, err, "using not existing file as source should yield error")
 
 	//
@@ -113,7 +113,7 @@ func TestFsBuilder(t *testing.T) {
 	//
 
 	// Test written node tree equals original
-	testee = NewFsBuilder(NewFS(), opts)
+	testee = NewFsBuilder(newFS(), opts)
 	testee.AddDir(rootfs, "/", nil)
 	var buf bytes.Buffer
 	tree, err := testee.FS()
@@ -140,7 +140,7 @@ func TestFsBuilder(t *testing.T) {
 
 	// Read, extract and compare cases
 	for i, c := range []string{"rootfs", "archive.tar"} {
-		testee := NewFsBuilder(NewFS(), opts)
+		testee := NewFsBuilder(newFS(), opts)
 		if i == 0 {
 			// rootfs dir
 			testee.AddDir(filepath.Join(tmpDir, c), "/", nil)
@@ -151,21 +151,20 @@ func TestFsBuilder(t *testing.T) {
 		// Normalize
 		rootfs := filepath.Join(tmpDir, "rootfs"+fmt.Sprintf("%d", i))
 		dirWriter := writer.NewDirWriter(rootfs, opts, warn)
-		nodeWriter := writer.NewFsNodeWriter(NewFS(), dirWriter)
+		nodeWriter := writer.NewFsNodeWriter(newFS(), dirWriter)
 		err = testee.Write(&fs.ExpandingWriter{nodeWriter})
 		require.NoError(t, err)
 		err = dirWriter.Close()
 		require.NoError(t, err)
-		// Load normalized
+		// Assert normalized string representation equals original
 		nodes := nodeWriter.FS()
 		buf.Reset()
 		err = nodes.WriteTo(&buf, fs.AttrsCompare)
 		require.NoError(t, err)
-		// Assert string representation did not change
 		if !assert.Equal(t, strings.Split(expectedStr, "\n"), strings.Split(buf.String(), "\n"), "string(expand("+c+")) != string(sourcedir{"+c+"})") {
 			t.FailNow()
 		}
-		// Write nodes written by FsNodeWriter
+		// Write nodes written by FsNodeWriter should equal original
 		if !assert.Equal(t, expectedWritten, testutils.MockWrites(t, nodes).Written, "a.Write(nodeWriter); nodeWriter.Write() should write same as original") {
 			t.FailNow()
 		}
@@ -193,11 +192,11 @@ func TestFsBuilder(t *testing.T) {
 	}
 
 	// Test Hash()
-	testee = NewFsBuilder(NewFS(), opts)
+	testee = NewFsBuilder(newFS(), opts)
 	testee.AddFiles(filepath.Join(rootfs, "etc/fileA"), "fileA", nil)
 	hash1, err := testee.Hash(fs.AttrsHash)
 	require.NoError(t, err)
-	testee = NewFsBuilder(NewFS(), opts)
+	testee = NewFsBuilder(newFS(), opts)
 	testee.AddFiles(filepath.Join(rootfs, "etc/fileA"), "fileA", nil)
 	hash2, err := testee.Hash(fs.AttrsHash)
 	require.NoError(t, err)
