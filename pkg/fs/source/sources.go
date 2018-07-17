@@ -18,13 +18,13 @@ import (
 )
 
 type Sources struct {
-	fsEval    fseval.FsEval
-	idMap     idutils.IdMappings
-	sourceMap map[string]fs.Source
+	fsEval     fseval.FsEval
+	attrMapper fs.AttrMapper
+	sourceMap  map[string]fs.Source
 }
 
-func NewSources(fsEval fseval.FsEval, idMap idutils.IdMappings) *Sources {
-	return &Sources{fsEval, idMap, map[string]fs.Source{}}
+func NewSources(fsEval fseval.FsEval, attrMapper fs.AttrMapper) *Sources {
+	return &Sources{fsEval, attrMapper, map[string]fs.Source{}}
 }
 
 func (s *Sources) File(file string, fi os.FileInfo, usr *idutils.UserIds) (r fs.Source, err error) {
@@ -43,9 +43,9 @@ func (s *Sources) File(file string, fi os.FileInfo, usr *idutils.UserIds) (r fs.
 	case fm&os.ModeSymlink != 0:
 		a.Symlink, err = s.fsEval.Readlink(file)
 		r = NewSourceSymlink(a)
-	case fm&os.ModeDevice != 0:
+	case fm&os.ModeDevice != 0 || fm&os.ModeCharDevice != 0:
 		da, err = s.devAttrs(file, a)
-		r = NewSourceBlock(da)
+		r = NewSourceDevice(da)
 	case fm&os.ModeNamedPipe != 0:
 		da, err = s.devAttrs(file, a)
 		r = NewSourceFifo(da)
@@ -94,16 +94,17 @@ func (s *Sources) FileOverlay(file string, fi os.FileInfo, usr *idutils.UserIds)
 }
 
 func (s *Sources) fileAttrs(file string, si os.FileInfo, usr *idutils.UserIds) (r fs.FileAttrs, err error) {
-	// uid/gid
-	if usr == nil {
-		st := si.Sys().(*syscall.Stat_t)
-		u := idutils.UserIds{uint(st.Uid), uint(st.Gid)}
-		if r.UserIds, err = u.ToContainer(s.idMap); err != nil {
-			return r, errors.Wrapf(err, "source file %s", file)
+	/*symlink := ""
+	if si.Mode()&os.ModeSymlink != 0 {
+		if symlink, err = s.fsEval.Readlink(file); err != nil {
+			return r, errors.Wrap(err, "file attrs")
 		}
-	} else {
-		r.UserIds = *usr
 	}
+	hdr, err := tar.FileInfoHeader(si, symlink)
+	if err != nil {
+		return r, errors.Wrap(err, "file attrs")
+	}*/
+
 	// permissions
 	r.Mode = si.Mode()
 	// atime/mtime
@@ -122,6 +123,18 @@ func (s *Sources) fileAttrs(file string, si os.FileInfo, usr *idutils.UserIds) (
 			}
 			r.Xattrs[name] = string(value)
 		}
+	}
+	// uid/gid
+	if usr == nil {
+		st := si.Sys().(*syscall.Stat_t)
+		r.UserIds = idutils.UserIds{uint(st.Uid), uint(st.Gid)}
+		if err = s.attrMapper.ToContainer(&r); err != nil {
+			return r, errors.Wrapf(err, "source file %s", file)
+		}
+	}
+	// TODO: make sure user.rootlesscontainers xattr is removed
+	if usr != nil {
+		r.UserIds = *usr
 	}
 	return
 }

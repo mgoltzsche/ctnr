@@ -89,11 +89,13 @@ func TestFsBuilder(t *testing.T) {
 		{[]string{"rootfs"}, "/all/", false, expectedRootfsOps},
 		// TODO: add URL source test case
 	} {
-		testee := NewFsBuilder(newFS(), opts)
+		rootfs := newFS()
+		testee := NewFsBuilder(rootfs, opts)
 		testee.AddAll(tmpDir, c.src, c.dest, nil)
 		w := testutils.NewWriterMock(t, fs.AttrsAll)
 		err := testee.Write(w)
 		require.NoError(t, err)
+		rootfs.MockDevices()
 		// need to assert against path map since archive content write order is not guaranteed
 		if !assert.Equal(t, c.expectedPaths, w.WrittenPaths, fmt.Sprintf("AddAll(ctx, %+v, %s): unexpected written paths", c.src, c.dest)) {
 			t.FailNow()

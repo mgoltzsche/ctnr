@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -57,7 +56,8 @@ const ExpectedTestfsState = `
 	..
 	# bin
 	etc type=dir mode=0775 tar_time=1519347702.000000000
-		blockA mode=0 tar_time=1519347702.000000000
+		blockA mode=0640 tar_time=1519347702.000000000
+		chrdevA mode=0640 tar_time=1519347702.000000000
 		fifo mode=0640 tar_time=1519347702.000000000
 		_dirReplacedWithFile mode=0640 tar_time=1519347702.000000000
 		_dirReplacedWithSymlink type=link mode=0777 link=$ROOT/etc/dirB tar_time=1519347702.000000000
@@ -111,7 +111,9 @@ func WriteTestFileSystem(t *testing.T, testee fs.Writer) (tmpDir string, rootfs 
 	fileAttrsA := fs.NodeAttrs{NodeInfo: fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0640, UserIds: idutils.UserIds{0, 0}, Size: 1, FileTimes: times}}}
 	fileAttrsB := fs.NodeAttrs{NodeInfo: fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0640, UserIds: idutils.UserIds{0, 0}, Size: 3, FileTimes: times}}}
 	symlinkAttrs := fs.FileAttrs{Mode: os.ModeSymlink, UserIds: idutils.UserIds{0, 0}, FileTimes: times}
-	fifoAttrs := fs.DeviceAttrs{fs.FileAttrs{Mode: syscall.S_IFIFO | 0640, UserIds: idutils.UserIds{0, 0}, FileTimes: times}, 1, 1}
+	fifoAttrs := fs.DeviceAttrs{fs.FileAttrs{Mode: os.ModeNamedPipe | 0640, UserIds: idutils.UserIds{0, 0}, FileTimes: times}, 1, 1}
+	chardevAttrs := fs.DeviceAttrs{fs.FileAttrs{Mode: os.ModeCharDevice | 0640, UserIds: idutils.UserIds{0, 0}, FileTimes: times}, 1, 1}
+	blkAttrs := fs.DeviceAttrs{fs.FileAttrs{Mode: os.ModeDevice | 0640, UserIds: idutils.UserIds{0, 0}, FileTimes: times}, 1, 1}
 	fileA := NewSourceMock(fs.TypeFile, fileAttrsA.FileAttrs, "")
 	fileA.NodeAttrs = fileAttrsA
 	fileA.Readable = fs.NewReadableBytes([]byte("a"))
@@ -133,7 +135,9 @@ func WriteTestFileSystem(t *testing.T, testee fs.Writer) (tmpDir string, rootfs 
 	require.NoError(t, err)
 	err = testee.Fifo("/etc/fifo", fifoAttrs)
 	require.NoError(t, err)
-	err = testee.Device("/etc/blockA", fifoAttrs)
+	err = testee.Device("/etc/blockA", blkAttrs)
+	require.NoError(t, err)
+	err = testee.Device("/etc/chrdevA", chardevAttrs)
 	require.NoError(t, err)
 	err = testee.Link("/etc/link-abs", "/etc/fileA")
 	require.NoError(t, err)
@@ -243,16 +247,12 @@ func AssertFsState(t *testing.T, rootfs, rootPath string, keywords []mtree.Keywo
 	expectedDirectoryHierarchy = strings.Replace(expectedDirectoryHierarchy, "$ROOT", rootPath, -1)
 	expectedDh, err := mtree.ParseSpec(strings.NewReader(expectedDirectoryHierarchy))
 	require.NoError(t, err)
-	err = os.Chmod(filepath.Join(rootfs, "etc", "blockA"), 0644)
-	if !os.IsNotExist(err) {
-		require.NoError(t, err)
-	}
 	dh, err := mtree.Walk(rootfs, nil, keywords, fseval.DefaultFsEval)
 	require.NoError(t, err)
 	diff, err := mtree.Compare(expectedDh, dh, keywords)
 	require.NoError(t, err)
 	// TODO: do not exclude device files from test but map mocked device files properly back in rootless mode
-	if len(diff) > 0 && (diff[0].Path() != "etc/blockA" || diff[0].Type() != mtree.Modified) {
+	if len(diff) > 0 /* && (diff[0].Path() != "etc/blockA" || diff[0].Type() != mtree.Modified)*/ {
 		var buf bytes.Buffer
 		_, err = dh.WriteTo(&buf)
 		require.NoError(t, err)

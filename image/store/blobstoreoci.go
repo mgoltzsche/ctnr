@@ -160,12 +160,7 @@ func (s *BlobStoreOci) NormalizedLayerFS(manifestDigest digest.Digest) (r fs.FsN
 	if r, err = s.LayerFS(manifestDigest); err != nil {
 		return
 	}
-	normalizer := fswriter.NewFsNodeWriter(tree.NewFS(), fs.HashingNilWriter())
-	if err = r.Write(&fs.ExpandingWriter{normalizer}); err != nil {
-		return nil, errors.Wrap(err, "normalize layer fs")
-	}
-	r = normalizer.FS()
-	return
+	return r.Normalized()
 }
 
 func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.Digest, author, createdBy string) (r *CommitResult, err error) {
@@ -184,12 +179,14 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 		if err != nil {
 			return nil, errors.WithMessage(err, "put layer: parent")
 		}
-
-		var layerStr bytes.Buffer
+		if s.rootless {
+			parentFs.MockDevices()
+		}
+		/*var layerStr bytes.Buffer
 		if err = parentFs.WriteTo(&layerStr, fs.AttrsMtime); err != nil {
 			return nil, errors.WithMessage(err, "put layer")
 		}
-		//os.Stdout.WriteString("##### parentfs:\n" + layerStr.String() + "\n")
+		os.Stdout.WriteString("## parentfs:\n" + layerStr.String() + "\n")*/
 	}
 	// Create new layer as delta from parent
 	layerFs, err := parentFs.Diff(rootfs)
@@ -198,7 +195,6 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 	}
 
 	if layerFs.Empty() {
-		// TODO: set r.Descriptor and return r without error
 		return nil, image.ErrorEmptyLayerDiff("empty layer")
 	}
 	var layerStr bytes.Buffer

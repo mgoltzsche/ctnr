@@ -12,7 +12,6 @@ import (
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/fs"
 	"github.com/mgoltzsche/cntnr/pkg/fs/source"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/openSUSE/umoci/pkg/system"
@@ -28,7 +27,7 @@ var _ fs.Writer = &DirWriter{}
 type DirWriter struct {
 	dir        string
 	dirTimes   map[string]fs.FileTimes
-	idMappings idutils.IdMappings
+	attrMapper fs.AttrMapper
 	fsEval     fseval.FsEval
 	rootless   bool
 	now        time.Time
@@ -36,10 +35,14 @@ type DirWriter struct {
 }
 
 func NewDirWriter(dir string, opts fs.FSOptions, warn log.Logger) (w *DirWriter) {
+	attrMapper := fs.RootlessAttrMapper
+	if !opts.Rootless {
+		attrMapper = fs.NewAttrMapper(opts.IdMappings)
+	}
 	return &DirWriter{
 		dir:        dir,
 		dirTimes:   map[string]fs.FileTimes{},
-		idMappings: opts.IdMappings,
+		attrMapper: attrMapper,
 		fsEval:     opts.FsEval,
 		rootless:   opts.Rootless,
 		now:        time.Now(),
@@ -207,7 +210,6 @@ func (w *DirWriter) device(file string, a fs.DeviceAttrs) (err error) {
 func (w *DirWriter) Device(path string, a fs.DeviceAttrs) (err error) {
 	if w.rootless {
 		w.warn.Println("dirwriter: faking device in rootless mode: " + path)
-		a.Mode = 0
 		_, err = w.File(path, source.NewSourceFile(fs.NewReadableBytes([]byte{}), a.FileAttrs))
 	} else {
 		err = w.device(path, a)
@@ -282,13 +284,12 @@ func (w *DirWriter) writeMetadataChmod(file string, a fs.FileAttrs) (err error) 
 
 func (w *DirWriter) writeMetadata(file string, a fs.FileAttrs) (err error) {
 	// chown
+	if err = w.attrMapper.ToHost(&a); err != nil {
+		return errors.Wrapf(err, "write file metadata: %s", file)
+	}
 	if !w.rootless {
 		// TODO: use fseval method if available
-		var u idutils.UserIds
-		if u, err = a.UserIds.ToHost(w.idMappings); err != nil {
-			return errors.Wrapf(err, "write file metadata: %s", file)
-		}
-		if err = errors.Wrap(os.Lchown(file, int(u.Uid), int(u.Gid)), "chown"); err != nil {
+		if err = errors.Wrap(os.Lchown(file, int(a.Uid), int(a.Gid)), "chown"); err != nil {
 			return
 		}
 	}

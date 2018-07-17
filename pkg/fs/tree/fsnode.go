@@ -7,6 +7,7 @@ import (
 
 	"github.com/mgoltzsche/cntnr/pkg/fs"
 	"github.com/mgoltzsche/cntnr/pkg/fs/source"
+	"github.com/mgoltzsche/cntnr/pkg/fs/writer"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -20,6 +21,7 @@ var (
 	srcOverlayPseudoRoot = sourceNoop("noop source")
 	srcParentDir         = sourceParentDir("parent dir source")
 	srcWhiteout          = source.NewSourceWhiteout()
+	emptyContent         = fs.NewReadableBytes([]byte{})
 )
 
 type sourceParentDir string
@@ -119,6 +121,16 @@ func (f *FsNode) write(w fs.Writer, written map[fs.Source]string) (err error) {
 		err = f.next.write(w, written)
 	}
 	return
+}
+
+func (f *FsNode) Normalized() (fs.FsNode, error) {
+	normalizer := writer.NewFsNodeWriter(NewFS(), fs.HashingNilWriter())
+	if err := f.Write(&fs.ExpandingWriter{normalizer}); err != nil {
+		return nil, errors.Wrap(err, "normalize fs spec")
+	}
+	normalized := normalizer.FS().(*FsNode)
+	normalized.RemoveWhiteouts()
+	return normalized, nil
 }
 
 // Returns a file system tree containing only new and changed nodes.
@@ -340,6 +352,21 @@ func (f *FsNode) RemoveWhiteouts() {
 		} else {
 			c.RemoveWhiteouts()
 			last = c
+		}
+		c = c.next
+	}
+}
+
+// Removes whiteout nodes recursively in all children
+func (f *FsNode) MockDevices() {
+	var (
+		c = f.child
+	)
+	for c != nil {
+		if c.NodeType == fs.TypeDevice {
+			c.SetSource(source.NewSourceFile(emptyContent, c.source.Attrs().FileAttrs))
+		} else {
+			c.MockDevices()
 		}
 		c = c.next
 	}

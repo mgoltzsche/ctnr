@@ -39,6 +39,8 @@ type FsNode interface {
 	AddLower(path string, src Source) (FsNode, error)
 	AddWhiteout(path string) (FsNode, error)
 	Remove()
+	MockDevices()
+	Normalized() (FsNode, error)
 	WriteTo(w io.Writer, attrs AttrSet) error
 	Write(Writer) error
 	Diff(FsNode) (FsNode, error)

@@ -10,6 +10,7 @@ import (
 	"github.com/mgoltzsche/cntnr/pkg/fs"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/openSUSE/umoci/oci/layer"
+	"github.com/openSUSE/umoci/pkg/system"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -111,7 +112,7 @@ func unpackTarEntry(hdr *tar.Header, r io.Reader, dest string, w fs.Writer, link
 	// Convert attributes
 	fi := hdr.FileInfo()
 	a := fs.FileAttrs{
-		Mode:    fi.Mode(),
+		Mode:    fi.Mode() | os.FileMode(system.Tarmode(hdr.Typeflag)),
 		UserIds: idutils.UserIds{uint(hdr.Uid), uint(hdr.Gid)},
 		FileTimes: fs.FileTimes{
 			Atime: hdr.AccessTime,

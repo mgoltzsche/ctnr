@@ -34,13 +34,14 @@ func TestSources(t *testing.T) {
 	require.NoError(t, err)
 	err = os.Symlink(srcFile, srcLink)
 	require.NoError(t, err)
+
 	mtime, err := time.Parse(time.RFC3339, "2018-01-23T01:01:42Z")
 	require.NoError(t, err)
 	atime, err := time.Parse(time.RFC3339, "2018-01-23T01:02:42Z")
 	require.NoError(t, err)
 
 	// Test source file overlay variants
-	testee := NewSources(fseval.RootlessFsEval, idutils.MapRootless)
+	testee := NewSources(fseval.RootlessFsEval, fs.RootlessAttrMapper)
 	factory := func(file string, fi os.FileInfo, usr *idutils.UserIds) (fs.Source, error) {
 		return testee.File(file, fi, usr)
 	}
@@ -54,15 +55,16 @@ func TestSources(t *testing.T) {
 		t             fs.NodeType
 		factory       func(file string, fi os.FileInfo, usr *idutils.UserIds) (fs.Source, error)
 		file          string
+		expectedUsr   *idutils.UserIds
 		expectedPaths map[string]bool
 	}{
-		{fs.TypeFile, factory, srcFile, expectedFilePaths},
-		{fs.TypeFile, factoryX, srcFile, expectedFilePaths},
-		{fs.TypeSymlink, factory, srcLink, expectedFilePaths},
-		{fs.TypeSymlink, factoryX, srcLink, expectedFilePaths},
-		{fs.TypeOverlay, factoryX, tarFile, expectedArchivePaths},
-		{fs.TypeOverlay, factoryX, tarGzFile, expectedArchivePaths},
-		{fs.TypeOverlay, factoryX, tarBzFile, expectedArchivePaths},
+		{fs.TypeFile, factory, srcFile, &idutils.UserIds{1, 33}, expectedFilePaths},
+		{fs.TypeFile, factoryX, srcFile, nil, expectedFilePaths},
+		{fs.TypeSymlink, factory, srcLink, nil, expectedFilePaths},
+		{fs.TypeSymlink, factoryX, srcLink, nil, expectedFilePaths},
+		{fs.TypeOverlay, factoryX, tarFile, nil, expectedArchivePaths},
+		{fs.TypeOverlay, factoryX, tarGzFile, nil, expectedArchivePaths},
+		{fs.TypeOverlay, factoryX, tarBzFile, nil, expectedArchivePaths},
 		// TODO: test device and URL
 	} {
 		writerMock := testutils.NewWriterMock(t, fs.AttrsAll)
@@ -87,8 +89,8 @@ func TestSources(t *testing.T) {
 		wa, err = src.DeriveAttrs()
 		require.NoError(t, err)
 		hash2 := wa.Hash
-		if hash2 == "" && c.t != fs.TypeSymlink {
-			t.Errorf("%s: source hash is empty", c.file)
+		if hash2 == "" && c.t == fs.TypeFile {
+			t.Errorf("%s: source file hash is empty", c.file)
 		}
 		if hash1 != hash2 {
 			t.Errorf("%s: hash1 != hash1", c.file)
@@ -104,7 +106,7 @@ func TestSources(t *testing.T) {
 	}
 
 	// Test if actual file attributes applied
-	testee = NewSources(fseval.RootlessFsEval, idutils.MapIdentity)
+	testee = NewSources(fseval.RootlessFsEval, fs.NewAttrMapper(idutils.MapIdentity))
 	err = fseval.RootlessFsEval.Lutimes(srcFile, atime, mtime)
 	require.NoError(t, err)
 	uid := os.Geteuid()

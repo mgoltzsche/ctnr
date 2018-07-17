@@ -92,7 +92,7 @@ func (w *FsNodeWriter) Fifo(file string, a fs.DeviceAttrs) (err error) {
 }
 
 func (w *FsNodeWriter) Device(path string, a fs.DeviceAttrs) (err error) {
-	node, err := w.node.AddUpper(path, source.NewSourceBlock(a))
+	node, err := w.node.AddUpper(path, source.NewSourceDevice(a))
 	if err != nil {
 		return
 	}

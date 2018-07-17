@@ -27,15 +27,18 @@ func FromDir(rootfs string, rootless bool) (fs.FsNode, error) {
 	return b.FS()
 }
 
-func NewFsBuilder(fs fs.FsNode, opts fs.FSOptions) *FsBuilder {
+func NewFsBuilder(rootfs fs.FsNode, opts fs.FSOptions) *FsBuilder {
+	attrMapper := fs.RootlessAttrMapper
 	fsEval := fseval.DefaultFsEval
 	if opts.Rootless {
 		fsEval = fseval.RootlessFsEval
+	} else {
+		attrMapper = fs.NewAttrMapper(opts.IdMappings)
 	}
 	return &FsBuilder{
-		fs:      fs,
+		fs:      rootfs,
 		fsEval:  fsEval,
-		sources: source.NewSources(fsEval, opts.IdMappings),
+		sources: source.NewSources(fsEval, attrMapper),
 	}
 }
 

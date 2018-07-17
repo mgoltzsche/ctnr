@@ -10,7 +10,7 @@ type sourceDevice struct {
 	attrs fs.DeviceAttrs
 }
 
-func NewSourceBlock(attrs fs.DeviceAttrs) fs.Source {
+func NewSourceDevice(attrs fs.DeviceAttrs) fs.Source {
 	return &sourceDevice{attrs}
 }
 
