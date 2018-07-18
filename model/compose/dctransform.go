@@ -207,9 +207,10 @@ func toPorts(ports []types.ServicePortConfig) (r []model.PortBinding, err error)
 			return nil, errors.Errorf("invalid published port %d exceeded range", p.Published)
 		}
 		r = append(r, model.PortBinding{
+			Protocol:  p.Protocol,
 			Target:    uint16(p.Target),
 			Published: uint16(p.Published),
-			Protocol:  p.Protocol,
+			// TODO: compose parser that supports host IP mapping
 		})
 		// TODO: checkout p.Mode
 	}

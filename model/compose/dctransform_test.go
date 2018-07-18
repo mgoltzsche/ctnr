@@ -13,12 +13,6 @@ import (
 
 func TestLoad(t *testing.T) {
 	b, err := ioutil.ReadFile("full-example.json")
-
-	/*if err = os.Chdir("../../vendor/github.com/docker/cli/cli/compose/loader"); err != nil {
-		t.Fatal(err)
-		t.FailNow()
-	}*/
-
 	require.NoError(t, err)
 	expected, err := model.FromJSON(b)
 	require.NoError(t, err)
@@ -26,7 +20,9 @@ func TestLoad(t *testing.T) {
 	env["HOME"] = "/home/user"
 	actual, err := Load("../../vendor/github.com/docker/cli/cli/compose/loader/full-example.yml", "../../vendor/github.com/docker/cli/cli/compose/loader", env, log.NewNopLogger())
 	require.NoError(t, err)
-	fmt.Println(actual.JSON())
-	assert.Equal(t, expected.Services, actual.Services)
-	assert.Equal(t, expected.Volumes, actual.Volumes)
+	if !assert.Equal(t, expected.Services, actual.Services) ||
+		!assert.Equal(t, expected.Volumes, actual.Volumes) {
+		fmt.Println(actual.JSON())
+		t.FailNow()
+	}
 }

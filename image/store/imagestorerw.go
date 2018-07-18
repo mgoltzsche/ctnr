@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"os"
@@ -98,7 +99,7 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	if err != nil {
 		return
 	}
-	err = copy.Image(trustPolicy, destRef, srcRef, &copy.Options{
+	err = copy.Image(context.Background(), trustPolicy, destRef, srcRef, &copy.Options{
 		RemoveSignatures: false,
 		SignBy:           "",
 		ReportWriter:     os.Stdout,

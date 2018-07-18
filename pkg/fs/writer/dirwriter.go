@@ -14,7 +14,6 @@ import (
 	"github.com/mgoltzsche/cntnr/pkg/fs/source"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/openSUSE/umoci/pkg/fseval"
-	"github.com/openSUSE/umoci/pkg/system"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
@@ -199,8 +198,7 @@ func (w *DirWriter) device(file string, a fs.DeviceAttrs) (err error) {
 	if err = w.mkdirAll(filepath.Dir(file)); err != nil {
 		return
 	}
-	var dev system.Dev_t
-	dev = system.Dev_t(unix.Mkdev(uint32(a.Devmajor), uint32(a.Devminor)))
+	dev := unix.Mkdev(uint32(a.Devmajor), uint32(a.Devminor))
 	if err := w.fsEval.Mknod(file, a.Mode, dev); err != nil {
 		return errors.Wrap(err, "mknod")
 	}

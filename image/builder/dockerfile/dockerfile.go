@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/docker/docker/builder/dockerfile/parser"
+	"github.com/docker/docker/builder/dockerfile/shell"
 	"github.com/mgoltzsche/cntnr/image/builder"
-	"github.com/mgoltzsche/cntnr/image/builder/dockerfile/shell"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/pkg/errors"
@@ -41,7 +41,7 @@ type DockerfileBuilder struct {
 	runEnvMap  map[string]string
 	varScope   map[string]string
 	shell      []string
-	lex        *shell.ShellLex
+	lex        *shell.Lex
 	imageCount int
 	warn       log.Logger
 }
@@ -57,7 +57,7 @@ func LoadDockerfile(src io.Reader, ctxDir string, args map[string]string, warn l
 	if args == nil {
 		args = map[string]string{}
 	}
-	lex := shell.NewShellLex(r.EscapeToken)
+	lex := shell.NewLex(r.EscapeToken)
 	sh := []string{"/bin/sh", "-c"}
 	b = &DockerfileBuilder{ctxDir: ctxDir, buildArgs: args, shell: sh, lex: lex, warn: warn}
 	b.resetState()

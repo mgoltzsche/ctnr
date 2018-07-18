@@ -66,10 +66,6 @@
           "protocol": "tcp"
         },
         {
-          "target": 3000,
-          "protocol": "tcp"
-        },
-        {
           "target": 3001,
           "protocol": "tcp"
         },

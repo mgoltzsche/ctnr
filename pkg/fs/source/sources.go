@@ -13,8 +13,8 @@ import (
 	"github.com/mgoltzsche/cntnr/pkg/fs"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/fseval"
-	"github.com/openSUSE/umoci/pkg/system"
 	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
 )
 
 type Sources struct {
@@ -81,8 +81,8 @@ func (s *Sources) devAttrs(file string, a fs.FileAttrs) (r fs.DeviceAttrs, err e
 		return
 	}
 	r.FileAttrs = a
-	r.Devmajor = int64(system.Majordev(system.Dev_t(st.Rdev)))
-	r.Devminor = int64(system.Minordev(system.Dev_t(st.Rdev)))
+	r.Devmajor = int64(unix.Major(st.Rdev))
+	r.Devminor = int64(unix.Minor(st.Rdev))
 	return
 }
 

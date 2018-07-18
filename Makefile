@@ -29,12 +29,19 @@ all: binary-static cni-plugins-static
 binary-static: .buildimage
 	${DOCKERRUN} ${BUILDIMAGE} make binary BUILDTAGS="${BUILDTAGS_STATIC}" LDFLAGS="${LDFLAGS_STATIC}"
 
-binary: dependencies .dockerfileshellworkaround
+binary: dependencies
 	# Building application:
 	GOPATH="${GOPATH}" \
 	go build -o dist/bin/${BINARY} -a -ldflags "${LDFLAGS}" -tags "${BUILDTAGS}" "${PKGNAME}"
 
-test: dependencies .dockerfileshellworkaround
+generate: dependencies
+	GOPATH="${GOPATH}" \
+	go get github.com/golang/protobuf/protoc-gen-go
+	# GOPATH="${GOPATH}"
+	cd "${GOPATH}"/src/github.com/mgoltzsche/cntnr/vendor/github.com/rootless-containers/proto && \
+	"${GOPATH}/bin/protoc-gen-go" --go_out=. rootlesscontainers.proto
+
+test: dependencies
 	# Run tests
 	export GOPATH="${GOPATH}"; \
 	go test -tags "${BUILDTAGS}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS}" ./... | grep -Ev '/vendor/|^${PKGNAME}/build/|[^/]+_old/'`
@@ -99,10 +106,6 @@ ifeq ($(shell [ ! -d vendor -o "${UPDATE_DEPENDENCIES}" = TRUE ] && echo 0),0)
 else
 	# Skipping dependency update
 endif
-
-.dockerfileshellworkaround:
-	# This can be removed when https://github.com/containers/image/issues/445 is done
-	sed -E 's/^package dockerfile$$/package shell/g' vendor/github.com/docker/docker/builder/dockerfile/shell_parser.go > image/builder/dockerfile/shell/parser.go
 
 update-dependencies:
 	# Update dependencies
