@@ -22,9 +22,10 @@ import (
 
 var (
 	composeCmd = &cobra.Command{
-		Use:   "compose",
-		Short: "Manage docker compose files",
-		Long:  `Converts and runs docker compose files.`,
+		Use:    "compose",
+		Short:  "Manage docker compose files",
+		Long:   `Converts and runs docker compose files.`,
+		Hidden: true,
 	}
 	composeRunCmd = &cobra.Command{
 		Use:   "run [flags] FILE",

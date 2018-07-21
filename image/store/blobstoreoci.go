@@ -180,13 +180,11 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 			return nil, errors.WithMessage(err, "put layer: parent")
 		}
 		if s.rootless {
+			// Convert devices to files since dirwriter does so in rootless mode.
+			// (If this wouldn't be done device files contained within a parent
+			// image would become regular files on commit)
 			parentFs.MockDevices()
 		}
-		/*var layerStr bytes.Buffer
-		if err = parentFs.WriteTo(&layerStr, fs.AttrsMtime); err != nil {
-			return nil, errors.WithMessage(err, "put layer")
-		}
-		os.Stdout.WriteString("## parentfs:\n" + layerStr.String() + "\n")*/
 	}
 	// Create new layer as delta from parent
 	layerFs, err := parentFs.Diff(rootfs)

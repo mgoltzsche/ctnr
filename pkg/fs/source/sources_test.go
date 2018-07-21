@@ -41,7 +41,7 @@ func TestSources(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test source file overlay variants
-	testee := NewSources(fseval.RootlessFsEval, fs.RootlessAttrMapper)
+	testee := NewSources(fseval.RootlessFsEval, fs.NewRootlessAttrMapper(idutils.MapRootless))
 	factory := func(file string, fi os.FileInfo, usr *idutils.UserIds) (fs.Source, error) {
 		return testee.File(file, fi, usr)
 	}

@@ -28,10 +28,11 @@ func FromDir(rootfs string, rootless bool) (fs.FsNode, error) {
 }
 
 func NewFsBuilder(rootfs fs.FsNode, opts fs.FSOptions) *FsBuilder {
-	attrMapper := fs.RootlessAttrMapper
 	fsEval := fseval.DefaultFsEval
+	var attrMapper fs.AttrMapper
 	if opts.Rootless {
 		fsEval = fseval.RootlessFsEval
+		attrMapper = fs.NewRootlessAttrMapper(opts.IdMappings)
 	} else {
 		attrMapper = fs.NewAttrMapper(opts.IdMappings)
 	}

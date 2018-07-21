@@ -34,8 +34,10 @@ type DirWriter struct {
 }
 
 func NewDirWriter(dir string, opts fs.FSOptions, warn log.Logger) (w *DirWriter) {
-	attrMapper := fs.RootlessAttrMapper
-	if !opts.Rootless {
+	var attrMapper fs.AttrMapper
+	if opts.Rootless {
+		attrMapper = fs.NewRootlessAttrMapper(opts.IdMappings)
+	} else {
 		attrMapper = fs.NewAttrMapper(opts.IdMappings)
 	}
 	return &DirWriter{
