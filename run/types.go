@@ -51,10 +51,15 @@ type Container interface {
 	ID() string
 	Rootfs() string
 	Start() error
-	Stop()
-	Wait() error
-	Exec(*specs.Process, ContainerIO) error
+	// TODO: expose process
+	Exec(*specs.Process, ContainerIO) (Process, error)
 	Destroy() error
+	Process
+}
+
+type Process interface {
+	Wait() error
+	Stop()
 	Close() error
 }
 

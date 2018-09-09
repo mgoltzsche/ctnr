@@ -1,0 +1,13 @@
+FROM alpine:3.7
+RUN printf '#!/bin/sh\necho hello from copied app\n' > /script.sh && chmod 744 /script.sh
+
+FROM scratch
+COPY --from=0 /bin/busybox /bin/
+COPY --from=0 /lib/*musl* /lib/
+WORKDIR /bin
+ENTRYPOINT ["/bin/busybox"]
+COPY --from=0 script.sh copiedscript.sh
+RUN ["/bin/busybox", "sh", "-c", "[ ! -d /var ] || (ls -la /; false)"]
+RUN ["/bin/busybox", "sh", "/bin/copiedscript.sh"]
+
+# ASSERT CFG /config/Env=

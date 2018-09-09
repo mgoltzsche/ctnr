@@ -126,7 +126,7 @@ func WriteTestFileSystem(t *testing.T, testee fs.Writer) (tmpDir string, rootfs 
 	require.NoError(t, err)
 	reader, err := testee.File("etc/fileA", fileA)
 	require.NoError(t, err)
-	assert.NotNil(t, reader)
+	assert.NotNil(t, reader, "reader returned from File(/etc/fileA)")
 	_, err = testee.File("/etc/fileB", fileB)
 	require.NoError(t, err)
 	err = testee.Dir("etc/dirA", "", dirAttrs)

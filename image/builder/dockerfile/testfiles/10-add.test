@@ -1,0 +1,8 @@
+FROM alpine:3.7
+ADD entrypoint.sh /entrypoint.sh
+ADD --chown=root:root entrypoint.sh *.conf /
+ADD http://example.org/index.html /var/www/html/
+
+# ASSERT RUN [ -f "/entrypoint.sh" ] && [ -f "/cfg-a.conf" ] && [ -f "/var/www/html/index.html" ]
+
+# TODO: test different users (need to run test as root or use proot)

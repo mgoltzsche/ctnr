@@ -1,4 +1,4 @@
 FROM alpine:3.7
 NAME 0
 
-WORKDIR /opt/app
+WORKDIR /etc

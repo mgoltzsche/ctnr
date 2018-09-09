@@ -3,6 +3,7 @@ package builder
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,6 +16,9 @@ import (
 	"github.com/mgoltzsche/cntnr/bundle"
 	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/cntnr/pkg/fs"
+	"github.com/mgoltzsche/cntnr/pkg/fs/tree"
+	"github.com/mgoltzsche/cntnr/pkg/fs/writer"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/run"
@@ -41,15 +45,17 @@ type ImageBuildConfig struct {
 type ImageBuilder struct {
 	images        image.ImageStoreRW
 	bundles       bundle.BundleStore
+	imageResolver ImageResolver
 	config        ispecs.Image
 	image         *image.Image
 	cache         ImageBuildCache
 	bundle        *bundle.LockedBundle
 	container     run.Container
 	lockedBundles []*bundle.LockedBundle
-	namedFs       map[string]string
+	namedFs       map[string]*imageFs
 	namedImages   map[string]image.Image
 	buildNames    []string
+	fsBuilder     *tree.FsBuilder
 	stdio         run.ContainerIO
 	tempDir       string
 	runRoot       string
@@ -58,8 +64,33 @@ type ImageBuilder struct {
 	loggers       log.Loggers
 }
 
+type imageFs struct {
+	rootfs  string
+	imageId digest.Digest
+}
+
+type ImageResolver func(store image.ImageStoreRW, image string) (img image.Image, err error)
+
+func ResolveDockerImage(store image.ImageStoreRW, imageRef string) (img image.Image, err error) {
+	if img, err = image.GetLocalImage(store, imageRef); image.IsImageNameNotExist(err) {
+		transport := ""
+		if p := strings.Index(imageRef, ":"); p > 0 {
+			transport = imageRef[:p]
+		}
+		if !store.SupportsTransport(transport) {
+			imageRef = "docker://" + imageRef
+			img, err = image.GetLocalImage(store, imageRef)
+		}
+		if image.IsImageNameNotExist(err) {
+			img, err = store.ImportImage(imageRef)
+		}
+	}
+	return
+}
+
 func NewImageBuilder(cfg ImageBuildConfig) (r *ImageBuilder) {
 	r = &ImageBuilder{}
+	r.imageResolver = image.GetImage
 	if cfg.Tempfs == "" {
 		r.tempDir = os.TempDir()
 	} else {
@@ -77,13 +108,21 @@ func NewImageBuilder(cfg ImageBuildConfig) (r *ImageBuilder) {
 	r.rootless = cfg.Rootless
 	r.proot = cfg.PRoot
 	r.loggers = cfg.Loggers
-	now := time.Now()
-	r.config.Created = &now
-	r.config.Architecture = runtime.GOARCH
-	r.config.OS = runtime.GOOS
-	r.namedFs = map[string]string{}
+	r.initConfig()
+	r.namedFs = map[string]*imageFs{}
 	r.namedImages = map[string]image.Image{}
 	return
+}
+
+func (b *ImageBuilder) initConfig() {
+	now := time.Now()
+	b.config.Created = &now
+	b.config.Architecture = runtime.GOARCH
+	b.config.OS = runtime.GOOS
+}
+
+func (b *ImageBuilder) SetImageResolver(r ImageResolver) {
+	b.imageResolver = r
 }
 
 func (b *ImageBuilder) Close() (err error) {
@@ -92,6 +131,9 @@ func (b *ImageBuilder) Close() (err error) {
 		err = exterrors.Append(err, b.Close())
 	}
 	b.lockedBundles = nil
+	for _, imgfs := range b.namedFs {
+		err = exterrors.Append(err, os.RemoveAll(imgfs.rootfs))
+	}
 	err = errors.WithMessage(err, "close image builder")
 	return
 }
@@ -136,7 +178,9 @@ func (b *ImageBuilder) initBundle() (err error) {
 	if b.proot != "" {
 		bb.SetPRootPath(b.proot)
 	}
+	// TODO: use separate default network when not in rootless mode
 	bb.UseHostNetwork()
+	bb.SetProcessTerminal(false)
 	bundle, err := b.bundles.CreateBundle(bb, false)
 	if err == nil {
 		b.bundle = bundle
@@ -172,6 +216,23 @@ func (b *ImageBuilder) initContainer() (err error) {
 	return
 }
 
+func (b *ImageBuilder) fs() (r *tree.FsBuilder, err error) {
+	if b.fsBuilder == nil {
+		var rootfs fs.FsNode
+		if b.image == nil {
+			rootfs = tree.NewFS()
+		} else {
+			rootfs, err = b.images.FS(b.image.ID())
+			if err != nil {
+				return nil, err
+			}
+		}
+		b.fsBuilder = tree.NewFsBuilder(rootfs, fs.NewFSOptions(b.rootless))
+	}
+	r = b.fsBuilder
+	return
+}
+
 func (b *ImageBuilder) Image() *digest.Digest {
 	if b.image == nil {
 		return nil
@@ -191,6 +252,9 @@ func (b *ImageBuilder) BuildName(name string) {
 }
 
 func (b *ImageBuilder) FromImage(imageName string) (err error) {
+	if imageName == "" {
+		return errors.New("from: no base image name provided")
+	}
 	if err = b.closeContainer(); err != nil {
 		return
 	}
@@ -204,7 +268,7 @@ func (b *ImageBuilder) FromImage(imageName string) (err error) {
 			if spec.Root != nil {
 				rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
 				for _, name := range b.buildNames {
-					b.namedFs[name] = rootfs
+					b.namedFs[name] = &imageFs{rootfs, b.image.ID()}
 				}
 				b.bundle = nil
 			} else {
@@ -222,10 +286,16 @@ func (b *ImageBuilder) FromImage(imageName string) (err error) {
 		return
 	}
 	b.loggers.Info.Println("FROM", imageName)
-	img, err := image.GetImage(b.images, imageName)
-	if err == nil {
-		err = b.setImage(&img)
+	var imgp *image.Image
+	if imageName != "scratch" {
+		img, err := b.imageResolver(b.images, imageName)
+		if err != nil {
+			return err
+		}
+		imgp = &img
 	}
+	b.fsBuilder = nil
+	err = b.setImage(imgp)
 	return
 }
 
@@ -235,10 +305,10 @@ func (b *ImageBuilder) SetAuthor(author string) error {
 }
 
 func (b *ImageBuilder) SetUser(user string) (err error) {
-	user = idutils.ParseUser(user).String()
-	b.config.Config.User = user
-	return b.cached("USER "+user, func(createdBy string) (err error) {
-		if _, err = b.resolveUser(nil); err == nil {
+	usr := idutils.ParseUser(user)
+	b.config.Config.User = usr.String()
+	return b.cached("USER "+usr.String(), func(createdBy string) (err error) {
+		if _, err = b.resolveUser(&usr); err == nil {
 			err = b.commitConfig(createdBy)
 		}
 		return
@@ -268,12 +338,21 @@ func kvEntries(m map[string]string) []string {
 }
 
 func (b *ImageBuilder) SetWorkingDir(dir string) error {
-	dir = filepath.Clean(dir)
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(b.config.Config.WorkingDir, dir)
-	}
+	dir = filepath.Clean(b.absImagePath(dir))
 	b.config.Config.WorkingDir = dir
 	return b.cached("WORKDIR "+dir, b.commitConfig)
+}
+
+func (b *ImageBuilder) absImagePath(path string) string {
+	origPath := path
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(b.config.Config.WorkingDir, path)
+	}
+	path = filepath.Clean(path)
+	if strings.HasSuffix(origPath, string(filepath.Separator)) {
+		path += string(filepath.Separator)
+	}
+	return path
 }
 
 func (b *ImageBuilder) SetEntrypoint(entrypoint []string) (err error) {
@@ -361,7 +440,12 @@ func ValidateExposedPorts(ports []string) error {
 
 func (b *ImageBuilder) setImage(img *image.Image) (err error) {
 	b.image = img
-	b.config, err = img.Config()
+	if img == nil {
+		b.config = ispecs.Image{}
+		b.initConfig()
+	} else {
+		b.config, err = img.Config()
+	}
 	return
 }
 
@@ -394,17 +478,24 @@ func (b *ImageBuilder) Run(args []string, addEnv map[string]string) (err error) 
 			return
 		}
 
-		if err = b.container.Exec(proc, b.stdio); err != nil {
-			return
-		}
-		rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
-		src, err := b.images.NewLayerSource(rootfs)
+		p, err := b.container.Exec(proc, b.stdio)
 		if err != nil {
 			return
 		}
-		err = b.commitLayer(src, createdBy)
-		err = exterrors.Append(err, src.Close())
-		return
+		defer func() {
+			if e := p.Close(); e != nil && err == nil {
+				err = e
+			}
+		}()
+		if err = p.Wait(); err != nil {
+			return
+		}
+		rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
+		fsNode, err := tree.FromDir(rootfs, b.rootless)
+		if err != nil {
+			return
+		}
+		return b.addLayer(fsNode, createdBy)
 	})
 }
 
@@ -440,135 +531,184 @@ func (b *ImageBuilder) Tag(tag string) (err error) {
 	return
 }
 
-func (b *ImageBuilder) AddFiles(srcDir string, srcPattern []string, dest string, user *idutils.User) (err error) {
-	return b.addFiles(srcPattern, dest, user, func(rootfs, dest string, usr *idutils.UserIds) (image.LayerSource, error) {
-		return b.images.NewLayerSourceOverlayed(rootfs, srcDir, srcPattern, dest, usr)
-	})
+func (b *ImageBuilder) AddFiles(buildDir string, srcPattern []string, dest string, user *idutils.User) (err error) {
+	return b.addFiles(buildDir, srcPattern, dest, user, "ADD", opAdd)
 }
 
-func (b *ImageBuilder) AddFilesFromImage(srcImage string, srcPattern []string, dest string, user *idutils.User) (err error) {
-	if fs := b.namedFs[srcImage]; fs != "" {
-		return b.AddFiles(fs, srcPattern, dest, user)
-	}
-	img, ok := b.namedImages[srcImage]
-	if !ok {
-		if img, err = image.GetImage(b.images, srcImage); err != nil {
-			return
-		}
-	}
-	return b.addFiles(srcPattern, dest, user, func(rootfs, dest string, usr *idutils.UserIds) (image.LayerSource, error) {
-		return b.images.NewLayerSourceFromImage(rootfs, img, srcPattern, dest, usr)
-	})
+func (b *ImageBuilder) CopyFiles(buildDir string, srcPattern []string, dest string, user *idutils.User) (err error) {
+	return b.addFiles(buildDir, srcPattern, dest, user, "COPY", opCopy)
 }
 
-type layerSourceFactory func(string, string, *idutils.UserIds) (image.LayerSource, error)
+type addOp func(fs *tree.FsBuilder, buildDir string, srcPattern []string, dest string, usr *idutils.UserIds)
 
-func (b *ImageBuilder) addFiles(srcPattern []string, dest string, user *idutils.User, factory layerSourceFactory) (err error) {
-	// TODO: also support HTTP URLs as src
-	// TODO: unpack local archives when provided as source
+func opAdd(fs *tree.FsBuilder, buildDir string, srcPattern []string, dest string, usr *idutils.UserIds) {
+	fs.AddAll(buildDir, srcPattern, dest, usr)
+}
+
+func opCopy(fs *tree.FsBuilder, buildDir string, srcPattern []string, dest string, usr *idutils.UserIds) {
+	fs.CopyAll(buildDir, srcPattern, dest, usr)
+}
+
+func (b *ImageBuilder) addFiles(ctxDir string, srcPattern []string, dest string, user *idutils.User, opName string, modifyfs addOp) (err error) {
+	dest = b.absImagePath(dest)
 	defer exterrors.Wrapd(&err, "add files")
 	if len(srcPattern) == 0 {
 		return
 	}
-	rootfs, dest, usr, err := b.fsState(dest, user)
+	fsBuilder, err := b.fs()
 	if err != nil {
 		return
 	}
-	src, err := factory(rootfs, dest, usr)
-	if err != nil {
-		err = exterrors.Append(err, b.closeContainerAndBundle())
-		return
-	}
-	defer func() {
-		err = exterrors.Append(err, src.Close())
-	}()
-	hash, err := src.DiffHash()
+	usr, err := b.resolveUser(user)
 	if err != nil {
 		return
 	}
-	createdBy := "COPY " + hash.String()
+	modifyfs(fsBuilder, ctxDir, srcPattern, dest, usr)
+	imagefs, err := fsBuilder.FS()
+	if err != nil {
+		return
+	}
+	hash, err := imagefs.Hash(fs.AttrsHash)
+	if err != nil {
+		return
+	}
+	createdBy := fmt.Sprintf("%s --chown=%v %s", opName, user, hash)
 	return b.cached(createdBy, func(createdBy string) (err error) {
-		return b.commitLayer(src, createdBy)
+		return b.addLayerAndUpdateBundleFS(imagefs, createdBy)
 	})
 }
 
-func (b *ImageBuilder) fsState(dest string, user *idutils.User) (rootfs, dir string, usr *idutils.UserIds, err error) {
-	if rootfs, err = b.getRootfs(); err == nil {
-		if dir, err = b.resolveDestDir(dest); err == nil {
-			usr, err = b.resolveUser(user)
+func (b *ImageBuilder) CopyFilesFromImage(srcImage string, srcPattern []string, dest string, user *idutils.User) (err error) {
+	dest = b.absImagePath(dest)
+	defer exterrors.Wrapd(&err, "add files from image")
+
+	s := make([]string, len(srcPattern))
+	for i, e := range srcPattern {
+		s[i] = strconv.Quote(e)
+	}
+	var imageId digest.Digest
+	var cacheablefn func(createdBy string) error
+	if fs := b.namedFs[srcImage]; fs != nil {
+		// Copy from previous build's temp file system
+		imageId = fs.imageId
+		cacheablefn = func(createdBy string) error {
+			return b.addFiles(fs.rootfs, srcPattern, dest, user, "COPY", opCopy)
 		}
+	} else {
+		// Copy from image
+		img, ok := b.namedImages[srcImage]
+		if !ok {
+			if img, err = b.imageResolver(b.images, srcImage); err != nil {
+				return
+			}
+		}
+		imageId = img.ID()
+		cacheablefn = func(createdBy string) (err error) {
+			// Unpack image in temp dir
+			err = os.MkdirAll(b.tempDir, 0750)
+			if err != nil {
+				return errors.New(err.Error())
+			}
+			imgRootfs, err := ioutil.TempDir(b.tempDir, ".tmp-imgfs-")
+			if err != nil {
+				return errors.New(err.Error())
+			}
+			// Store this image's fs in named fs map to be able to reuse it
+			// (fs is deleted when builder is closed)
+			imgRootfs = filepath.Join(imgRootfs, "rootfs")
+			b.namedFs[srcImage] = &imageFs{imgRootfs, imageId}
+			if err = img.Unpack(imgRootfs); err != nil {
+				return
+			}
+
+			// Resolve user
+			usr, err := b.resolveUser(user)
+			if err != nil {
+				return
+			}
+
+			// Add files
+			fsBuilder, err := b.fs()
+			if err != nil {
+				return
+			}
+			fsBuilder.CopyAll(imgRootfs, srcPattern, dest, usr)
+			imagefs, err := fsBuilder.FS()
+			if err != nil {
+				return
+			}
+			return b.addLayerAndUpdateBundleFS(imagefs, createdBy)
+		}
+	}
+	createdBy := fmt.Sprintf("COPY --from=%s --chown=%q %s %q", imageId, user, strings.Join(s, ", "), dest)
+	return b.cached(createdBy, cacheablefn)
+}
+
+func (b *ImageBuilder) addLayer(imagefs fs.FsNode, createdBy string) (err error) {
+	var parentImgId *digest.Digest
+	if b.image != nil {
+		pImgId := b.image.ID()
+		parentImgId = &pImgId
+	}
+	img, err := b.images.AddLayer(imagefs, parentImgId, b.config.Author, createdBy)
+	if err != nil {
+		return
+	}
+	if err = b.setImage(&img); err != nil {
+		return
+	}
+	b.fsBuilder = tree.NewFsBuilder(imagefs, fs.NewFSOptions(b.rootless))
+	if b.bundle != nil {
+		imgId := img.ID()
+		err = b.bundle.SetParentImageId(&imgId)
+	}
+	return
+}
+
+func (b *ImageBuilder) addLayerAndUpdateBundleFS(imagefs fs.FsNode, createdBy string) (err error) {
+	if b.bundle != nil {
+		// Write files into bundle's rootfs as well if exists
+		var bspec *rspecs.Spec
+		if bspec, err = b.bundle.Spec(); err != nil {
+			return errors.Wrap(err, "update bundle with new layer contents")
+		}
+		if bspec.Root != nil {
+			bundlefs := filepath.Join(b.bundle.Dir(), bspec.Root.Path)
+			dirWriter := writer.NewDirWriter(bundlefs, fs.NewFSOptions(b.rootless), b.loggers.Warn)
+			if err = imagefs.Write(dirWriter); err == nil {
+				err = dirWriter.Close()
+			}
+			if err != nil {
+				err = exterrors.Append(err, b.closeContainerAndBundle())
+			}
+		}
+	}
+	if err = b.addLayer(imagefs, createdBy); err != nil {
+		return
 	}
 	return
 }
 
 func (b *ImageBuilder) resolveUser(u *idutils.User) (usrp *idutils.UserIds, err error) {
-	user := idutils.ParseUser(b.config.Config.User)
-	if u != nil {
-		user = *u
+	if u == nil {
+		return &idutils.UserIds{}, nil
 	}
-	if user.String() == "" {
-		return nil, nil
+	user, err := u.ToIds()
+	if err == nil {
+		return &user, nil
 	}
-	usr, err := user.ToIds()
-	if err != nil {
-		if err = b.initBundle(); err == nil {
-			s, _ := b.bundle.Spec()
+
+	// TODO: better resolve user using bundle's rootfs only when available, otherwise image's rootfs
+	if err = b.initBundle(); err == nil {
+		s, _ := b.bundle.Spec()
+		if s.Root != nil {
 			rootfs := filepath.Join(b.bundle.Dir(), s.Root.Path)
-			usr, err = user.Resolve(rootfs)
+			user, err = u.Resolve(rootfs)
+		} else {
+			err = errors.New("no rootfs available")
 		}
 	}
-	usrp = &usr
-	return
-}
-
-func (b *ImageBuilder) getRootfs() (rootfs string, err error) {
-	if b.bundle == nil {
-		return
-	}
-	s, err := b.bundle.Spec()
-	if err == nil {
-		rootfs = filepath.Join(b.bundle.Dir(), s.Root.Path)
-	}
-	return
-}
-
-// Resolve dir against current image's working dir
-func (b *ImageBuilder) resolveDestDir(dir string) (r string, err error) {
-	if filepath.IsAbs(dir) {
-		r = dir
-	} else {
-		workingDir := "/"
-		if b.image != nil {
-			cfg, e := b.image.Config()
-			if e != nil {
-				return "", e
-			}
-			workingDir = cfg.Config.WorkingDir
-		}
-		r = filepath.Join(workingDir, dir)
-		if len(dir) > 0 && strings.LastIndex(dir, "/") == len(dir)-1 {
-			r += "/"
-		}
-	}
-	return
-}
-
-func (b *ImageBuilder) commitLayer(src image.LayerSource, createdBy string) (err error) {
-	var parentImageId *digest.Digest
-	if b.image != nil {
-		pImgId := b.image.ID()
-		parentImageId = &pImgId
-	}
-	img, err := b.images.AddImageLayer(src, parentImageId, b.config.Author, createdBy)
-	if err == nil {
-		if err = b.setImage(&img); err == nil {
-			newImageId := img.ID()
-			if b.bundle != nil {
-				err = b.bundle.SetParentImageId(&newImageId)
-			}
-		}
-	}
-	return errors.Wrap(err, "commit layer")
+	return &user, errors.Wrap(err, "resolve user name")
 }
 
 func (b *ImageBuilder) commitConfig(createdBy string) (err error) {
@@ -617,6 +757,7 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 			b.loggers.Info.WithField("img", cachedImg.ID()).Printf("Using cached image")
 			err = b.setImage(&cachedImg)
 			err = errors.Wrap(err, "cached image")
+			b.fsBuilder = nil
 			return
 		} else if !image.IsImageIdNotExist(e) {
 			return errors.WithMessage(e, "load cached image")
@@ -632,7 +773,7 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 		return
 	}
 
-	err = b.cache.Put(parentImgId, uniqCreatedBy, (*b.image).ID())
+	err = b.cache.Put(parentImgId, uniqCreatedBy, b.image.ID())
 
 	b.loggers.Info.WithField("img", (*b.image).ID()).Printf("Built new image")
 

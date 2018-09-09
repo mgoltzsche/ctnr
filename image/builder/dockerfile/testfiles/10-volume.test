@@ -1,3 +1,6 @@
 FROM alpine:3.7
-VOLUME /etc/app
-VOLUME /etc/app /data/dir
+VOLUME /var/app
+VOLUME /var/app /data/dir
+
+# ASSERT CFG /config/Volumes/~1data~1dir=map[]
+# ASSERT CFG /config/Volumes/~1var~1app=map[]

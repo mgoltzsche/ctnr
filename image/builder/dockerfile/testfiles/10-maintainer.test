@@ -1,2 +1,4 @@
 FROM alpine:3.7
 MAINTAINER Max Goltzsche <max.goltzsche@gmail.com>
+
+# ASSERT CFG /author=Max Goltzsche <max.goltzsche@gmail.com>

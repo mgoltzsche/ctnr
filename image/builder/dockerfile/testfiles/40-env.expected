@@ -2,37 +2,50 @@ FROM alpine:3.7
 NAME 0
 
 ENV "VAR1"="myval"
-ENV "VAR1"="myval1"
+ENV "VAR1"="entrypoint.sh"
 ENV "VARX"="myvalx"
 ENV "VARA"="80" "VARB"="443"
 ENV "VARL"="long value"
 
 
-ENV "SVAR1"="myval1"
-ENV "SVAR2"="myval1"
+ENV "SVAR1"="entrypoint.sh"
+ENV "SVAR2"="entrypoint.sh"
 ENV "SVAR3"="$VAR1"
 ENV "SVAR4"="${VAR1}"
 
-COPY dir="./ctx" "myval1" "/dest" nil
-COPY dir="./ctx" "/src" "myval1" nil
-COPY dir="./ctx" "/src" "/dest" myval1
-COPY image="myval1" "/src" "/dest" nil
+ENV "USR"="0:0"
+ENV "BASEIMAGE"="alpine:3.7"
+ENV "WORK"="/etc"
+
+COPY dir="./ctx" "entrypoint.sh" "/dest" nil
+COPY dir="./ctx" "/entrypoint.sh" "/entrypoint.sh" nil
+COPY dir="./ctx" "/entrypoint.sh" "/dest" 0:0
+COPY image="alpine:3.7" "etc/hosts" "/dest" nil
+
+ADD dir="./ctx" "entrypoint.sh" "/dest" nil
+ADD dir="./ctx" "/entrypoint.sh" "/entrypoint.sh" nil
+ADD dir="./ctx" "/entrypoint.sh" "/dest" 0:0
 
 EXPOSE 80 443
 
 LABEL "myvalx"="long value"
 
-STOPSIGNAL 80
+ENV "VARSTOP"="SIGTERM"
+STOPSIGNAL SIGTERM
 
-USER myval1
+USER 0:0
 
-VOLUME "myval1" "myvalx"
+VOLUME "myvalx" "long value"
 
-WORKDIR myvalx
+WORKDIR /etc
+WORKDIR /
 
 
-RUN "/bin/sh" "-c" "echo $VAR1"
+RUN "/bin/sh" "-c" "[ \"$VAR1\" = entrypoint.sh ]"
 ENTRYPOINT "/bin/sh" "-c" "echo $VAR1"
 ENTRYPOINT "/bin/echo" "$VAR1"
 CMD "/bin/sh" "-c" "echo $VAR1"
 CMD "/bin/echo" "$VAR1"
+
+ENV "NEWVAR"="myvalx"
+WORKDIR /etc

@@ -70,5 +70,14 @@ func runExec(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	return container.Exec(sp.Process, run.NewStdContainerIO())
+	proc, err := container.Exec(sp.Process, run.NewStdContainerIO())
+	if err != nil {
+		return
+	}
+	defer func() {
+		if e := proc.Close(); e != nil && err == nil {
+			err = e
+		}
+	}()
+	return proc.Wait()
 }

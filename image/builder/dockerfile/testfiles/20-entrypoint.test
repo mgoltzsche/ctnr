@@ -1,3 +1,5 @@
 FROM alpine:3.7
 ENTRYPOINT ["/entrypoint.sh", "-x"]
 ENTRYPOINT /entrypoint.sh -x
+
+# ASSERT CFG /config/Entrypoint=[/bin/sh -c /entrypoint.sh -x]

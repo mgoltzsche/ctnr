@@ -61,12 +61,15 @@ func (s *WriterMock) Lazy(path, name string, src fs.LazySource, _ map[fs.Source]
 func (s *WriterMock) File(path string, src fs.FileSource) (fs.Source, error) {
 	require.NotNil(s.t, src, "%s: source not provided", path)
 	a := src.Attrs()
-	da, err := src.DeriveAttrs()
-	require.NoError(s.t, err)
 	require.True(s.t, a.Mode != 0 || strings.Contains(path, "blockA") || strings.Contains(path, "chrdevA"), "%s: mode != 0", path)
 	require.True(s.t, a.Symlink == "", "%s: link != ''", path)
-	require.True(s.t, da.Hash != "", "%s: hash == ''", path)
-	line := s.opString("file", path, &a.FileAttrs) + " hash=" + da.Hash
+	line := s.opString("file", path, &a.FileAttrs)
+	if s.attrs&fs.AttrsHash != 0 {
+		da, err := src.DeriveAttrs()
+		require.NoError(s.t, err)
+		require.True(s.t, da.Hash != "", "%s: hash == ''", path)
+		line += " hash=" + da.Hash
+	}
 	s.Nodes = append(s.Nodes, line)
 	s.Written = append(s.Written, line)
 	s.WrittenPaths[filepath.Clean("/"+path)] = true

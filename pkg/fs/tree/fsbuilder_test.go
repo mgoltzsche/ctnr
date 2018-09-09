@@ -49,15 +49,17 @@ func TestFsBuilder(t *testing.T) {
 		"/dir/fileB": true,
 	}
 	expectedFileCopyOps := map[string]bool{
-		"/":                    true,
-		"/dir":                 true,
-		"/dir/x":               true,
-		"/dir/x/fifo":          true,
-		"/dir/x/fileA":         true,
-		"/dir/x/link-abs":      true,
-		"/dir/x/nesteddir":     true,
-		"/dir/x/nestedsymlink": true,
-		"/dir/x/symlink-abs":   true,
+		"/":                             true,
+		"/dir":                          true,
+		"/dir/x":                        true,
+		"/dir/x/fifo":                   true,
+		"/dir/x/fileA":                  true,
+		"/dir/x/link-abs":               true,
+		"/dir/x/nesteddir":              true,
+		"/dir/x/nestedsymlink":          true,
+		"/dir/x/symlinkResolved1":       true,
+		"/dir/x/dirA1/symlinkResolved2": true,
+		"/dir/x/dirA1":                  true,
 	}
 	expectedDir1CopyOps := map[string]bool{
 		"/":                            true,
@@ -76,11 +78,11 @@ func TestFsBuilder(t *testing.T) {
 		expand        bool
 		expectedPaths map[string]bool
 	}{
-		{[]string{"rootfs/etc/fileA", "rootfs/etc/link-abs", "rootfs/etc/symlink-abs", "rootfs/dir1/sdir", "rootfs/etc/fifo"}, "dir/x", false, expectedFileCopyOps},
-		{[]string{"rootfs/etc/fileA", "rootfs/etc/link-abs", "rootfs/etc/symlink-abs", "rootfs/dir1/sdir", "rootfs/etc/fifo"}, "dir/x/", false, expectedFileCopyOps},
+		{[]string{"rootfs/etc/fileA", "rootfs/etc/link-abs", "rootfs/etc/symlink-rel", "rootfs/dir1/sdir", "rootfs/etc/fifo"}, "dir/x", false, expectedFileCopyOps},
+		{[]string{"rootfs/etc/fileA", "rootfs/etc/link-abs", "rootfs/etc/symlink-rel", "rootfs/dir1/sdir", "rootfs/etc/fifo"}, "dir/x/", false, expectedFileCopyOps},
 		{[]string{"rootfs/etc/fileA"}, "dir/fileX", false, map[string]bool{"/": true, "/dir": true, "/dir/fileX": true}},
 		{[]string{"rootfs/etc/fileA"}, "dir/", false, expectedFileA},
-		{[]string{filepath.Join(tmpDir, "rootfs/etc/fileA")}, "dir/", false, expectedFileA},
+		//{[]string{filepath.Join(tmpDir, "rootfs/etc/fileA")}, "dir/", false, expectedFileA},
 		{[]string{"rootfs/etc/file*"}, "dir", false, expectedFilesAB},
 		{[]string{"rootfs/dir1"}, "dest/dir", false, expectedDir1CopyOps},
 		{[]string{"rootfs/dir1/"}, "dest/dir", false, expectedDir1CopyOps},
@@ -89,15 +91,16 @@ func TestFsBuilder(t *testing.T) {
 		{[]string{"rootfs"}, "/all/", false, expectedRootfsOps},
 		// TODO: add URL source test case
 	} {
+		label := fmt.Sprintf("AddAll(ctx, %+v, %s)", c.src, c.dest)
 		rootfs := newFS()
 		testee := NewFsBuilder(rootfs, opts)
 		testee.AddAll(tmpDir, c.src, c.dest, nil)
 		w := testutils.NewWriterMock(t, fs.AttrsAll)
 		err := testee.Write(w)
-		require.NoError(t, err)
+		require.NoError(t, err, label)
 		rootfs.MockDevices()
 		// need to assert against path map since archive content write order is not guaranteed
-		if !assert.Equal(t, c.expectedPaths, w.WrittenPaths, fmt.Sprintf("AddAll(ctx, %+v, %s): unexpected written paths", c.src, c.dest)) {
+		if !assert.Equal(t, c.expectedPaths, w.WrittenPaths, label) {
 			t.FailNow()
 		}
 		_, err = testee.Hash(fs.AttrsAll)
@@ -116,7 +119,7 @@ func TestFsBuilder(t *testing.T) {
 
 	// Test written node tree equals original
 	testee = NewFsBuilder(newFS(), opts)
-	testee.AddDir(rootfs, "/", nil)
+	testee.CopyDir(rootfs, "/", nil)
 	var buf bytes.Buffer
 	tree, err := testee.FS()
 	require.NoError(t, err)
@@ -145,7 +148,7 @@ func TestFsBuilder(t *testing.T) {
 		testee := NewFsBuilder(newFS(), opts)
 		if i == 0 {
 			// rootfs dir
-			testee.AddDir(filepath.Join(tmpDir, c), "/", nil)
+			testee.CopyDir(filepath.Join(tmpDir, c), "/", nil)
 		} else {
 			// archive
 			testee.AddAll(tmpDir, []string{c}, "/", nil)
@@ -153,13 +156,13 @@ func TestFsBuilder(t *testing.T) {
 		// Normalize
 		rootfs := filepath.Join(tmpDir, "rootfs"+fmt.Sprintf("%d", i))
 		dirWriter := writer.NewDirWriter(rootfs, opts, warn)
-		nodeWriter := writer.NewFsNodeWriter(newFS(), dirWriter)
+		nodes := newFS()
+		nodeWriter := writer.NewFsNodeWriter(nodes, dirWriter)
 		err = testee.Write(&fs.ExpandingWriter{nodeWriter})
 		require.NoError(t, err)
 		err = dirWriter.Close()
 		require.NoError(t, err)
 		// Assert normalized string representation equals original
-		nodes := nodeWriter.FS()
 		buf.Reset()
 		err = nodes.WriteTo(&buf, fs.AttrsCompare)
 		require.NoError(t, err)
@@ -171,7 +174,7 @@ func TestFsBuilder(t *testing.T) {
 			t.FailNow()
 		}
 		// Assert fs.Diff(fs) should return empty tree
-		diff, err := tree.Diff(nodes.(*FsNode))
+		diff, err := tree.Diff(nodes)
 		require.NoError(t, err)
 		if !assert.Equal(t, []string{}, testutils.MockWrites(t, diff).Written, "a.Diff(a) should be empty") {
 			t.FailNow()
@@ -179,7 +182,7 @@ func TestFsBuilder(t *testing.T) {
 		// Assert fs.Diff(changedFs) == change
 		_, err = nodes.AddUpper("/etc/dir1", source.NewSourceDir(fs.FileAttrs{Mode: os.ModeDir | 0740}))
 		require.NoError(t, err)
-		diff, err = tree.Diff(nodes.(*FsNode))
+		diff, err = tree.Diff(nodes)
 		require.NoError(t, err)
 		w := testutils.NewWriterMock(t, fs.AttrsHash)
 		err = diff.Write(w)

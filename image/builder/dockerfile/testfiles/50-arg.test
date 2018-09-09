@@ -1,7 +1,10 @@
 FROM alpine:3.7
 
-ARG argd dval
+ARG argd entrypoint.sh
 ARG argp
+ARG argusr 0:0
+ARG argimg alpine:3.7
+ARG argvol /data
 ARG port1 80
 ARG port2 443/tcp
 
@@ -9,24 +12,28 @@ ENV MYVARX ${argd}
 ENV MYVARY ${argp}
 
 COPY $argd /dest
-COPY /src $argd
-COPY --chown=$argd /src /dest
-COPY --from=$argd /src /dest
+COPY /entrypoint.sh $argd
+COPY --chown=$argusr /entrypoint.sh /dest
+COPY --from=$argimg etc/hosts /dest
 
 EXPOSE $port1 $port2
 
 LABEL $argd=$argp
 
-STOPSIGNAL $argd
+ARG argstop SIGTERM
+STOPSIGNAL $argstop
 
-USER $argd
+USER $argusr
 
-VOLUME $argd $argp
+VOLUME $argp $argvol
 
-WORKDIR $argd
+WORKDIR $argvol
+WORKDIR /
 
 RUN echo $argd
 
 # Should not substitute
 ENTRYPOINT echo $argd
 ENTRYPOINT [ "/bin/echo", "$argd" ]
+
+# ASSERT CFG /config/StopSignal=SIGTERM

@@ -123,13 +123,15 @@ func (f *FsNode) write(w fs.Writer, written map[fs.Source]string) (err error) {
 	return
 }
 
+// Returns a new normalized file system tree
 func (f *FsNode) Normalized() (fs.FsNode, error) {
-	normalizer := writer.NewFsNodeWriter(NewFS(), fs.HashingNilWriter())
-	if err := f.Write(&fs.ExpandingWriter{normalizer}); err != nil {
+	normalized := NewFS()
+	normalizer := writer.NewFsNodeWriter(normalized, fs.HashingNilWriter())
+	expander := fs.ExpandingWriter{normalizer}
+	if err := f.Write(&expander); err != nil {
 		return nil, errors.Wrap(err, "normalize fs spec")
 	}
-	normalized := normalizer.FS().(*FsNode)
-	normalized.RemoveWhiteouts()
+	normalized.(*FsNode).RemoveWhiteouts()
 	return normalized, nil
 }
 

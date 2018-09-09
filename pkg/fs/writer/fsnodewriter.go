@@ -6,8 +6,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-var _ fs.Writer = &FsNodeWriter{}
-
 // Writer that builds a node tree and delegates operations to wrapped writer
 // using the inserted node's path.
 type FsNodeWriter struct {
@@ -16,7 +14,7 @@ type FsNodeWriter struct {
 	delegate fs.Writer
 }
 
-func NewFsNodeWriter(root fs.FsNode, delegate fs.Writer) (w *FsNodeWriter) {
+func NewFsNodeWriter(root fs.FsNode, delegate fs.Writer) (w fs.Writer) {
 	return &FsNodeWriter{root /*map[types.Source]string{},*/, delegate}
 }
 

@@ -1,2 +1,7 @@
 FROM alpine:3.7
 USER root
+
+# ASSERT CFG /config/User=root
+
+# TODO: test different users (need to run test as root or use proot)
+## ASSERT RUN [ "$$(id -u)" -eq 0 ] && [ "$$(id -g)" -eq 0 ]

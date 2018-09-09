@@ -1,2 +1,4 @@
 FROM alpine:3.7
 FROM alpine:3.7 as builder
+
+# ASSERT CFG /config/Cmd=[/bin/sh]

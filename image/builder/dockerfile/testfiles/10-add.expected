@@ -1,0 +1,6 @@
+FROM alpine:3.7
+NAME 0
+
+ADD dir="./ctx" "entrypoint.sh" "/entrypoint.sh" nil
+ADD dir="./ctx" "entrypoint.sh" "*.conf" "/" root:root
+ADD dir="./ctx" "http://example.org/index.html" "/var/www/html/" nil

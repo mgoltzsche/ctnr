@@ -105,7 +105,7 @@ func (s *BlobStoreOci) putImageConfig(cfg ispecs.Image, parentManifest *digest.D
 		return
 	}
 
-	// Create new manifest
+	// Create/load manifest
 	if parentManifest == nil {
 		manifest = ispecs.Manifest{}
 		manifest.Versioned.SchemaVersion = 2
@@ -114,8 +114,9 @@ func (s *BlobStoreOci) putImageConfig(cfg ispecs.Image, parentManifest *digest.D
 			err = errors.WithMessage(err, "put image config: parent manifest")
 			return
 		}
-		m(&manifest)
 	}
+
+	m(&manifest)
 
 	manifest.Config = d
 	d, err = s.putImageManifest(manifest)
@@ -135,8 +136,21 @@ func (s *BlobStoreOci) putJsonBlob(o interface{}) (d digest.Digest, size int64, 
 	return s.putBlob(&buf)
 }
 
+// Generates the Layer ChainID as digest of all layers.
+// See https://github.com/opencontainers/image-spec/blob/master/config.md#layer-chainid
+func chainID(layerIds []digest.Digest) (r digest.Digest) {
+	n := len(layerIds)
+	switch {
+	case n > 1:
+		r = digest.FromString(chainID(layerIds[:n-1]).String() + " " + layerIds[n-1].String())
+	case n == 1:
+		r = layerIds[n-1]
+	}
+	return
+}
+
 // TODO: use this also for image file system extraction
-func (s *BlobStoreOci) LayerFS(manifestDigest digest.Digest) (r fs.FsNode, err error) {
+func (s *BlobStoreOci) FS(manifestDigest digest.Digest) (r fs.FsNode, err error) {
 	defer func() {
 		err = errors.Wrap(err, "load fs from layers")
 	}()
@@ -155,25 +169,25 @@ func (s *BlobStoreOci) LayerFS(manifestDigest digest.Digest) (r fs.FsNode, err e
 	return
 }
 
-func (s *BlobStoreOci) NormalizedLayerFS(manifestDigest digest.Digest) (r fs.FsNode, err error) {
+func (s *BlobStoreOci) FSSpec(manifestDigest digest.Digest) (r fs.FsNode, err error) {
 	// TODO: cache whole operation (storing FsNode instead of mtree)
-	if r, err = s.LayerFS(manifestDigest); err != nil {
+	if r, err = s.FS(manifestDigest); err != nil {
 		return
 	}
 	return r.Normalized()
 }
 
+// Creates a new image with a layer containing the provided file system's difference to the parent provided image.
 func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.Digest, author, createdBy string) (r *CommitResult, err error) {
 	// Load parent
-	//parentFs := tree.NewFS()
-	var parentFs fs.FsNode
+	parentFs := tree.NewFS()
 	r = &CommitResult{}
 	if parentManifestDigest != nil {
 		var parentManifest ispecs.Manifest
 		parentManifest, err = s.ImageManifest(*parentManifestDigest)
 		if err == nil {
 			if r.Config, err = s.ImageConfig(parentManifest.Config.Digest); err == nil && len(parentManifest.Layers) > 0 {
-				parentFs, err = s.NormalizedLayerFS(*parentManifestDigest)
+				parentFs, err = s.FSSpec(*parentManifestDigest)
 			}
 		}
 		if err != nil {
@@ -384,7 +398,6 @@ func (s *BlobStoreOci) unpackLayers(manifest *ispecs.Manifest, dest string) (err
 		err = errors.Wrap(err, "unpack layers")
 	}()
 
-	// Create destination directory
 	if _, err = os.Stat(dest); err != nil {
 		return errors.New(err.Error())
 	}

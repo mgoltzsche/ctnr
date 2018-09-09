@@ -1,5 +1,9 @@
 FROM alpine:3.7
 COPY entrypoint.sh /entrypoint.sh
 COPY --chown=root:root entrypoint.sh *.conf /
-COPY --from=0 file1 file2 /
-COPY --from=0 --chown=root:root file1 file2 /
+COPY --from=alpine:3.7 etc/hosts /
+COPY --from=alpine:3.7 --chown=root:root /etc/passwd /
+
+# ASSERT RUN [ -f "/entrypoint.sh" ] && [ -f "/cfg-a.conf" ] && [ -f "/hosts" ] && [ -f "/passwd" ]
+
+# TODO: test different users (need to run test as root or use proot)

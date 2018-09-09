@@ -6,25 +6,13 @@ import (
 
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/fs"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
-// TODO: Make sure store is closed before running any container to free shared lock to allow other container to be prepared
-// TODO: base Commit method in BlobStore (so that mtree can move to blobstore), UnpackImage method in ImageStore
-
-// Minimal Store interface.
 // containers/storage interface is not used to ease the OCI store implementation
 // which is required by unprivileged users (https://github.com/containers/storage/issues/96)
-
-// TODO: no shared lock during whole store lifecycle
-//   but shared lock on image usage mark (touch) on every image load call (separate method from listing)
-//   and during the whole image import.
-//   PROBLEM: How to make sure no blobs of images that are about to be registered are garbage collected?
-//   => Check blob timestamp during GC -> Not reliable since blob hierarchy is registered after blobs are registered
-//     => Move write methods into separate update(func(ImageWriter)) method which opens shared lock during call
 
 type ImageStore interface {
 	ImageStoreRO
@@ -50,17 +38,14 @@ type ImageStoreRW interface {
 	ImageStoreRO
 	MarkUsedImage(imageId digest.Digest) error
 	ImportImage(name string) (Image, error)
+	SupportsTransport(transportName string) bool
 	AddImageConfig(m ispecs.Image, parentImageId *digest.Digest) (Image, error)
-	NewLayerSource(rootfs string) (LayerSource, error)
-	NewLayerSourceOverlayed(rootfs, addDir string, addPattern []string, dest string, usr *idutils.UserIds) (LayerSource, error)
-	NewLayerSourceFromImage(rootfs string, img Image, filePattern []string, dest string, usr *idutils.UserIds) (LayerSource, error)
-	// Creates a new layer or returns errEmptyLayerDiff if nothing has changed
-	AddImageLayer(src LayerSource, parentImageId *digest.Digest, author, comment string) (Image, error)
 	// TODO:
-	//   a1) apply new interface
-	//   a2) add ADD impl using FsNode to Dockerfile builder and write integration test
-	//   b) replace MtreeStore with FsNodeStore
+	//   a1) apply new interface - done
+	//   a2) add ADD impl using FsNode to Dockerfile builder and write integration tests - done
+	//   b) replace MtreeStore with FsSpecStore and create bundle fs using FsSpec
 	FS(imageId digest.Digest) (fs.FsNode, error)
+	// Creates a new layer as diff to parent. Returns errEmptyLayerDiff if nothing has changed
 	AddLayer(rootfs fs.FsNode, parentImageId *digest.Digest, author, createdByOp string) (Image, error)
 	TagImage(imageId digest.Digest, tag string) (Image, error)
 	UntagImage(tag string) error
@@ -108,8 +93,9 @@ func GetLocalImage(store ImageStoreRO, image string) (img Image, err error) {
 	}
 	if imgId, e := digest.Parse(image); e == nil && imgId.Validate() == nil {
 		return store.Image(imgId)
+	} else {
+		return store.ImageByName(image)
 	}
-	return store.ImageByName(image)
 }
 
 func GetImage(store ImageStoreRW, image string) (img Image, err error) {

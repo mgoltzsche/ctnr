@@ -143,12 +143,10 @@ func (c *Container) Stop() {
 	}
 }
 
-func (c *Container) Exec(process *specs.Process, io run.ContainerIO) (err error) {
+func (c *Container) Exec(process *specs.Process, io run.ContainerIO) (proc run.Process, err error) {
 	p, err := NewProcess(c, process, io, c.log)
-	if err = p.Start(); err == nil {
-		err = p.Wait()
-	}
-	return
+	err = p.Start()
+	return p, err
 }
 
 // Waits for the container process to terminate and returns the process' error if any

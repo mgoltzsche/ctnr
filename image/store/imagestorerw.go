@@ -11,12 +11,12 @@ import (
 
 	"github.com/containers/image/copy"
 	ocitransport "github.com/containers/image/oci/layout"
+	"github.com/containers/image/transports"
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/fs"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
@@ -57,6 +57,10 @@ func (s *ImageStoreRW) Close() (err error) {
 	}
 	s.ImageStoreRO = nil
 	return err
+}
+
+func (s *ImageStoreRW) SupportsTransport(transportName string) bool {
+	return transports.Get(transportName) != nil
 }
 
 func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
@@ -128,86 +132,37 @@ func (s *ImageStoreRW) MarkUsedImage(id digest.Digest) error {
 	return s.imageIds.MarkUsed(id)
 }
 
+// Returns the image's fs spec (files not extractable)
 func (s *ImageStoreRW) FS(imageId digest.Digest) (r fs.FsNode, err error) {
 	imgId, err := s.imageIds.ImageID(imageId)
 	if err != nil {
 		return nil, errors.Wrap(err, "load image fs spec: resolve image ID")
 	}
-	return s.blobs.LayerFS(imgId.ManifestDigest)
+	return s.blobs.FSSpec(imgId.ManifestDigest)
 }
 
 func (s *ImageStoreRW) AddLayer(rootfs fs.FsNode, parentImageId *digest.Digest, author, createdByOp string) (img image.Image, err error) {
+	var parentManifestId *digest.Digest
 	if parentImageId != nil {
 		pImgId, err := s.imageIds.ImageID(*parentImageId)
 		if err != nil {
 			return img, errors.Wrap(err, "add image layer: resolve parent image ID")
 		}
-		parentImageId = &pImgId.ManifestDigest
+		parentManifestId = &pImgId.ManifestDigest
 	}
-	c, err := s.blobs.AddLayer(rootfs, parentImageId, author, createdByOp)
-	if err != nil {
+	c, err := s.blobs.AddLayer(rootfs, parentManifestId, author, createdByOp)
+	exists := image.IsEmptyLayerDiff(err)
+	if err != nil && !exists {
 		return
+	}
+	if exists {
+		return s.Image(*parentImageId)
 	}
 	if err = s.imageIds.Add(c.Manifest.Config.Digest, c.Descriptor.Digest); err != nil {
 		return img, errors.WithMessage(err, "add image layer")
 	}
 	now := time.Now()
 	return image.NewImage(c.Descriptor.Digest, "", "", now, now, c.Manifest, &c.Config, s), nil
-}
-
-func (s *ImageStoreRW) NewLayerSource(rootfs string) (r image.LayerSource, err error) {
-	return s.blobs.NewLayerSource(rootfs, nil, false)
-}
-
-func (s *ImageStoreRW) NewLayerSourceOverlayed(rootfs, srcDir string, srcPattern []string, dest string, usr *idutils.UserIds) (r image.LayerSource, err error) {
-	// TODO: Add uid/gid mappings to be used within user namespace of a privileged user's container
-	deleteRootfs := false
-	if rootfs == "" {
-		if rootfs, err = ioutil.TempDir(s.temp, ".tmp-imgsrc-"); err != nil {
-			return nil, errors.New("layer source: " + err.Error())
-		}
-		deleteRootfs = true
-	}
-	opts := fs.NewFSOptions(s.rootless)
-	fs := fs.NewFileSystemBuilder(rootfs, opts, s.loggers.Debug)
-	if err = fs.AddAll(srcDir, srcPattern, dest, usr); err != nil {
-		return nil, errors.Wrap(err, "layer source")
-	}
-	// TODO: replace layer source with FsBuilder completely.
-	// To achieve this make FsEntry
-	//   a) serializable (to be able to cache it) and
-	//   b) diffable to compare it with another and create a new tree containing the changes to write into an archive while
-	//   c) mirroring the file system's previous state during new file insertion to resolve links correctly
-	//      without needing to actually unpack it
-	return s.blobs.NewLayerSource(rootfs, fs.Files(), deleteRootfs)
-}
-
-func (s *ImageStoreRW) NewLayerSourceFromImage(rootfs string, img image.Image, filePattern []string, dest string, usr *idutils.UserIds) (r image.LayerSource, err error) {
-	imagefs, err := s.fsCache.GetRootfs(&img)
-	if err != nil {
-		return
-	}
-	return s.NewLayerSourceOverlayed(rootfs, imagefs, filePattern, dest, usr)
-}
-
-func (s *ImageStoreRW) AddImageLayer(src image.LayerSource, parentImageId *digest.Digest, author, comment string) (r image.Image, err error) {
-	var parentManifest *digest.Digest
-	if parentImageId != nil {
-		parent, err := s.imageIds.ImageID(*parentImageId)
-		if err != nil {
-			return r, errors.Wrap(err, "add image layer: resolve base image")
-		}
-		parentManifest = &parent.ManifestDigest
-	}
-	c, err := s.blobs.PutImageLayer(src.(*LayerSource), parentManifest, author, comment)
-	if err != nil {
-		return
-	}
-	if err = s.imageIds.Add(c.Manifest.Config.Digest, c.Descriptor.Digest); err == nil {
-		now := time.Now()
-		r = image.NewImage(c.Descriptor.Digest, "", "", now, now, c.Manifest, &c.Config, s)
-	}
-	return r, errors.WithMessage(err, "add image layer")
 }
 
 func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.Digest) (img image.Image, err error) {

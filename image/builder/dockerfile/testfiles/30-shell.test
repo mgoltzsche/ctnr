@@ -1,16 +1,19 @@
 FROM alpine:3.7
-SHELL ["/bin/bash", "-c"]
-
-RUN ["/install.sh", "-a"]
-ENTRYPOINT ["/entrypoint.sh", "-x"]
-CMD ["/entrypoint.sh", "-x"]
-
-RUN /install.sh -a
-ENTRYPOINT /entrypoint.sh -x
-CMD /entrypoint.sh -x
 
 SHELL ["/bin/sh", "-c"]
 
-RUN /install.sh -a
-ENTRYPOINT /entrypoint.sh -x
-CMD /entrypoint.sh -x
+RUN ["/bin/echo", "hello"]
+ENTRYPOINT ["/bin/echo", "hello"]
+CMD ["/bin/echo", "hello"]
+
+RUN echo hello
+ENTRYPOINT echo hello
+CMD echo hello
+
+SHELL ["/bin/sh", "-cx"]
+
+RUN echo hello
+ENTRYPOINT echo hello
+CMD echo hello
+
+# ASSERT CFG /config/Cmd=[/bin/sh -cx echo hello]

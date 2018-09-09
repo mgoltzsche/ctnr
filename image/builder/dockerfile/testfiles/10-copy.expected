@@ -3,5 +3,5 @@ NAME 0
 
 COPY dir="./ctx" "entrypoint.sh" "/entrypoint.sh" nil
 COPY dir="./ctx" "entrypoint.sh" "*.conf" "/" root:root
-COPY image="0" "file1" "file2" "/" nil
-COPY image="0" "file1" "file2" "/" root:root
+COPY image="alpine:3.7" "etc/hosts" "/" nil
+COPY image="alpine:3.7" "/etc/passwd" "/" root:root

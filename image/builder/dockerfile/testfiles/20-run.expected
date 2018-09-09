@@ -1,5 +1,7 @@
 FROM alpine:3.7
 NAME 0
 
-RUN "/install.sh" "-a"
-RUN "/bin/sh" "-c" "/install.sh -a"
+RUN "/bin/echo" "hello from container"
+RUN "/bin/echo" "hello from container"
+RUN "/bin/sh" "-c" "echo \"hello world\" > /etc/hello"
+RUN "/bin/sh" "-c" "echo \"special characters & whitespaces\" > '/äh so'"

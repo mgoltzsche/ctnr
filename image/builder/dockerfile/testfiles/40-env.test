@@ -1,43 +1,57 @@
 FROM alpine:3.7
 
 ENV VAR1 myval
-ENV VAR1 myval1
+ENV VAR1 entrypoint.sh
 ENV VARX=myvalx
 ENV VARA=80 VARB=443
 ENV VARL="long value"
 
 
-# env substitution
+# env substitution:
 
 ENV SVAR1=$VAR1
 ENV SVAR2=${VAR1}
 ENV SVAR3=\$VAR1
 ENV SVAR4=\${VAR1}
 
-# TODO: test ADD substitution
+ENV USR 0:0
+ENV BASEIMAGE alpine:3.7
+ENV WORK /etc
 
 COPY $VAR1 /dest
-COPY /src $VAR1
-COPY --chown=$VAR1 /src /dest
-COPY --from=$VAR1 /src /dest
+COPY /entrypoint.sh /$VAR1
+COPY --chown=$USR /entrypoint.sh /dest
+COPY --from=$BASEIMAGE etc/hosts /dest
+
+ADD $VAR1 /dest
+ADD /entrypoint.sh /$VAR1
+ADD --chown=$USR /entrypoint.sh /dest
 
 EXPOSE $VARA $VARB
 
 LABEL $VARX=$VARL
 
-STOPSIGNAL $VARA
+ENV VARSTOP SIGTERM
+STOPSIGNAL $VARSTOP
 
-USER $SVAR1
+USER $USR
 
-VOLUME $SVAR1 $VARX
+VOLUME $VARX $VARL
 
-WORKDIR $VARX
+WORKDIR $WORK
+WORKDIR /
 
-
-# require no substitution
-
-RUN echo $VAR1
+# require no substitution:
+RUN [ "$VAR1" = entrypoint.sh ]
 ENTRYPOINT echo $VAR1
 ENTRYPOINT [ "/bin/echo", "$VAR1" ]
 CMD echo $VAR1
 CMD [ "/bin/echo", "$VAR1" ]
+
+# imagebuidler: change bundle state after RUN initialized bundle already
+ENV NEWVAR $VARX
+WORKDIR $WORK
+
+# ASSERT CFG /config/User=0:0
+# ASSERT RUN [ "$NEWVAR" = myvalx ] || (echo env not reapplied to bundle, NEWVAR=$NEWVAR, VAR1=$VAR1; false)
+# ASSERT RUN [ "$(pwd)" = /etc ] || (echo workdir not reapplied to bundle, pwd: "$(pwd)"; false)

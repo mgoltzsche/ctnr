@@ -1,7 +1,9 @@
 FROM alpine:3.7
 LABEL key value
 LABEL maintainer Max Goltzsche <max.goltzsche@gmail.com>
-LABEL key "long value"
-LABEL "long key"="long value"
 LABEL key1=value1 \
       key2=value2
+LABEL key "long value"
+LABEL "long key"="long value"
+
+# ASSERT CFG /config/Labels/key2=value2

@@ -1,0 +1,13 @@
+FROM alpine:3.7
+NAME 0
+RUN "/bin/sh" "-c" "printf '#!/bin/sh\\necho hello from copied app\\n' > /script.sh && chmod 744 /script.sh"
+
+FROM scratch
+NAME 1
+COPY image="0" "/bin/busybox" "/bin/" nil
+COPY image="0" "/lib/*musl*" "/lib/" nil
+WORKDIR /bin
+ENTRYPOINT "/bin/busybox"
+COPY image="0" "script.sh" "copiedscript.sh" nil
+RUN "/bin/busybox" "sh" "-c" "[ ! -d /var ] || (ls -la /; false)"
+RUN "/bin/busybox" "sh" "/bin/copiedscript.sh"

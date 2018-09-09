@@ -1,2 +1,5 @@
 FROM alpine:3.7
-WORKDIR /opt/app
+WORKDIR /etc
+
+# ASSERT CFG /config/WorkingDir=/etc
+# ASSERT RUN [ "$(pwd)" = "/etc" ]

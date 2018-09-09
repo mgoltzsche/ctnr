@@ -1,15 +1,15 @@
 package dockerfile
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"io"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/docker/docker/builder/dockerfile/parser"
 	"github.com/docker/docker/builder/dockerfile/shell"
-	"github.com/mgoltzsche/cntnr/image/builder"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/pkg/errors"
@@ -22,7 +22,8 @@ type ImageBuilder interface {
 	AddLabels(map[string]string) error
 	AddVolumes([]string) error
 	AddFiles(srcDir string, srcPattern []string, dest string, user *idutils.User) error
-	AddFilesFromImage(srcImage string, srcPattern []string, dest string, user *idutils.User) error
+	CopyFiles(srcDir string, srcPattern []string, dest string, user *idutils.User) error
+	CopyFilesFromImage(srcImage string, srcPattern []string, dest string, user *idutils.User) error
 	FromImage(name string) error
 	Run(args []string, addEnv map[string]string) error
 	SetAuthor(string) error
@@ -46,8 +47,8 @@ type DockerfileBuilder struct {
 	warn       log.Logger
 }
 
-func LoadDockerfile(src io.Reader, ctxDir string, args map[string]string, warn log.Logger) (b *DockerfileBuilder, err error) {
-	r, err := parser.Parse(src)
+func LoadDockerfile(src []byte, ctxDir string, args map[string]string, warn log.Logger) (b *DockerfileBuilder, err error) {
+	r, err := parser.Parse(bytes.NewReader(src))
 	if err != nil {
 		return b, errors.New("load dockerfile: " + err.Error())
 	}
@@ -90,10 +91,9 @@ func (b *DockerfileBuilder) readNode(node *parser.Node) (err error) {
 	case "from":
 		err = b.from(node)
 	case "copy":
-		err = b.copy(node)
+		err = b.copy(node, opCopy)
 	case "add":
-		// TODO: support image or URL as source
-		err = b.copy(node)
+		err = b.copy(node, opAdd)
 	case "label":
 		err = b.label(node)
 	case "maintainer":
@@ -161,8 +161,26 @@ func (s *DockerfileBuilder) from(n *parser.Node) (err error) {
 	return
 }
 
+type addOp func(b ImageBuilder, fromImage string, buildDir string, srcPattern []string, dest string, usr *idutils.User) error
+
+func opAdd(b ImageBuilder, fromImage string, buildDir string, srcPattern []string, dest string, usr *idutils.User) error {
+	if fromImage != "" {
+		return errors.New("ADD command does not support --from option. Use COPY command instead")
+	}
+	return b.AddFiles(buildDir, srcPattern, dest, usr)
+}
+
+func opCopy(b ImageBuilder, fromImage string, buildDir string, srcPattern []string, dest string, usr *idutils.User) error {
+	if fromImage == "" {
+		return b.CopyFiles(buildDir, srcPattern, dest, usr)
+	} else {
+		return b.CopyFilesFromImage(fromImage, srcPattern, dest, usr)
+	}
+}
+
 // See https://docs.docker.com/engine/reference/builder/#copy
-func (s *DockerfileBuilder) copy(n *parser.Node) (err error) {
+// and https://docs.docker.com/engine/reference/builder/#add
+func (s *DockerfileBuilder) copy(n *parser.Node, op addOp) (err error) {
 	chown := "--chown"
 	from := "--from"
 	v, err := readInstructionNode(n, &chown, &from)
@@ -185,11 +203,7 @@ func (s *DockerfileBuilder) copy(n *parser.Node) (err error) {
 					usr = &u
 				}
 				s.add(func(b ImageBuilder) error {
-					if from == "" {
-						return b.AddFiles(s.ctxDir, srcPattern, dest, usr)
-					} else {
-						return b.AddFilesFromImage(from, srcPattern, dest, usr)
-					}
+					return op(b, from, s.ctxDir, srcPattern, dest, usr)
 				})
 			}
 		}
@@ -351,11 +365,9 @@ func (s *DockerfileBuilder) exposePorts(n *parser.Node) (err error) {
 	if err = s.subst(v); err != nil {
 		return
 	}
-	if err = builder.ValidateExposedPorts(v); err == nil {
-		s.add(func(b ImageBuilder) error {
-			return b.AddExposedPorts(v)
-		})
-	}
+	s.add(func(b ImageBuilder) error {
+		return b.AddExposedPorts(v)
+	})
 	return
 }
 
@@ -414,8 +426,6 @@ func (s *DockerfileBuilder) stopsignal(n *parser.Node) (err error) {
 
 // See https://docs.docker.com/engine/reference/builder/#environment-replacement
 // and https://docs.docker.com/engine/reference/builder/#arg
-// TODO: use github.com/docker/docker/dockerfile/shell when containers/image updated dependency
-//   (see https://github.com/containers/image/issues/445)
 func (s *DockerfileBuilder) subst(v []string) (err error) {
 	env := make([]string, 0, len(s.varScope))
 	for k, v := range s.varScope {
@@ -492,5 +502,8 @@ func readFlags(n *parser.Node, flags ...*string) error {
 var jsonRegex = regexp.MustCompile("^[A-Za-z]+\\s*\\[[^\\]]+\\]\\s*$")
 
 func isJsonNotation(n *parser.Node) bool {
-	return jsonRegex.Match([]byte(n.Original))
+	line := strings.TrimSpace(n.Original)
+	args := strings.TrimSpace(line[strings.Index(line, " "):])
+	err := json.Unmarshal([]byte(args), &[]string{})
+	return err == nil
 }

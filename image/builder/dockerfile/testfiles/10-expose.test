@@ -1,2 +1,5 @@
 FROM alpine:3.7
 EXPOSE 80 443/tcp
+
+# ASSERT CFG /config/ExposedPorts/443~1tcp=map[]
+# ASSERT CFG /config/ExposedPorts/80=map[]

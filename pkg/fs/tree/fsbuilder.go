@@ -23,7 +23,7 @@ type FsBuilder struct {
 
 func FromDir(rootfs string, rootless bool) (fs.FsNode, error) {
 	b := NewFsBuilder(NewFS(), fs.NewFSOptions(rootless))
-	b.AddDir(rootfs, "/", nil)
+	b.CopyDir(rootfs, "/", nil)
 	return b.FS()
 }
 
@@ -61,8 +61,26 @@ func (b *FsBuilder) Write(w fs.Writer) error {
 	return b.fs.Write(w)
 }
 
+type fileSourceFactory func(file string, fi os.FileInfo, usr *idutils.UserIds) (fs.Source, error)
+
+func (b *FsBuilder) createFile(file string, fi os.FileInfo, usr *idutils.UserIds) (fs.Source, error) {
+	return b.sources.File(file, fi, usr)
+}
+
+func (b *FsBuilder) createOverlayOrFile(file string, fi os.FileInfo, usr *idutils.UserIds) (fs.Source, error) {
+	return b.sources.FileOverlay(file, fi, usr)
+}
+
+// Copies all files that match the provided glob source pattern.
+// Source tar archives are extracted into dest.
+// Source URLs are also supported.
+// See https://docs.docker.com/engine/reference/builder/#add
 func (b *FsBuilder) AddAll(srcfs string, sources []string, dest string, usr *idutils.UserIds) {
 	if b.err != nil {
+		return
+	}
+	if len(sources) == 0 {
+		b.err = errors.New("add: no source provided")
 		return
 	}
 	if len(sources) > 1 {
@@ -74,80 +92,112 @@ func (b *FsBuilder) AddAll(srcfs string, sources []string, dest string, usr *idu
 			// TODO: add url
 			panic("TODO: support URL")
 		} else {
-			// sources from glob pattern
-			if !filepath.IsAbs(src) {
-				src = filepath.Join(srcfs, src)
-			}
-			matches, err := filepath.Glob(src)
-			if err != nil {
-				b.err = errors.Wrap(err, "source file pattern")
+			if err := b.copy(srcfs, src, dest, usr, b.createOverlayOrFile); err != nil {
+				b.err = errors.Wrap(err, "add "+src)
 				return
-			}
-			if len(matches) == 0 {
-				b.err = errors.Errorf("source pattern %q does not match any files", src)
-				return
-			}
-			if len(matches) > 1 {
-				dest = filepath.Clean(dest) + string(filepath.Separator)
-			}
-			for _, file := range matches {
-				if b.err = secureSourcePath(srcfs, file); b.err != nil {
-					return
-				}
-				b.AddFiles(file, dest, usr)
 			}
 		}
 	}
 }
 
-func (b *FsBuilder) AddDir(srcFile, dest string, usr *idutils.UserIds) {
+// Copies all files that match the provided glob source pattern to dest.
+// See https://docs.docker.com/engine/reference/builder/#copy
+func (b *FsBuilder) CopyAll(srcfs string, sources []string, dest string, usr *idutils.UserIds) {
 	if b.err != nil {
 		return
 	}
-	fi, err := b.fsEval.Lstat(srcFile)
-	if err != nil {
-		b.err = errors.WithMessage(err, "add")
+	if len(sources) == 0 {
+		b.err = errors.New("copy: no source provided")
 		return
 	}
-	_, err = b.addFiles(srcFile, dest, b.fs, fi, usr)
-	b.err = errors.WithMessage(err, "add")
+	if len(sources) > 1 {
+		dest = filepath.Clean(dest) + string(filepath.Separator)
+	}
+	for _, src := range sources {
+		if err := b.copy(srcfs, src, dest, usr, b.createOverlayOrFile); err != nil {
+			b.err = errors.Wrap(err, "copy "+src)
+			return
+		}
+	}
+}
+
+func (b *FsBuilder) copy(srcfs, src, dest string, usr *idutils.UserIds, factory fileSourceFactory) (err error) {
+	// sources from glob pattern
+	src = filepath.Join(srcfs, src)
+	matches, err := filepath.Glob(src)
+	if err != nil {
+		return errors.Wrap(err, "source file pattern")
+	}
+	if len(matches) == 0 {
+		return errors.Errorf("source pattern %q does not match any files", src)
+	}
+	if len(matches) > 1 {
+		dest = filepath.Clean(dest) + string(filepath.Separator)
+	}
+	for _, file := range matches {
+		if file, err = secureSourceFile(srcfs, file); err != nil {
+			return
+		}
+		if err = b.addFiles(file, dest, usr, factory); err != nil {
+			return
+		}
+	}
+	return
 }
 
 func (b *FsBuilder) AddFiles(srcFile, dest string, usr *idutils.UserIds) {
 	if b.err != nil {
 		return
 	}
+	if err := b.addFiles(srcFile, dest, usr, b.createFile); err != nil {
+		b.err = err
+	}
+}
+
+func (b *FsBuilder) addFiles(srcFile, dest string, usr *idutils.UserIds, factory fileSourceFactory) (err error) {
 	fi, err := b.fsEval.Lstat(srcFile)
 	if err != nil {
-		b.err = errors.WithMessage(err, "add")
 		return
 	}
 	if fi.IsDir() {
-		parent, err := b.fs.Mkdirs(dest)
-		if err != nil {
-			b.err = errors.WithMessage(err, "add")
+		var parent fs.FsNode
+		if parent, err = b.fs.Mkdirs(dest); err != nil {
 			return
 		}
-		b.err = b.addDirContents(srcFile, dest, parent, usr)
+		err = b.copyDirContents(srcFile, dest, parent, usr)
 	} else {
-		src, err := b.sources.FileOverlay(srcFile, fi, usr)
-		if err != nil {
-			b.err = err
+		var src fs.Source
+		if src, err = factory(srcFile, fi, usr); err != nil {
 			return
 		}
 		t := src.Attrs().NodeType
 		if t != fs.TypeDir && t != fs.TypeOverlay {
 			// append source base name to dest if dest ends with /
-			if dest, b.err = destFilePath(srcFile, dest); b.err != nil {
+			if dest, err = destFilePath(srcFile, dest); err != nil {
 				return
 			}
 		}
-		_, b.err = b.fs.AddUpper(dest, src)
+		_, err = b.fs.AddUpper(dest, src)
 	}
+	return
+}
+
+// Copies the directory recursively including the directory itself.
+func (b *FsBuilder) CopyDir(srcFile, dest string, usr *idutils.UserIds) {
+	if b.err != nil {
+		return
+	}
+	fi, err := b.fsEval.Lstat(srcFile)
+	if err != nil {
+		b.err = errors.WithMessage(err, "add")
+		return
+	}
+	_, err = b.copyFiles(srcFile, dest, b.fs, fi, usr)
+	b.err = errors.WithMessage(err, "add")
 }
 
 // Adds file/directory recursively
-func (b *FsBuilder) addFiles(file, dest string, parent fs.FsNode, fi os.FileInfo, usr *idutils.UserIds) (r fs.FsNode, err error) {
+func (b *FsBuilder) copyFiles(file, dest string, parent fs.FsNode, fi os.FileInfo, usr *idutils.UserIds) (r fs.FsNode, err error) {
 	src, err := b.sources.File(file, fi, usr)
 	if err != nil {
 		return
@@ -160,33 +210,32 @@ func (b *FsBuilder) addFiles(file, dest string, parent fs.FsNode, fi os.FileInfo
 		return
 	}
 	if src.Attrs().NodeType == fs.TypeDir {
-		err = b.addDirContents(file, dest, r, usr)
+		err = b.copyDirContents(file, dest, r, usr)
 	}
 	return
 }
 
 // Adds directory contents recursively
-func (b *FsBuilder) addDirContents(dir, dest string, parent fs.FsNode, usr *idutils.UserIds) (err error) {
+func (b *FsBuilder) copyDirContents(dir, dest string, parent fs.FsNode, usr *idutils.UserIds) (err error) {
 	files, err := b.fsEval.Readdir(dir)
 	if err != nil {
 		return errors.New(err.Error())
 	}
 	for _, f := range files {
 		childSrc := filepath.Join(dir, f.Name())
-		if _, err = b.addFiles(childSrc, f.Name(), parent, f, usr); err != nil {
+		if _, err = b.copyFiles(childSrc, f.Name(), parent, f, usr); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func secureSourcePath(root, file string) (err error) {
-	dir, file := filepath.Split(file)
-	if dir, err = filepath.EvalSymlinks(dir); err != nil {
-		return errors.WithMessage(err, "secure source")
+func secureSourceFile(root, file string) (f string, err error) {
+	// TODO: use fseval
+	if f, err = filepath.EvalSymlinks(file); err != nil {
+		return "", errors.Wrap(err, "secure source")
 	}
-	file = filepath.Join(dir, file)
-	if !filepath.HasPrefix(file, root) {
+	if !filepath.HasPrefix(f, root) {
 		err = errors.Errorf("secure source: source file %s is outside context directory", file)
 	}
 	return

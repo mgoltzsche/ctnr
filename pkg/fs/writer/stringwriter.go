@@ -9,14 +9,12 @@ import (
 	"github.com/pkg/errors"
 )
 
-var _ fs.Writer = &StringWriter{}
-
 type StringWriter struct {
 	writer io.Writer
 	attrs  fs.AttrSet
 }
 
-func NewStringWriter(writer io.Writer, attrs fs.AttrSet) (w *StringWriter) {
+func NewStringWriter(writer io.Writer, attrs fs.AttrSet) (w fs.Writer) {
 	return &StringWriter{writer, attrs}
 }
 

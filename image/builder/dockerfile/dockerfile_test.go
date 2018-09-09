@@ -83,13 +83,12 @@ Files:
 }
 
 func newTestee(t *testing.T, file string) *DockerfileBuilder {
-	f, err := os.Open(file)
-	require.NoError(t, err)
-	defer f.Close()
 	args := map[string]string{
 		"argp": "pval",
 	}
-	r, err := LoadDockerfile(f, "./ctx", args, log.New(os.Stderr, "warn: "+file+":", 0))
+	contents, err := ioutil.ReadFile(file)
+	require.NoError(t, err)
+	r, err := LoadDockerfile(contents, "./ctx", args, log.New(os.Stderr, "warn: "+file+":", 0))
 	require.NoError(t, err)
 	return r
 }
@@ -141,11 +140,20 @@ func (s *mockBuilder) AddFiles(srcDir string, srcPattern []string, dest string, 
 	if user != nil {
 		u = user.String()
 	}
+	s.add(fmt.Sprintf("ADD dir=%q %s %q %s", srcDir, sliceToString(srcPattern), dest, u))
+	return s.err()
+}
+
+func (s *mockBuilder) CopyFiles(srcDir string, srcPattern []string, dest string, user *idutils.User) error {
+	u := "nil"
+	if user != nil {
+		u = user.String()
+	}
 	s.add(fmt.Sprintf("COPY dir=%q %s %q %s", srcDir, sliceToString(srcPattern), dest, u))
 	return s.err()
 }
 
-func (s *mockBuilder) AddFilesFromImage(srcImage string, srcPattern []string, dest string, user *idutils.User) error {
+func (s *mockBuilder) CopyFilesFromImage(srcImage string, srcPattern []string, dest string, user *idutils.User) error {
 	u := "nil"
 	if user != nil {
 		u = user.String()

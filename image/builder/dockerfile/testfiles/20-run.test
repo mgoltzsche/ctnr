@@ -1,3 +1,7 @@
 FROM alpine:3.7
-RUN ["/install.sh", "-a"]
-RUN /install.sh -a
+RUN ["/bin/echo", "hello from container"]
+RUN ["/bin/echo", "hello from container"]
+RUN echo "hello world" > /etc/hello
+RUN echo "special characters & whitespaces" > '/äh so'
+
+# ASSERT RUN [ -f '/etc/hello' ] && [ -f '/äh so' ]

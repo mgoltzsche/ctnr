@@ -1,12 +1,12 @@
 FROM alpine:3.7
 NAME 0
 
-RUN "/install.sh" "-a"
-ENTRYPOINT "/entrypoint.sh" "-x"
-CMD "/entrypoint.sh" "-x"
-RUN "/bin/bash" "-c" "/install.sh -a"
-ENTRYPOINT "/bin/bash" "-c" "/entrypoint.sh -x"
-CMD "/bin/bash" "-c" "/entrypoint.sh -x"
-RUN "/bin/sh" "-c" "/install.sh -a"
-ENTRYPOINT "/bin/sh" "-c" "/entrypoint.sh -x"
-CMD "/bin/sh" "-c" "/entrypoint.sh -x"
+RUN "/bin/echo" "hello"
+ENTRYPOINT "/bin/echo" "hello"
+CMD "/bin/echo" "hello"
+RUN "/bin/sh" "-c" "echo hello"
+ENTRYPOINT "/bin/sh" "-c" "echo hello"
+CMD "/bin/sh" "-c" "echo hello"
+RUN "/bin/sh" "-cx" "echo hello"
+ENTRYPOINT "/bin/sh" "-cx" "echo hello"
+CMD "/bin/sh" "-cx" "echo hello"

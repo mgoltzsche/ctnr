@@ -1,27 +1,28 @@
 FROM alpine:3.7
 NAME 0
 
-ENV "MYVARX"="dval"
+ENV "MYVARX"="entrypoint.sh"
 ENV "MYVARY"="pval"
 
-COPY dir="./ctx" "dval" "/dest" nil
-COPY dir="./ctx" "/src" "dval" nil
-COPY dir="./ctx" "/src" "/dest" dval
-COPY image="dval" "/src" "/dest" nil
+COPY dir="./ctx" "entrypoint.sh" "/dest" nil
+COPY dir="./ctx" "/entrypoint.sh" "entrypoint.sh" nil
+COPY dir="./ctx" "/entrypoint.sh" "/dest" 0:0
+COPY image="alpine:3.7" "etc/hosts" "/dest" nil
 
 EXPOSE 80 443/tcp
 
-LABEL "dval"="pval"
+LABEL "entrypoint.sh"="pval"
 
-STOPSIGNAL dval
+STOPSIGNAL SIGTERM
 
-USER dval
+USER 0:0
 
-VOLUME "dval" "pval"
+VOLUME "pval" "/data"
 
-WORKDIR dval
+WORKDIR /data
+WORKDIR /
 
-RUN "argd"="dval" "argp"="pval" "port1"="80" "port2"="443/tcp""/bin/sh" "-c" "echo $argd"
+RUN "argd"="entrypoint.sh" "argimg"="alpine:3.7" "argp"="pval" "argstop"="SIGTERM" "argusr"="0:0" "argvol"="/data" "port1"="80" "port2"="443/tcp""/bin/sh" "-c" "echo $argd"
 
 ENTRYPOINT "/bin/sh" "-c" "echo $argd"
 ENTRYPOINT "/bin/echo" "$argd"
