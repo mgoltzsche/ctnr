@@ -170,7 +170,7 @@ func CreateLockedBundle(dir string, spec SpecGenerator, image BundleImage, updat
 
 	if exists {
 		if !update {
-			return nil, errors.Errorf("bundle %q directory already exists", id)
+			return r, errors.Errorf("bundle %q directory already exists", id)
 		}
 		lastImageId := bundle.Image()
 		rootfs := filepath.Join(dir, "rootfs")
