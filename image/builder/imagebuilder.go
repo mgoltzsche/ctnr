@@ -119,6 +119,7 @@ func (b *ImageBuilder) initConfig() {
 	b.config.Created = &now
 	b.config.Architecture = runtime.GOARCH
 	b.config.OS = runtime.GOOS
+	b.config.RootFS.Type = "layers"
 }
 
 func (b *ImageBuilder) SetImageResolver(r ImageResolver) {

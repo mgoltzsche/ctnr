@@ -180,7 +180,7 @@ func normalizeLinkDest(path, target string) (r string, err error) {
 				r, err = filepath.Rel(string(os.PathSeparator)+basePath, r)
 			}
 		}
-		return r, errors.Wrapf(err, "normalize link %s dest")
+		return r, errors.Wrapf(err, "normalize link %s dest", path)
 	}
 	return target, nil
 }

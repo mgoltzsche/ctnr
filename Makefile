@@ -44,13 +44,13 @@ generate: dependencies
 test: dependencies
 	# Run tests
 	export GOPATH="${GOPATH}"; \
-	go test -tags "${BUILDTAGS}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS}" ./... | grep -Ev '/vendor/|^${PKGNAME}/build/|[^/]+_old/'`
+	go test -tags "${BUILDTAGS}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS}" ./... | grep -Ev '/vendor/|^${PKGNAME}/build/'`
 	#export GOPATH="${GOPATH}"; cd "${GOPATH}/src/github.com/mgoltzsche/cntnr/image/builder" && go test -tags "${BUILDTAGS}" -run ImageBuilder
 
 test-static: dependencies
 	# Run tests using BUILDTAGS_STATIC
 	export GOPATH="${GOPATH}"; \
-	go test -tags "${BUILDTAGS_STATIC}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS_STATIC}" ./... | grep -Ev '/vendor/|^${PKGNAME}/build/|[^/]+_old/'`
+	go test -tags "${BUILDTAGS_STATIC}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS_STATIC}" ./... | grep -Ev '/vendor/|^${PKGNAME}/build/'`
 
 test-coverage: test
 	GOPATH="${GOPATH}" go tool cover -html="${GOPATH}/coverage.out"

@@ -136,10 +136,7 @@ func TestFsBuilder(t *testing.T) {
 	f, err := os.OpenFile(tarFile, os.O_CREATE|os.O_RDWR, 0640)
 	require.NoError(t, err)
 	defer f.Close()
-	tw := writer.NewTarWriter(f)
-	err = testee.Write(tw)
-	require.NoError(t, err)
-	err = tw.Close()
+	err = testee.Write(writer.NewTarWriter(f))
 	require.NoError(t, err)
 	f.Close()
 

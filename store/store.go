@@ -9,7 +9,6 @@ import (
 	"github.com/mgoltzsche/cntnr/image"
 	istore "github.com/mgoltzsche/cntnr/image/store"
 	"github.com/mgoltzsche/cntnr/pkg/log"
-	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/pkg/errors"
 )
 
@@ -48,19 +47,15 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 	dir, err = filepath.Abs(dir)
 	if err == nil {
 		blobDir := filepath.Join(dir, "blobs")
-		mtreeDir := filepath.Join(dir, ".mtree")
+		fsspecDir := filepath.Join(dir, ".fsspec")
 		imageRepoDir := filepath.Join(dir, "image-repos")
 		fsCacheDir := filepath.Join(dir, ".rofs-cache")
 		imageIdDir := filepath.Join(dir, "image-ids")
 		bundleDir := filepath.Join(dir, "bundles")
 		tempDir := filepath.Join(dir, ".temp")
-		fsEval := fseval.DefaultFsEval
-		if rootless {
-			fsEval = fseval.RootlessFsEval
-		}
-		mtreeStore := istore.NewMtreeStore(mtreeDir, fsEval, loggers.Debug)
+		mtreeStore := istore.NewFsSpecStore(fsspecDir, loggers.Debug)
 		blobStore := istore.NewBlobStore(blobDir, loggers.Debug)
-		blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, loggers.Debug)
+		blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, loggers.Warn)
 		rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), loggers.Warn)
 		fsCache := istore.NewImageFSROCache(fsCacheDir)
 		r.ImageStore, err = istore.NewImageStore(rostore, fsCache, tempDir, systemContext, trustPolicy, rootless, loggers)

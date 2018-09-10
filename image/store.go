@@ -40,10 +40,6 @@ type ImageStoreRW interface {
 	ImportImage(name string) (Image, error)
 	SupportsTransport(transportName string) bool
 	AddImageConfig(m ispecs.Image, parentImageId *digest.Digest) (Image, error)
-	// TODO:
-	//   a1) apply new interface - done
-	//   a2) add ADD impl using FsNode to Dockerfile builder and write integration tests - done
-	//   b) replace MtreeStore with FsSpecStore and create bundle fs using FsSpec
 	FS(imageId digest.Digest) (fs.FsNode, error)
 	// Creates a new layer as diff to parent. Returns errEmptyLayerDiff if nothing has changed
 	AddLayer(rootfs fs.FsNode, parentImageId *digest.Digest, author, createdByOp string) (Image, error)

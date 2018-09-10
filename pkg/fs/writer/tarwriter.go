@@ -2,7 +2,6 @@ package writer
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"io"
 	"os"
 	"path/filepath"
@@ -26,28 +25,6 @@ type TarWriter struct {
 func NewTarWriter(writer io.Writer) (w *TarWriter) {
 	return &TarWriter{tar.NewWriter(writer), map[string]*fs.FileAttrs{}}
 }
-
-type TarGzWriter struct {
-	TarWriter
-	gzWriter *gzip.Writer
-}
-
-/*func NewTarGzWriter(writer io.Writer) (w *TarGzWriter) {
-	// TODO: compress in different goroutine as done in umoci's layer.GenerateLayer()
-	// Actually do not compress here but in store since store/image builder must know plain tar's hash as diffId
-	gzWriter := gzip.NewWriter(writer)
-	return &TarGzWriter{TarWriter{tar.NewWriter(gzWriter), map[string]*FileAttrs{}}, gzWriter}
-}
-
-func (w *TarGzWriter) Close() error {
-	e1 := w.TarWriter.Close()
-	e2 := w.gzWriter.Close()
-	if e1 == nil {
-		return e2
-	} else {
-		return e1
-	}
-}*/
 
 func (w *TarWriter) Close() error {
 	return errors.Wrap(w.writer.Close(), "close tar writer")
@@ -100,7 +77,7 @@ func (w *TarWriter) writeTarHeader(path string, a fs.FileAttrs) (err error) {
 		return
 	}
 	err = w.writer.WriteHeader(hdr)
-	return errors.Wrap(err, "tar writer")
+	return errors.Wrapf(err, "write tar header for %q", path)
 }
 
 func (w *TarWriter) toTarHeader(path string, a fs.FileAttrs) (hdr *tar.Header, err error) {
@@ -210,6 +187,7 @@ func (w *TarWriter) Dir(path, base string, a fs.FileAttrs) (err error) {
 	if path, err = normalize(path); err != nil {
 		return
 	}
+	a.Mode |= os.ModeDir
 	return w.writeTarHeader(path+string(os.PathSeparator), a)
 }
 

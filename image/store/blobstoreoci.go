@@ -2,31 +2,30 @@ package store
 
 import (
 	"bytes"
-	"compress/gzip"
 	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"time"
 
 	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/pkg/fs"
 	"github.com/mgoltzsche/cntnr/pkg/fs/source"
 	"github.com/mgoltzsche/cntnr/pkg/fs/tree"
+	"github.com/mgoltzsche/cntnr/pkg/fs/writer"
 	fswriter "github.com/mgoltzsche/cntnr/pkg/fs/writer"
 	"github.com/mgoltzsche/cntnr/pkg/log"
-	"github.com/openSUSE/umoci/oci/layer"
 	digest "github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
-	"github.com/vbatts/go-mtree"
 )
 
 type BlobStoreOci struct {
 	*BlobStore
-	mtree    *MtreeStore
+	fsspecs  *FsSpecStore
 	rootless bool
-	debug    log.Logger
+	warn     log.Logger
 }
 
 type CommitResult struct {
@@ -35,8 +34,8 @@ type CommitResult struct {
 	Descriptor ispecs.Descriptor
 }
 
-func NewBlobStoreExt(blobStore *BlobStore, mtreeStore *MtreeStore, rootless bool, debug log.Logger) BlobStoreOci {
-	return BlobStoreOci{blobStore, mtreeStore, rootless, debug}
+func NewBlobStoreExt(blobStore *BlobStore, fsSpecStore *FsSpecStore, rootless bool, warn log.Logger) BlobStoreOci {
+	return BlobStoreOci{blobStore, fsSpecStore, rootless, warn}
 }
 
 func (s *BlobStoreOci) ImageManifest(manifestDigest digest.Digest) (r ispecs.Manifest, err error) {
@@ -70,56 +69,30 @@ func (s *BlobStoreOci) ImageConfig(configDigest digest.Digest) (r ispecs.Image, 
 	return
 }
 
-func (s *BlobStoreOci) getMtree(manifestDigest digest.Digest) (*mtree.DirectoryHierarchy, error) {
-	return s.mtree.Get(manifestDigest)
-}
-
-func (s *BlobStoreOci) PutImageConfig(cfg ispecs.Image, parentManifest *digest.Digest, m modifier) (d ispecs.Descriptor, manifest ispecs.Manifest, err error) {
-	d, manifest, err = s.putImageConfig(cfg, parentManifest, func(*ispecs.Manifest) {})
-	if err == nil {
-		// Since a config change does not result in different mtree use the parent
-		// image's mtree file as this child's mtree.
-		// It must be copied HERE to support efficient file system diff when
-		// committing an already existing container using this image as parent
-		// (happens in ImageBuilder)
-		var dh *mtree.DirectoryHierarchy
-		if parentManifest != nil {
-			pdh, e := s.mtree.Get(*parentManifest)
-			if e == nil {
-				dh = pdh
-				err = s.mtree.Put(d.Digest, dh)
-			} else if !IsMtreeNotExist(e) {
-				err = e
-			}
+func (s *BlobStoreOci) PutImageConfig(cfg ispecs.Image, parentManifestId *digest.Digest, m modifier) (d ispecs.Descriptor, manifest ispecs.Manifest, err error) {
+	manifest.Versioned.SchemaVersion = 2
+	if parentManifestId != nil {
+		if manifest, err = s.ImageManifest(*parentManifestId); err != nil {
+			err = errors.WithMessage(err, "put image config: parent manifest")
+			return
 		}
-		err = errors.WithMessage(err, "put image config")
 	}
+	d, err = s.putImageConfig(cfg, &manifest, func(*ispecs.Manifest) {})
 	return
 }
 
 type modifier func(m *ispecs.Manifest)
 
-func (s *BlobStoreOci) putImageConfig(cfg ispecs.Image, parentManifest *digest.Digest, m modifier) (d ispecs.Descriptor, manifest ispecs.Manifest, err error) {
+func (s *BlobStoreOci) putImageConfig(cfg ispecs.Image, manifest *ispecs.Manifest, m modifier) (d ispecs.Descriptor, err error) {
 	d.MediaType = ispecs.MediaTypeImageConfig
 	if d.Digest, d.Size, err = s.putJsonBlob(cfg); err != nil {
 		return
 	}
 
-	// Create/load manifest
-	if parentManifest == nil {
-		manifest = ispecs.Manifest{}
-		manifest.Versioned.SchemaVersion = 2
-	} else {
-		if manifest, err = s.ImageManifest(*parentManifest); err != nil {
-			err = errors.WithMessage(err, "put image config: parent manifest")
-			return
-		}
-	}
-
-	m(&manifest)
+	m(manifest)
 
 	manifest.Config = d
-	d, err = s.putImageManifest(manifest)
+	d, err = s.putImageManifest(*manifest)
 	d.Platform = &ispecs.Platform{
 		Architecture: cfg.Architecture,
 		OS:           cfg.OS,
@@ -136,6 +109,17 @@ func (s *BlobStoreOci) putJsonBlob(o interface{}) (d digest.Digest, size int64, 
 	return s.putBlob(&buf)
 }
 
+// Returns the layer chainID or nil if the image has no layers
+func layerChainID(cfg *ispecs.Image) (r digest.Digest, err error) {
+	if len(cfg.RootFS.DiffIDs) == 0 {
+		return r, errors.New("No layer diffIDs contained in image config")
+	}
+	if cfg.RootFS.Type != "layers" {
+		return r, errors.Errorf("layerChainID: unsupported rootfs type %q found in image config", cfg.RootFS.Type)
+	}
+	return chainID(cfg.RootFS.DiffIDs), nil
+}
+
 // Generates the Layer ChainID as digest of all layers.
 // See https://github.com/opencontainers/image-spec/blob/master/config.md#layer-chainid
 func chainID(layerIds []digest.Digest) (r digest.Digest) {
@@ -149,7 +133,6 @@ func chainID(layerIds []digest.Digest) (r digest.Digest) {
 	return
 }
 
-// TODO: use this also for image file system extraction
 func (s *BlobStoreOci) FS(manifestDigest digest.Digest) (r fs.FsNode, err error) {
 	defer func() {
 		err = errors.Wrap(err, "load fs from layers")
@@ -158,11 +141,24 @@ func (s *BlobStoreOci) FS(manifestDigest digest.Digest) (r fs.FsNode, err error)
 	if err != nil {
 		return
 	}
+	return s.fsFromManifest(&manifest)
+}
+
+func (s *BlobStoreOci) fsFromManifest(manifest *ispecs.Manifest) (r fs.FsNode, err error) {
 	r = tree.NewFS()
 	for _, l := range manifest.Layers {
 		d := l.Digest
 		layerFile := filepath.Join(s.blobDir, d.Algorithm().String(), d.Hex())
-		if _, err = r.AddUpper("/", source.NewSourceTarGz(layerFile)); err != nil {
+		var src fs.Source
+		switch l.MediaType {
+		case ispecs.MediaTypeImageLayerGzip:
+			src = source.NewSourceTarGz(layerFile)
+		case ispecs.MediaTypeImageLayer:
+			src = source.NewSourceTar(layerFile)
+		default:
+			return nil, errors.Errorf("unsupported layer media type %q", l.MediaType)
+		}
+		if _, err = r.AddUpper(".", src); err != nil {
 			return
 		}
 	}
@@ -170,11 +166,30 @@ func (s *BlobStoreOci) FS(manifestDigest digest.Digest) (r fs.FsNode, err error)
 }
 
 func (s *BlobStoreOci) FSSpec(manifestDigest digest.Digest) (r fs.FsNode, err error) {
-	// TODO: cache whole operation (storing FsNode instead of mtree)
-	if r, err = s.FS(manifestDigest); err != nil {
+	manifest, err := s.ImageManifest(manifestDigest)
+	if err != nil {
 		return
 	}
-	return r.Normalized()
+	cfg, err := s.ImageConfig(manifest.Config.Digest)
+	if err != nil {
+		return
+	}
+	chainId, err := layerChainID(&cfg)
+	if err != nil {
+		return
+	}
+	// Use cached fsspec ...
+	if r, err = s.fsspecs.Get(chainId); IsFsSpecNotExist(err) {
+		// ... or derive and store new fsspec if cache key not found
+		if r, err = s.fsFromManifest(&manifest); err != nil {
+			return
+		}
+		if r, err = r.Normalized(); err != nil {
+			return
+		}
+		err = s.fsspecs.Put(chainId, r)
+	}
+	return
 }
 
 // Creates a new image with a layer containing the provided file system's difference to the parent provided image.
@@ -182,11 +197,16 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 	// Load parent
 	parentFs := tree.NewFS()
 	r = &CommitResult{}
+	now := time.Now()
+	r.Config.Created = &now
+	r.Config.Architecture = runtime.GOARCH
+	r.Config.OS = runtime.GOOS
+	r.Config.RootFS.Type = "layers"
+	r.Manifest.Versioned.SchemaVersion = 2
 	if parentManifestDigest != nil {
-		var parentManifest ispecs.Manifest
-		parentManifest, err = s.ImageManifest(*parentManifestDigest)
+		r.Manifest, err = s.ImageManifest(*parentManifestDigest)
 		if err == nil {
-			if r.Config, err = s.ImageConfig(parentManifest.Config.Digest); err == nil && len(parentManifest.Layers) > 0 {
+			if r.Config, err = s.ImageConfig(r.Manifest.Config.Digest); err == nil && len(r.Manifest.Layers) > 0 {
 				parentFs, err = s.FSSpec(*parentManifestDigest)
 			}
 		}
@@ -217,7 +237,9 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 
 	// Save layer
 	tarReader := s.generateTar(layerFs)
-	defer tarReader.Close()
+	defer func() {
+		tarReader.Close()
+	}()
 	layerDescriptor, diffIdDigest, err := s.BlobStore.PutLayer(tarReader)
 	if err != nil {
 		return
@@ -233,7 +255,7 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 		EmptyLayer: false,
 	})
 	r.Config.RootFS.DiffIDs = append(r.Config.RootFS.DiffIDs, diffIdDigest)
-	r.Descriptor, r.Manifest, err = s.putImageConfig(r.Config, parentManifestDigest, func(m *ispecs.Manifest) {
+	r.Descriptor, err = s.putImageConfig(r.Config, &r.Manifest, func(m *ispecs.Manifest) {
 		m.Layers = append(m.Layers, layerDescriptor)
 	})
 	r.Descriptor.MediaType = ispecs.MediaTypeImageManifest
@@ -241,6 +263,17 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 		Architecture: r.Config.Architecture,
 		OS:           r.Config.OS,
 	}
+
+	// Cache fsspec
+	chainId, err := layerChainID(&r.Config)
+	if err != nil {
+		return
+	}
+	rootfs, err = rootfs.Normalized()
+	if err != nil {
+		return
+	}
+	err = s.fsspecs.Put(chainId, rootfs)
 	return
 }
 
@@ -254,8 +287,10 @@ func (s *BlobStoreOci) generateTar(rootfs fs.FsNode) io.ReadCloser {
 		// Writer tar
 		tarWriter := fswriter.NewTarWriter(writer)
 		defer func() {
-			if e := tarWriter.Close(); e != nil && err == nil {
-				err = e
+			if err == nil {
+				if e := tarWriter.Close(); e != nil {
+					err = e
+				}
 			}
 		}()
 		return rootfs.Write(tarWriter)
@@ -264,165 +299,54 @@ func (s *BlobStoreOci) generateTar(rootfs fs.FsNode) io.ReadCloser {
 }
 
 // Unpacks all layers contained in the referenced manifest into rootfs
-func (s *BlobStoreOci) UnpackLayers(manifestDigest digest.Digest, rootfs string) (err error) {
+func (s *BlobStoreOci) UnpackLayers(manifestDigest digest.Digest, dest string) (err error) {
 	defer func() {
 		err = errors.Wrap(err, "unpack image layers")
 	}()
+	s.debug.Println("Unpacking layers")
 	manifest, err := s.ImageManifest(manifestDigest)
+	if err != nil {
+		return
+	}
+	cfg, err := s.ImageConfig(manifest.Config.Digest)
+	if err != nil {
+		return
+	}
+	chainId, err := layerChainID(&cfg)
+	if err != nil {
+		return
+	}
+	layerfs, err := s.fsFromManifest(&manifest)
 	if err != nil {
 		return
 	}
 	// ATTENTION: rootfs must be a new empty directory to guarantee that the
 	// derived mtree represents the manifestDigest and doesn't get mixed up with
 	// other existing files
-	if err = os.Mkdir(rootfs, 0755); err != nil {
+	if err = os.Mkdir(dest, 0755); err != nil {
 		return errors.New(err.Error())
 	}
-	if err = s.unpackLayers(&manifest, rootfs); err != nil {
-		return
-	}
-	exists, err := s.mtree.Exists(manifestDigest)
+	dirWriter := writer.NewDirWriter(dest, fs.NewFSOptions(s.rootless), s.warn)
+	var fsWriter fs.Writer = dirWriter
+	fsspecExists, err := s.fsspecs.Exists(chainId)
 	if err != nil {
 		return
 	}
-	if !exists {
-		var spec *mtree.DirectoryHierarchy
-		spec, err = s.mtree.Create(rootfs)
-		if err != nil {
-			return
-		}
-		err = s.mtree.Put(manifestDigest, spec)
-	}
-	return
-}
-
-// Writes the diff of rootfs to its parent as new layer into the store
-func (s *BlobStoreOci) PutImageLayer(src *LayerSource, parentManifestDigest *digest.Digest, author, createdBy string) (r *CommitResult, err error) {
-	parentStr := ""
-	if parentManifestDigest != nil {
-		parentStr = " using parent " + (*parentManifestDigest).Hex()[:13]
-	}
-	s.debug.Println("Building layer from " + src.rootfs + parentStr)
-
-	defer func() {
-		err = errors.WithMessage(err, "generate layer blob")
-	}()
-
-	// Load parent
-	parentMtree := &mtree.DirectoryHierarchy{}
-	var manifest ispecs.Manifest
-	r = &CommitResult{}
-	if parentManifestDigest != nil {
-		if manifest, err = s.ImageManifest(*parentManifestDigest); err == nil {
-			if r.Config, err = s.ImageConfig(manifest.Config.Digest); err == nil {
-				if !src.deltafs {
-					parentMtree, err = s.getMtree(*parentManifestDigest)
+	if !fsspecExists {
+		// Generate fsspec on-the-fly during unpacking if not exists
+		fsspec := tree.NewFS()
+		fsWriter = writer.NewFsNodeWriter(fsspec, fsWriter)
+		fsWriter = writer.NewHashingWriter(fsWriter)
+		defer func() {
+			if err == nil {
+				if err = s.fsspecs.Put(chainId, fsspec); err != nil {
+					return
 				}
 			}
-		}
-		if err != nil {
-			return nil, errors.WithMessage(err, "parent")
-		}
+		}()
 	}
-
-	// Diff file system
-	reader, err := s.diff(parentMtree, src.rootfsMtree, src.rootfs)
-	if err != nil {
+	if err = layerfs.Write(fsWriter); err != nil {
 		return
 	}
-	defer reader.Close()
-
-	// Save layer
-	var diffIdDigest digest.Digest
-	layer, diffIdDigest, err := s.PutLayer(reader)
-	if err != nil {
-		return
-	}
-
-	// Create new config and manifest
-	if createdBy == "" {
-		createdBy = "layer"
-	}
-	r.Config.History = append(r.Config.History, ispecs.History{
-		Author:     author,
-		CreatedBy:  createdBy,
-		EmptyLayer: false,
-	})
-	r.Config.RootFS.DiffIDs = append(r.Config.RootFS.DiffIDs, diffIdDigest)
-	r.Descriptor, r.Manifest, err = s.putImageConfig(r.Config, parentManifestDigest, func(m *ispecs.Manifest) {
-		m.Layers = append(m.Layers, layer)
-	})
-	r.Descriptor.MediaType = ispecs.MediaTypeImageManifest
-	r.Descriptor.Platform = &ispecs.Platform{
-		Architecture: r.Config.Architecture,
-		OS:           r.Config.OS,
-	}
-
-	// Save mtree for new manifest
-	if err == nil && !src.deltafs {
-		err = s.mtree.Put(r.Descriptor.Digest, src.rootfsMtree)
-	}
-	return
-}
-
-func (s *BlobStoreOci) diff(from, to *mtree.DirectoryHierarchy, rootfs string) (io.ReadCloser, error) {
-	// Read parent/last mtree
-	diffs, err := s.mtree.Diff(from, to)
-	if err != nil {
-		return nil, errors.Wrap(err, "diff")
-	}
-
-	if len(diffs) == 0 {
-		return nil, image.ErrorEmptyLayerDiff("empty layer")
-	}
-
-	// Generate tar layer from mtree diff
-	var opts *layer.MapOptions
-	if s.rootless {
-		opts = &layer.MapOptions{
-			UIDMappings: []rspecs.LinuxIDMapping{{HostID: uint32(os.Geteuid()), ContainerID: 0, Size: 1}},
-			GIDMappings: []rspecs.LinuxIDMapping{{HostID: uint32(os.Getegid()), ContainerID: 0, Size: 1}},
-			Rootless:    s.rootless,
-		}
-	}
-	reader, err := layer.GenerateLayer(rootfs, diffs, opts)
-	if err != nil {
-		return nil, errors.Wrap(err, "diff")
-	}
-
-	return reader, nil
-}
-
-func (s *BlobStoreOci) unpackLayers(manifest *ispecs.Manifest, dest string) (err error) {
-	defer func() {
-		err = errors.Wrap(err, "unpack layers")
-	}()
-
-	if _, err = os.Stat(dest); err != nil {
-		return errors.New(err.Error())
-	}
-
-	// Unpack layers
-	for _, l := range manifest.Layers {
-		if err = s.unpackLayer(l.Digest, dest); err != nil {
-			return
-		}
-	}
-	return
-}
-
-func (s *BlobStoreOci) unpackLayer(id digest.Digest, dest string) (err error) {
-	s.debug.Println("Extracting layer", id)
-	layerFile := filepath.Join(s.blobDir, id.Algorithm().String(), id.Hex())
-	f, err := os.Open(layerFile)
-	if err != nil {
-		return errors.New(err.Error())
-	}
-	defer f.Close()
-	reader, err := gzip.NewReader(f)
-	if err != nil {
-		return errors.New(err.Error())
-	}
-	// TODO: add uid/gid mappings
-	return layer.UnpackLayer(dest, reader, &layer.MapOptions{Rootless: true})
+	return dirWriter.Close()
 }
