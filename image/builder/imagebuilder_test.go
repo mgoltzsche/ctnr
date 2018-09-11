@@ -11,6 +11,7 @@ import (
 
 	"github.com/containers/image/types"
 	bstore "github.com/mgoltzsche/cntnr/bundle/store"
+	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/image/builder/dockerfile"
 	istore "github.com/mgoltzsche/cntnr/image/store"
 	extlog "github.com/mgoltzsche/cntnr/pkg/log"
@@ -51,6 +52,8 @@ func TestImageBuilder(t *testing.T) {
 		Debug: logrusadapt.NewDebugLogger(logger),
 	}
 
+	var baseImg *image.Image
+
 	for _, file := range files {
 		if file == "dockerfile/testfiles/10-add.test" {
 			continue
@@ -74,6 +77,11 @@ func TestImageBuilder(t *testing.T) {
 			assert.NotNil(t, imageId, "resulting image", filepath.Base(file))
 			err = imageId.Validate()
 			require.NoError(t, err, "resulting image ID", filepath.Base(file))
+			if baseImg == nil {
+				img, err := testee.images.ImageByName("docker://alpine:3.7")
+				require.NoError(t, err, "get common base image from store after build completed")
+				baseImg = &img
+			}
 			img, err := testee.images.Image(*imageId)
 			require.NoError(t, err, filepath.Base(file)+" load resulting image")
 			cfg, err := img.Config()
@@ -110,6 +118,12 @@ func TestImageBuilder(t *testing.T) {
 					t.Errorf("Unsupported assertion in %s: %q", filepath.Base(file), assertionExpr)
 					t.FailNow()
 				}
+			}
+
+			// Test image size: image is too big it is likely that fsspec integration doesn't work
+			if img.Size() >= baseImg.Size()*2 {
+				t.Errorf("the whole base image seems to be copied into the next layer because new image size >= base image size * 2")
+				t.FailNow()
 			}
 		})
 	}
@@ -162,7 +176,7 @@ func withNewTestee(t *testing.T, tmpDir string, loggers extlog.Loggers, assertio
 		Tempfs:   filepath.Join(tmpDir, "tmp"),
 		RunRoot:  filepath.Join(tmpDir, "run"),
 		Rootless: true,
-		PRoot:    "",
+		PRoot:    "", // TODO: also test using proot
 		Loggers:  loggers,
 	})
 	defer func() {

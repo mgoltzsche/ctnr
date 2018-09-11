@@ -21,6 +21,7 @@ import (
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	"github.com/mgoltzsche/cntnr/pkg/log/logrusadapt"
 	"github.com/spf13/cobra"
+
 	//homedir "github.com/mitchellh/go-homedir"
 	//"github.com/spf13/viper"
 	"os"
@@ -53,8 +54,8 @@ var (
 var RootCmd = &cobra.Command{
 	Use:   "cntnr",
 	Short: "a lightweight container engine",
-	Long: `cntnr is a lightweight OCI-compliant container engine.
-It supports single image and container operations as well as high-level service composition.`,
+	Long: `cntnr is a lightweight OCI container engine built around runc.
+It supports container and image management and aims to run in every linux environment.`,
 	PersistentPreRun: preRun,
 }
 
