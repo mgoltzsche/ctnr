@@ -86,6 +86,8 @@ func (w *TarWriter) toTarHeader(path string, a fs.FileAttrs) (hdr *tar.Header, e
 	if err != nil {
 		return nil, errors.Wrapf(err, "to tar header: %s", path)
 	}
+	hdr.Uid = int(a.Uid)
+	hdr.Gid = int(a.Gid)
 	hdr.AccessTime = a.Atime
 	hdr.Xattrs = a.Xattrs
 	w.addWritten(path, &a)
