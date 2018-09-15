@@ -1,6 +1,4 @@
 FROM alpine:3.7
-NAME 0
-
 RUN "/bin/echo" "hello"
 ENTRYPOINT "/bin/echo" "hello"
 CMD "/bin/echo" "hello"

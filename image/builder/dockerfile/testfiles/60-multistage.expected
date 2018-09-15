@@ -1,13 +1,25 @@
 FROM alpine:3.7
-NAME 0
-RUN "/bin/sh" "-c" "printf '#!/bin/sh\\necho hello from copied app\\n' > /script.sh && chmod 744 /script.sh"
+
+FROM alpine:3.7
+WORKDIR /etc
+RUN "/bin/sh" "-c" "printf '#!/bin/sh\\necho hello from script\\n' > script.sh && chmod 744 script.sh"
+
+FROM alpine:3.7
+
+FROM alpine:3.7
+COPY image="stage1-image" "etc/script.sh" "script-copy.sh" 0:0
+ENV "BASEVAR"="baseenvval"
+RUN "BASEARG"="baseargval" "/bin/sh" "-c" "[ \"$(pwd)\" = / ] || (\"echo WORKDIR has been inherited from previous stage: ($(pwd))\"; false)"
 
 FROM scratch
-NAME 1
-COPY image="0" "/bin/busybox" "/bin/" nil
-COPY image="0" "/lib/*musl*" "/lib/" nil
-WORKDIR /bin
+COPY image="stage2-image" "/bin/busybox" "/bin/" 0:0
+COPY image="stage2-image" "/lib/*musl*" "/lib/" 0:0
 ENTRYPOINT "/bin/busybox"
-COPY image="0" "script.sh" "copiedscript.sh" nil
+WORKDIR /bin
+COPY image="stage3-image" "script-copy.sh" "script-copy-copy.sh" 0:0
+
 RUN "/bin/busybox" "sh" "-c" "[ ! -d /var ] || (ls -la /; false)"
-RUN "/bin/busybox" "sh" "/bin/copiedscript.sh"
+RUN "/bin/busybox" "sh" "/bin/script-copy-copy.sh"
+
+RUN "/bin/busybox" "sh" "-c" "[ ! \"$BASEVAR\" ] || (echo BASEVAR should not be set but is: \"$BASEVAR\"; false)"
+RUN "/bin/busybox" "sh" "-c" "[ ! \"$BASEARG\" ] || (echo BASEARG should not be set but is: \"$BASEARG\"; false)"

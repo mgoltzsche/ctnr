@@ -1,6 +1,4 @@
 FROM alpine:3.7
-NAME 0
-
 RUN "/bin/echo" "hello from container"
 RUN "/bin/echo" "hello from container"
 RUN "/bin/sh" "-c" "echo \"hello world\" > /etc/hello"

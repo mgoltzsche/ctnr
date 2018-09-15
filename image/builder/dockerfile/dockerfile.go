@@ -12,11 +12,11 @@ import (
 	"github.com/docker/docker/builder/dockerfile/shell"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
 	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
 type ImageBuilder interface {
-	BuildName(string)
 	AddEnv(map[string]string) error
 	AddExposedPorts([]string) error
 	AddLabels(map[string]string) error
@@ -32,19 +32,52 @@ type ImageBuilder interface {
 	SetStopSignal(string) error
 	SetUser(string) error
 	SetWorkingDir(string) error
+	Image() digest.Digest
 }
 
 type DockerfileBuilder struct {
-	ops        []func(ImageBuilder) error
-	ctxDir     string
-	buildArgs  map[string]string
-	envMap     map[string]bool
-	runEnvMap  map[string]string
-	varScope   map[string]string
-	shell      []string
-	lex        *shell.Lex
-	imageCount int
-	warn       log.Logger
+	stages    []*buildStage
+	ctxDir    string
+	buildArgs map[string]string
+	lex       *shell.Lex
+	warn      log.Logger
+	// instruction read state
+	envMap    map[string]bool
+	runEnvMap map[string]string
+	varScope  map[string]string
+	shell     []string
+}
+
+type buildStage struct {
+	name         string
+	instructions []func(ImageBuilder) error
+	dependencies map[*buildStage]bool
+	builtImageId digest.Digest
+}
+
+func (s *buildStage) hasDependency(d *buildStage) bool {
+	return s.dependencies[d]
+}
+
+func (s *buildStage) addDependency(d *buildStage) {
+	s.dependencies[d] = true
+	for dep := range d.dependencies {
+		s.dependencies[dep] = true
+	}
+}
+
+func (s *buildStage) apply(b ImageBuilder) (err error) {
+	for _, instr := range s.instructions {
+		if err = instr(b); err != nil {
+			return errors.Wrapf(err, "dockerfile stage %q", s.name)
+		}
+	}
+	s.builtImageId = b.Image()
+	return
+}
+
+type buildState struct {
+	ImageBuilder
 }
 
 func LoadDockerfile(src []byte, ctxDir string, args map[string]string, warn log.Logger) (b *DockerfileBuilder, err error) {
@@ -59,11 +92,46 @@ func LoadDockerfile(src []byte, ctxDir string, args map[string]string, warn log.
 		args = map[string]string{}
 	}
 	lex := shell.NewLex(r.EscapeToken)
-	sh := []string{"/bin/sh", "-c"}
-	b = &DockerfileBuilder{ctxDir: ctxDir, buildArgs: args, shell: sh, lex: lex, warn: warn}
+	b = &DockerfileBuilder{ctxDir: ctxDir, buildArgs: args, lex: lex, warn: warn}
 	b.resetState()
 	for _, n := range r.AST.Children {
 		if err = b.readNode(n); err != nil {
+			return nil, errors.Wrap(err, "load dockerfile")
+		}
+	}
+	b.envMap = nil
+	b.varScope = nil
+	b.runEnvMap = nil
+	b.shell = nil
+	return
+}
+
+func (s *DockerfileBuilder) ApplyStage(b ImageBuilder, name string) (err error) {
+	var stage *buildStage
+	for _, st := range s.stages {
+		if st.name == name {
+			stage = st
+		}
+	}
+	if stage == nil {
+		return errors.Errorf("dockerfile build stage %q not found", name)
+	}
+	for _, st := range s.stages {
+		if st == stage || stage.hasDependency(st) {
+			if err = st.apply(b); err != nil {
+				return
+			}
+		}
+	}
+	return
+}
+
+func (s *DockerfileBuilder) Apply(b ImageBuilder) (err error) {
+	if len(s.stages) == 0 {
+		return errors.New("dockerfile: no build stage defined")
+	}
+	for _, stage := range s.stages {
+		if err = stage.apply(b); err != nil {
 			return
 		}
 	}
@@ -74,15 +142,7 @@ func (s *DockerfileBuilder) resetState() {
 	s.envMap = map[string]bool{}
 	s.runEnvMap = map[string]string{}
 	s.varScope = map[string]string{}
-}
-
-func (s *DockerfileBuilder) Apply(b ImageBuilder) (err error) {
-	for _, op := range s.ops {
-		if err = op(b); err != nil {
-			break
-		}
-	}
-	return errors.Wrap(err, "apply dockerfile")
+	s.shell = []string{"/bin/sh", "-c"}
 }
 
 func (b *DockerfileBuilder) readNode(node *parser.Node) (err error) {
@@ -121,7 +181,7 @@ func (b *DockerfileBuilder) readNode(node *parser.Node) (err error) {
 	case "stopsignal":
 		err = b.stopsignal(node)
 		// TODO: HEALTHCHECK
-		// onbuild ignored here because not supported by OCI image format and it provides unnecessary complexity
+		// onbuild ignored here because not supported by OCI image format
 	default:
 		l, _ := readInstructionNode(node)
 		fmt.Printf("%+v  %s\n", l, node.Dump())
@@ -130,34 +190,40 @@ func (b *DockerfileBuilder) readNode(node *parser.Node) (err error) {
 	return errors.Wrapf(err, "line %d: %s", node.StartLine, instr)
 }
 
-func (s *DockerfileBuilder) add(op func(ImageBuilder) error) {
-	s.ops = append(s.ops, op)
+func (s *DockerfileBuilder) add(op func(ImageBuilder) error) error {
+	if len(s.stages) == 0 {
+		return errors.New("FROM must be first dockerfile instruction")
+	}
+	stage := s.stages[len(s.stages)-1]
+	stage.instructions = append(stage.instructions, op)
+	return nil
+}
+
+func (s *DockerfileBuilder) addStage(name string, op func(ImageBuilder) error) {
+	s.stages = append(s.stages, &buildStage{name, []func(ImageBuilder) error{op}, map[*buildStage]bool{}, digest.Digest("")})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#from
 func (s *DockerfileBuilder) from(n *parser.Node) (err error) {
 	v, err := readInstructionNode(n)
-	if err == nil {
-		if err = s.subst(v); err == nil {
-			if len(v) != 1 && len(v) != 3 || v[0] == "" || (len(v) == 3 && v[1] != "as") {
-				return errors.Errorf("from: expected 'image [as name]' but was %+v", v)
-			}
-			s.resetState()
-			image := v[0]
-			s.add(func(b ImageBuilder) error {
-				err = b.FromImage(image)
-				if err == nil {
-					name := strconv.Itoa(s.imageCount)
-					s.imageCount++
-					b.BuildName(name)
-					if len(v) == 3 {
-						b.BuildName(v[2])
-					}
-				}
-				return err
-			})
-		}
+	if err != nil {
+		return
 	}
+	if err = s.subst(v); err != nil {
+		return
+	}
+	if len(v) != 1 && len(v) != 3 || v[0] == "" || (len(v) == 3 && strings.ToLower(v[1]) != "as") {
+		return errors.Errorf("from: expected 'image [as name]' but was %+v", v)
+	}
+	s.resetState()
+	image := v[0]
+	stageName := strconv.Itoa(len(s.stages))
+	if len(v) == 3 {
+		stageName = v[2]
+	}
+	s.addStage(stageName, func(b ImageBuilder) (err error) {
+		return b.FromImage(image)
+	})
 	return
 }
 
@@ -184,69 +250,105 @@ func (s *DockerfileBuilder) copy(n *parser.Node, op addOp) (err error) {
 	chown := "--chown"
 	from := "--from"
 	v, err := readInstructionNode(n, &chown, &from)
-	if err == nil {
-		flags := []string{chown, from}
-		err = s.subst(flags)
-		if err == nil {
-			chown = flags[0]
-			from = flags[1]
-			if err = s.subst(v); err == nil {
-				srcPattern := v
-				dest := ""
-				if len(v) > 1 {
-					srcPattern = v[0 : len(v)-1]
-					dest = v[len(v)-1]
+	if err != nil {
+		return
+	}
+	flags := []string{chown, from}
+	if err = s.subst(flags); err != nil {
+		return
+	}
+	chown = flags[0]
+	from = flags[1]
+	srcStage, err := findStage(s.stages[:len(s.stages)-1], from)
+	if err != nil {
+		return
+	}
+	if srcStage != nil {
+		s.stages[len(s.stages)-1].addDependency(srcStage)
+	}
+	if err = s.subst(v); err != nil {
+		return
+	}
+	srcPattern := v
+	dest := ""
+	if len(v) > 1 {
+		srcPattern = v[0 : len(v)-1]
+		dest = v[len(v)-1]
+	}
+	usr := idutils.User{"0", "0"}
+	if chown != "" {
+		usr = idutils.ParseUser(chown)
+	}
+	ctxDir := s.ctxDir
+	if err = s.add(func(b ImageBuilder) error {
+		if srcStage != nil {
+			from = srcStage.builtImageId.String()
+		}
+		return op(b, from, ctxDir, srcPattern, dest, &usr)
+	}); err != nil {
+		return
+	}
+	return
+}
+
+func findStage(stages []*buildStage, name string) (*buildStage, error) {
+	if name != "" {
+		if id, err := strconv.ParseInt(name, 10, 32); err == nil {
+			i := int(id)
+			if i < len(stages) && i >= 0 {
+				return stages[i], nil
+			} else {
+				return nil, errors.Errorf("reference to unknown build stage %d", i)
+			}
+		} else {
+			for _, stage := range stages {
+				if stage.name == name {
+					return stage, nil
 				}
-				var usr *idutils.User
-				if chown != "" {
-					u := idutils.ParseUser(chown)
-					usr = &u
-				}
-				s.add(func(b ImageBuilder) error {
-					return op(b, from, s.ctxDir, srcPattern, dest, usr)
-				})
 			}
 		}
 	}
-	return
+	return nil, nil
 }
 
 // See https://docs.docker.com/engine/reference/builder/#label
 func (s *DockerfileBuilder) label(n *parser.Node) (err error) {
 	v, err := readInstructionNode(n)
-	if err == nil {
-		if err = s.subst(v); err == nil {
-			m, err := s.toMap(v)
-			if err == nil {
-				s.add(func(b ImageBuilder) error {
-					for k, v := range m {
-						if k == "maintainer" {
-							if err := b.SetAuthor(v); err != nil {
-								return err
-							}
-							delete(m, k)
-						}
-					}
-					if len(m) > 0 {
-						return b.AddLabels(m)
-					}
-					return nil
-				})
+	if err != nil {
+		return
+	}
+	if err = s.subst(v); err != nil {
+		return
+	}
+	m, err := s.toMap(v)
+	if err != nil {
+		return
+	}
+	return s.add(func(b ImageBuilder) (err error) {
+		for k, v := range m {
+			if k == "maintainer" {
+				if err = b.SetAuthor(v); err != nil {
+					return
+				}
+				delete(m, k)
 			}
 		}
-	}
-	return
+		if len(m) > 0 {
+			return b.AddLabels(m)
+		}
+		return
+	})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#maintainer
 func (s *DockerfileBuilder) maintainer(n *parser.Node) (err error) {
 	v, err := readInstructionNode(n)
-	if err == nil {
-		s.add(func(b ImageBuilder) error {
-			return b.SetAuthor(strings.Join(v, " "))
-		})
+	if err != nil {
+		return
 	}
-	return
+	return s.add(func(b ImageBuilder) error {
+		return b.SetAuthor(strings.Join(v, " "))
+	})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#arg
@@ -255,16 +357,23 @@ func (s *DockerfileBuilder) arg(n *parser.Node) (err error) {
 	if err != nil {
 		return
 	}
-	var k, v string
-	if len(l) >= 2 {
-		k = l[0]
-		v = strings.Join(l[1:], " ")
+	var (
+		k, v   string
+		hasVal bool
+	)
+	if len(l) != 1 {
+		return errors.Errorf("ARG requires exactly one argument")
 	} else {
 		k = l[0]
+		if p := strings.Index(k, "="); p > 0 {
+			v = k[p+1:]
+			k = unquote(k[:p])
+			hasVal = true
+		}
 	}
 	if barg, ok := s.buildArgs[k]; ok {
 		v = barg
-	} else if v == "" {
+	} else if v == "" && !hasVal {
 		s.warn.Printf("undefined build arg %q", k)
 	}
 	// Apply in subsequent var substitutions if env value not already defined
@@ -280,21 +389,23 @@ func (s *DockerfileBuilder) arg(n *parser.Node) (err error) {
 // See https://docs.docker.com/engine/reference/builder/#env
 func (s *DockerfileBuilder) env(n *parser.Node) (err error) {
 	v, err := readInstructionNode(n)
-	if err == nil {
-		if err = s.subst(v); err == nil {
-			m, err := s.toMap(v)
-			if err == nil {
-				s.add(func(b ImageBuilder) error {
-					return b.AddEnv(m)
-				})
-				for k, v := range m {
-					s.envMap[k] = true
-					s.varScope[k] = v
-				}
-			}
-		}
+	if err != nil {
+		return
 	}
-	return
+	if err = s.subst(v); err != nil {
+		return
+	}
+	m, err := s.toMap(v)
+	if err != nil {
+		return
+	}
+	for k, v := range m {
+		s.envMap[k] = true
+		s.varScope[k] = v
+	}
+	return s.add(func(b ImageBuilder) error {
+		return b.AddEnv(m)
+	})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#shell
@@ -315,12 +426,12 @@ func (s *DockerfileBuilder) user(n *parser.Node) (err error) {
 	if len(v) != 1 {
 		return errors.New("invalid argument count: " + n.Dump())
 	}
-	if err = s.subst(v); err == nil {
-		s.add(func(b ImageBuilder) error {
-			return b.SetUser(v[0])
-		})
+	if err = s.subst(v); err != nil {
+		return
 	}
-	return
+	return s.add(func(b ImageBuilder) error {
+		return b.SetUser(v[0])
+	})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#workdir
@@ -332,12 +443,12 @@ func (s *DockerfileBuilder) workdir(n *parser.Node) (err error) {
 	if len(v) != 1 {
 		return errors.New("invalid argument count: " + n.Dump())
 	}
-	if err = s.subst(v); err == nil {
-		s.add(func(b ImageBuilder) error {
-			return b.SetWorkingDir(v[0])
-		})
+	if err = s.subst(v); err != nil {
+		return
 	}
-	return
+	return s.add(func(b ImageBuilder) error {
+		return b.SetWorkingDir(v[0])
+	})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#run
@@ -350,10 +461,9 @@ func (s *DockerfileBuilder) run(n *parser.Node) (err error) {
 	for k, v := range s.runEnvMap {
 		args[k] = v
 	}
-	s.add(func(b ImageBuilder) error {
+	return s.add(func(b ImageBuilder) error {
 		return b.Run(v, args)
 	})
-	return
 }
 
 // See https://docs.docker.com/engine/reference/builder/#expose
@@ -365,10 +475,9 @@ func (s *DockerfileBuilder) exposePorts(n *parser.Node) (err error) {
 	if err = s.subst(v); err != nil {
 		return
 	}
-	s.add(func(b ImageBuilder) error {
+	return s.add(func(b ImageBuilder) error {
 		return b.AddExposedPorts(v)
 	})
-	return
 }
 
 // See https://docs.docker.com/engine/reference/builder/#volume
@@ -377,34 +486,34 @@ func (s *DockerfileBuilder) volume(n *parser.Node) (err error) {
 	if err != nil {
 		return
 	}
-	if err = s.subst(v); err == nil {
-		s.add(func(b ImageBuilder) error {
-			return b.AddVolumes(v)
-		})
+	if err = s.subst(v); err != nil {
+		return
 	}
-	return
+	return s.add(func(b ImageBuilder) error {
+		return b.AddVolumes(v)
+	})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#entrypoint
 func (s *DockerfileBuilder) entrypoint(n *parser.Node) (err error) {
 	v, err := s.readInstructionNodeCmd(n)
-	if err == nil {
-		s.add(func(b ImageBuilder) error {
-			return b.SetEntrypoint(v)
-		})
+	if err != nil {
+		return
 	}
-	return
+	return s.add(func(b ImageBuilder) error {
+		return b.SetEntrypoint(v)
+	})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#cmd
 func (s *DockerfileBuilder) cmd(n *parser.Node) (err error) {
 	v, err := s.readInstructionNodeCmd(n)
-	if err == nil {
-		s.add(func(b ImageBuilder) error {
-			return b.SetCmd(v)
-		})
+	if err != nil {
+		return
 	}
-	return
+	return s.add(func(b ImageBuilder) error {
+		return b.SetCmd(v)
+	})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#stopsignal
@@ -416,12 +525,12 @@ func (s *DockerfileBuilder) stopsignal(n *parser.Node) (err error) {
 	if len(v) != 1 {
 		return errors.New("invalid argument count: " + n.Dump())
 	}
-	if err = s.subst(v); err == nil {
-		s.add(func(b ImageBuilder) error {
-			return b.SetStopSignal(v[0])
-		})
+	if err = s.subst(v); err != nil {
+		return
 	}
-	return
+	return s.add(func(b ImageBuilder) error {
+		return b.SetStopSignal(v[0])
+	})
 }
 
 // See https://docs.docker.com/engine/reference/builder/#environment-replacement

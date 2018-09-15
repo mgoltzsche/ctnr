@@ -53,7 +53,7 @@ type ImageBuilder struct {
 	container     run.Container
 	lockedBundles []*bundle.LockedBundle
 	namedFs       map[string]*imageFs
-	namedImages   map[string]image.Image
+	namedImages   map[string]*image.Image
 	buildNames    []string
 	fsBuilder     *tree.FsBuilder
 	stdio         run.ContainerIO
@@ -110,7 +110,7 @@ func NewImageBuilder(cfg ImageBuildConfig) (r *ImageBuilder) {
 	r.loggers = cfg.Loggers
 	r.initConfig()
 	r.namedFs = map[string]*imageFs{}
-	r.namedImages = map[string]image.Image{}
+	r.namedImages = map[string]*image.Image{}
 	return
 }
 
@@ -234,13 +234,11 @@ func (b *ImageBuilder) fs() (r *tree.FsBuilder, err error) {
 	return
 }
 
-func (b *ImageBuilder) Image() *digest.Digest {
+func (b *ImageBuilder) Image() digest.Digest {
 	if b.image == nil {
-		return nil
-	} else {
-		id := b.image.ID()
-		return &id
+		panic("Image() called before any image built")
 	}
+	return b.image.ID()
 }
 
 func (b *ImageBuilder) BuildName(name string) {
@@ -259,30 +257,30 @@ func (b *ImageBuilder) FromImage(imageName string) (err error) {
 	if err = b.closeContainer(); err != nil {
 		return
 	}
-	if len(b.buildNames) > 0 {
-		// Map name to image/bundle rootfs for efficient subsequent copy operations
-		if b.bundle != nil {
-			spec, err := b.bundle.Spec()
-			if err != nil {
-				return err
-			}
-			if spec.Root != nil {
-				rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
-				for _, name := range b.buildNames {
-					b.namedFs[name] = &imageFs{rootfs, b.image.ID()}
-				}
-				b.bundle = nil
-			} else {
-				b.loggers.Warn.Printf("build names %+v refer to an image without file system", b.buildNames)
-			}
-			b.buildNames = nil
-		} else if b.image != nil {
+	// Map name to image/bundle rootfs for efficient subsequent copy operations
+	if b.bundle != nil {
+		spec, err := b.bundle.Spec()
+		if err != nil {
+			return err
+		}
+		if spec.Root != nil {
+			rootfs := filepath.Join(b.bundle.Dir(), spec.Root.Path)
+			imgFs := imageFs{rootfs, b.image.ID()}
+			b.namedFs[imgFs.imageId.String()] = &imgFs
 			for _, name := range b.buildNames {
-				b.namedImages[name] = *b.image
+				b.namedFs[name] = &imgFs
 			}
-			b.buildNames = nil
+			b.bundle = nil
+		} else {
+			b.loggers.Warn.Printf("build names %+v refer to an image without file system", b.buildNames)
+		}
+		b.buildNames = nil
+	} else if b.image != nil {
+		for _, name := range b.buildNames {
+			b.namedImages[name] = b.image
 		}
 	}
+	b.buildNames = nil
 	if err = b.closeBundle(); err != nil {
 		return
 	}
@@ -526,7 +524,7 @@ func (b *ImageBuilder) Tag(tag string) (err error) {
 	img, err := b.images.TagImage(b.image.ID(), tag)
 	if err == nil {
 		b.image = &img
-		b.namedImages[tag] = *b.image
+		b.namedImages[tag] = b.image
 		b.loggers.Info.WithField("img", b.image.ID()).WithField("tag", tag).Println("Tagged image")
 	}
 	return
@@ -599,9 +597,11 @@ func (b *ImageBuilder) CopyFilesFromImage(srcImage string, srcPattern []string, 
 		// Copy from image
 		img, ok := b.namedImages[srcImage]
 		if !ok {
-			if img, err = b.imageResolver(b.images, srcImage); err != nil {
-				return
+			resolvedImg, e := b.imageResolver(b.images, srcImage)
+			if e != nil {
+				return e
 			}
+			img = &resolvedImg
 		}
 		imageId = img.ID()
 		cacheablefn = func(createdBy string) (err error) {
@@ -617,7 +617,9 @@ func (b *ImageBuilder) CopyFilesFromImage(srcImage string, srcPattern []string, 
 			// Store this image's fs in named fs map to be able to reuse it
 			// (fs is deleted when builder is closed)
 			imgRootfs = filepath.Join(imgRootfs, "rootfs")
-			b.namedFs[srcImage] = &imageFs{imgRootfs, imageId}
+			imgFs := imageFs{imgRootfs, imageId}
+			b.namedFs[srcImage] = &imgFs
+			b.namedFs[imageId.String()] = &imgFs
 			if err = img.Unpack(imgRootfs); err != nil {
 				return
 			}

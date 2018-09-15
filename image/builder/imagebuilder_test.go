@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/containers/image/types"
 	bstore "github.com/mgoltzsche/cntnr/bundle/store"
@@ -69,6 +70,7 @@ func TestImageBuilder(t *testing.T) {
 				"argp": "pval",
 			}
 			testee.SetImageResolver(ResolveDockerImage)
+			startTime := time.Now()
 			df, err := dockerfile.LoadDockerfile(b, srcDir, args, loggers.Warn)
 			require.NoError(t, err, filepath.Base(file))
 			err = df.Apply(testee)
@@ -82,10 +84,11 @@ func TestImageBuilder(t *testing.T) {
 				require.NoError(t, err, "get common base image from store after build completed")
 				baseImg = &img
 			}
-			img, err := testee.images.Image(*imageId)
+			img, err := testee.images.Image(imageId)
 			require.NoError(t, err, filepath.Base(file)+" load resulting image")
 			cfg, err := img.Config()
 			require.NoError(t, err, filepath.Base(file)+" load resulting image config")
+			elapsedTime1 := time.Now().Sub(startTime)
 
 			// Assert
 			assertions := []string{}
@@ -114,6 +117,19 @@ func TestImageBuilder(t *testing.T) {
 					expected := query[spacePos+1:]
 					query = query[:spacePos]
 					assertPathEqual(t, &cfg, query, expected, filepath.Base(file)+" assertion query: "+query)
+				case "STG":
+					startTime = time.Now()
+					stage := strings.TrimSpace(assertionExpr[4:])
+					df, err := dockerfile.LoadDockerfile(b, srcDir, args, loggers.Warn)
+					require.NoError(t, err, filepath.Base(file)+"assertion")
+					err = df.ApplyStage(testee, stage)
+					require.NoError(t, err, filepath.Base(file)+"assertion")
+					// Test if the build was cached since it has been built previously
+					elapsedTime2 := time.Now().Sub(startTime)
+					if elapsedTime2 > elapsedTime1/2 {
+						t.Errorf(filepath.Base(file)+" assertion: stage %q execution took longer than half the full execution previously", stage)
+						t.FailNow()
+					}
 				default:
 					t.Errorf("Unsupported assertion in %s: %q", filepath.Base(file), assertionExpr)
 					t.FailNow()

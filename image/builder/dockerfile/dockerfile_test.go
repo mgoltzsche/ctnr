@@ -12,13 +12,16 @@ import (
 	"testing"
 
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDockerfileApply(t *testing.T) {
 	files, err := filepath.Glob("testfiles/*.test")
 	require.NoError(t, err)
+	applyStageTested := false
 Files:
 	for _, file := range files {
 		fmt.Println("CASE ", file)
@@ -26,6 +29,7 @@ Files:
 		require.NoError(t, err)
 		defer efile.Close()
 		b, err := ioutil.ReadAll(efile)
+		require.NoError(t, err, file)
 		expected := strings.TrimSpace(string(b))
 		expectedLinesBr := strings.Split(expected, "\n")
 		expectedLines := make([]string, 0, len(expectedLinesBr))
@@ -34,10 +38,8 @@ Files:
 				expectedLines = append(expectedLines, eline)
 			}
 		}
-		require.NoError(t, err)
 		testee := newTestee(t, file)
-		err = errors.WithMessage(err, file)
-		require.NoError(t, err)
+		require.NoError(t, err, file)
 		mock := mockBuilder{returnErr: -1}
 		err = testee.Apply(&mock)
 		require.NoError(t, err)
@@ -79,6 +81,23 @@ Files:
 		if lastOpCount < 2 {
 			t.Errorf("%s: test failed too early on builder error (or case contains <2 instructions)", file)
 		}
+
+		// Test single stage execution
+		if strings.Contains(file, "multistage") {
+			applyStageTested = true
+			expectedOps := mock.ops[mock.stage2OpOffset:]
+			testee := newTestee(t, file)
+			require.NoError(t, err, file)
+			mock = mockBuilder{returnErr: -1, stageCount: 1}
+			err = testee.ApplyStage(&mock, "slim")
+			require.NoError(t, err, file)
+			if !assert.Equal(t, expectedOps, mock.ops, filepath.Base(file)+": apply slim stage") {
+				t.FailNow()
+			}
+		}
+	}
+	if !applyStageTested {
+		t.Errorf("ApplyStage() has not been tested")
 	}
 }
 
@@ -94,9 +113,11 @@ func newTestee(t *testing.T, file string) *DockerfileBuilder {
 }
 
 type mockBuilder struct {
-	ops         []string
-	returnErr   int
-	returnCount int
+	ops            []string
+	returnErr      int
+	returnCount    int
+	stageCount     int
+	stage2OpOffset int
 }
 
 func (s *mockBuilder) err() (err error) {
@@ -111,8 +132,8 @@ func (s *mockBuilder) add(op string) {
 	s.ops = append(s.ops, op)
 }
 
-func (s *mockBuilder) BuildName(name string) {
-	s.add("NAME " + name)
+func (s *mockBuilder) Image() digest.Digest {
+	return digest.Digest("stage" + strconv.Itoa(s.stageCount-1) + "-image")
 }
 
 func (s *mockBuilder) AddEnv(e map[string]string) error {
@@ -164,11 +185,15 @@ func (s *mockBuilder) CopyFilesFromImage(srcImage string, srcPattern []string, d
 
 func (s *mockBuilder) FromImage(name string) error {
 	s.add("FROM " + name)
+	s.stageCount++
+	if s.stageCount == 2 {
+		s.stage2OpOffset = len(s.ops) - 1
+	}
 	return s.err()
 }
 
 func (s *mockBuilder) Run(args []string, addEnv map[string]string) error {
-	s.add("RUN " + strings.TrimSpace(mapToString(addEnv)+" ") + sliceToString(args))
+	s.add("RUN " + strings.TrimSpace(mapToString(addEnv)+" "+sliceToString(args)))
 	return s.err()
 }
 

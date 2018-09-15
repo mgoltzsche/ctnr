@@ -1,13 +1,30 @@
 FROM alpine:3.7
-RUN printf '#!/bin/sh\necho hello from copied app\n' > /script.sh && chmod 744 /script.sh
 
-FROM scratch
-COPY --from=0 /bin/busybox /bin/
-COPY --from=0 /lib/*musl* /lib/
-WORKDIR /bin
+FROM alpine:3.7 AS base
+WORKDIR /etc
+RUN printf '#!/bin/sh\necho hello from script\n' > script.sh && chmod 744 script.sh
+
+FROM alpine:3.7
+
+FROM alpine:3.7 AS build
+COPY --from=base etc/script.sh script-copy.sh
+ENV BASEVAR=baseenvval
+ARG BASEARG=baseargval
+RUN [ "$(pwd)" = / ] || ("echo WORKDIR has been inherited from previous stage: ($(pwd))"; false)
+
+FROM scratch AS slim
+COPY --from=2 /bin/busybox /bin/
+COPY --from=2 /lib/*musl* /lib/
 ENTRYPOINT ["/bin/busybox"]
-COPY --from=0 script.sh copiedscript.sh
+WORKDIR /bin
+COPY --from=build script-copy.sh script-copy-copy.sh
+
+# Assert file system
 RUN ["/bin/busybox", "sh", "-c", "[ ! -d /var ] || (ls -la /; false)"]
-RUN ["/bin/busybox", "sh", "/bin/copiedscript.sh"]
+RUN ["/bin/busybox", "sh", "/bin/script-copy-copy.sh"]
+# Assert ENV/VAR scope: BASEENV and BASEARG should not be inherited
+RUN ["/bin/busybox", "sh", "-c", "[ ! \"$BASEVAR\" ] || (echo BASEVAR should not be set but is: \"$BASEVAR\"; false)"]
+RUN ["/bin/busybox", "sh", "-c", "[ ! \"$BASEARG\" ] || (echo BASEARG should not be set but is: \"$BASEARG\"; false)"]
 
 # ASSERT CFG /config/Env=
+# ASSERT STG slim

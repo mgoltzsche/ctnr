@@ -1,5 +1,3 @@
 FROM alpine:3.7
-NAME 0
-
 VOLUME "/var/app"
 VOLUME "/var/app" "/data/dir"

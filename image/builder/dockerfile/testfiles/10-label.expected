@@ -1,6 +1,4 @@
 FROM alpine:3.7
-NAME 0
-
 LABEL "key"="value"
 AUTHOR "Max Goltzsche <max.goltzsche@gmail.com>"
 LABEL "key1"="value1" "key2"="value2"

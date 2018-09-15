@@ -1,5 +1,4 @@
 FROM alpine:3.7
-NAME 0
 
 ENV "VAR1"="myval"
 ENV "VAR1"="entrypoint.sh"
@@ -17,13 +16,13 @@ ENV "USR"="0:0"
 ENV "BASEIMAGE"="alpine:3.7"
 ENV "WORK"="/etc"
 
-COPY dir="./ctx" "entrypoint.sh" "/dest" nil
-COPY dir="./ctx" "/entrypoint.sh" "/entrypoint.sh" nil
+COPY dir="./ctx" "entrypoint.sh" "/dest" 0:0
+COPY dir="./ctx" "/entrypoint.sh" "/entrypoint.sh" 0:0
 COPY dir="./ctx" "/entrypoint.sh" "/dest" 0:0
-COPY image="alpine:3.7" "etc/hosts" "/dest" nil
+COPY image="alpine:3.7" "etc/hosts" "/dest" 0:0
 
-ADD dir="./ctx" "entrypoint.sh" "/dest" nil
-ADD dir="./ctx" "/entrypoint.sh" "/entrypoint.sh" nil
+ADD dir="./ctx" "entrypoint.sh" "/dest" 0:0
+ADD dir="./ctx" "/entrypoint.sh" "/entrypoint.sh" 0:0
 ADD dir="./ctx" "/entrypoint.sh" "/dest" 0:0
 
 EXPOSE 80 443

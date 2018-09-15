@@ -1,5 +1,2 @@
 FROM alpine:3.7
-NAME 0
 FROM alpine:3.7
-NAME 1
-NAME builder

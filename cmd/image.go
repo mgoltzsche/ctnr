@@ -277,6 +277,6 @@ func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
 			return
 		}
 	}
-	fmt.Fprintln(os.Stdout, *imageBuilder.Image())
+	fmt.Fprintln(os.Stdout, imageBuilder.Image())
 	return
 }

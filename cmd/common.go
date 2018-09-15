@@ -38,12 +38,12 @@ func wrapRun(cf func(cmd *cobra.Command, args []string) error) func(cmd *cobra.C
 	return func(cmd *cobra.Command, args []string) {
 		defer func() {
 			if err := recover(); err != nil {
-				msg := "\n  THIS SHOULD NOT HAPPEN!"
-				msg += "\n  If you think this is a bug please search for an already"
-				msg += "\n  existing issue at https://github.com/mgoltzsche/cntnr/issues"
-				msg += "\n  or report it at https://github.com/mgoltzsche/cntnr/issues/new"
-				msg += "\n  together with a description of what you did, what you expect"
-				msg += "\n  and how to reproduce:\n"
+				msg := "\n  OUPS, THIS SEEMS TO BE A BUG! xl"
+				msg += "\n  Please report it at"
+				msg += "\n    https://github.com/mgoltzsche/cntnr/issues/new"
+				msg += "\n  with a description of what you did and the stacktrace"
+				msg += "\n  below if you cannot find an already existing issue at"
+				msg += "\n    https://github.com/mgoltzsche/cntnr/issues\n"
 				stackTrace := strings.Replace(string(debug.Stack()), "\n", "\n  ", -1)
 				// TODO: Add version
 				logrus.Fatalf("%+v\n%s\n  PANIC: %s\n  %s", err, msg, err, stackTrace)

@@ -1,12 +1,12 @@
 FROM alpine:3.7
 
-ARG argd entrypoint.sh
+ARG argd=entrypoint.sh
 ARG argp
-ARG argusr 0:0
-ARG argimg alpine:3.7
-ARG argvol /data
-ARG port1 80
-ARG port2 443/tcp
+ARG argusr=0:0
+ARG argimg=alpine:3.7
+ARG argvol=/data
+ARG port1=80
+ARG port2=443/tcp
 
 ENV MYVARX ${argd}
 ENV MYVARY ${argp}
@@ -20,7 +20,7 @@ EXPOSE $port1 $port2
 
 LABEL $argd=$argp
 
-ARG argstop SIGTERM
+ARG argstop=SIGTERM
 STOPSIGNAL $argstop
 
 USER $argusr

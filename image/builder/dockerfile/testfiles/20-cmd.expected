@@ -1,5 +1,3 @@
 FROM alpine:3.7
-NAME 0
-
 CMD "/entrypoint.sh" "-x"
 CMD "/bin/sh" "-c" "/entrypoint.sh -x"
