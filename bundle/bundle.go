@@ -12,6 +12,7 @@ import (
 	"github.com/mgoltzsche/cntnr/pkg/atomic"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
+	"github.com/openSUSE/umoci/pkg/fseval"
 	digest "github.com/opencontainers/go-digest"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
@@ -114,7 +115,7 @@ func (b *Bundle) GC(before time.Time) (r bool, err error) {
 			return true, err
 		}
 		if st.ModTime().Before(before) {
-			if err = deleteBundle(b.dir); err != nil {
+			if err = deleteDirSafely(b.dir); err != nil {
 				return true, err
 			}
 			return true, err
@@ -235,26 +236,21 @@ func (b *LockedBundle) Spec() (*rspecs.Spec, error) {
 }
 
 func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
-	rootfs := filepath.Join(b.Dir(), "rootfs")
-	var imgId *digest.Digest
+	var (
+		rootfs = filepath.Join(b.Dir(), "rootfs")
+		imgId  *digest.Digest
+	)
 	if image != nil {
 		id := image.ID()
 		imgId = &id
 	}
-	if err = createRootfs(rootfs, image); err != nil {
+	if err = deleteDirSafely(rootfs); err != nil && !os.IsNotExist(err) {
+		return
+	}
+	if err = image.Unpack(rootfs); err != nil {
 		return
 	}
 	return b.SetParentImageId(imgId)
-}
-
-func createRootfs(rootfs string, image BundleImage) (err error) {
-	if err = os.RemoveAll(rootfs); err == nil || os.IsNotExist(err) {
-		return image.Unpack(rootfs)
-	}
-	if err != nil {
-		err = errors.New("create bundle rootfs: " + err.Error())
-	}
-	return
 }
 
 func (b *LockedBundle) SetSpec(specgen SpecGenerator) (err error) {
@@ -335,7 +331,7 @@ func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) (err error) {
 }
 
 func (b *LockedBundle) Delete() (err error) {
-	err = deleteBundle(b.Dir())
+	err = deleteDirSafely(b.Dir())
 	err = exterrors.Append(err, b.Close())
 	return
 }
@@ -348,9 +344,10 @@ func lockBundle(bundle *Bundle) (l *lock.Lockfile, err error) {
 	return l, errors.Wrap(err, "lock bundle")
 }
 
-func deleteBundle(dir string) (err error) {
-	if err = os.RemoveAll(dir); err != nil {
-		err = errors.New("delete bundle: " + err.Error())
+func deleteDirSafely(dir string) (err error) {
+	// TODO: FsEval impl should be provided from outside
+	if err = fseval.RootlessFsEval.RemoveAll(dir); err != nil {
+		err = errors.New("delete dir: " + err.Error())
 	}
 	return
 }
