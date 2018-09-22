@@ -77,14 +77,72 @@ func exitOnError(cmd *cobra.Command, err error) {
 		err = errors.New("container process terminated with error")
 	}
 
-	// Print error & exit
+	// Log stacktrace
 	errStr := err.Error()
-	causeStr := fmt.Sprintf("%+v", cause)
-	if causeStr != errStr {
-		loggers.Debug.Println(strings.Replace(causeStr, "\n", "\n  ", -1))
+	errDetails, _ := errorCausesString(err, nil)
+	if errDetails != errStr {
+		loggers.Debug.Println(errDetails)
 	}
+
+	// Print error & exit
 	errLog.Println(errStr)
 	os.Exit(exitCode)
+}
+
+func errorCausesString(err error, lastTraceLines []string) (debug string, lastTracedCause error) {
+	type causer interface {
+		error
+		Cause() error
+	}
+	type tracer interface {
+		error
+		StackTrace() errors.StackTrace
+	}
+	str := ""
+	if traced, ok := err.(tracer); ok {
+		st := traced.StackTrace()
+		traceLines := make([]string, len(st))
+		for i, t := range st {
+			traceLines[i] = fmt.Sprintf("%+v", t)
+		}
+		truncate := len(traceLines)
+		offset := len(traceLines) - len(lastTraceLines)
+		for i := len(traceLines) - 1; i >= 0; i-- {
+			j := i - offset
+			if j < 0 || len(lastTraceLines) <= j || lastTraceLines[j] != traceLines[i] {
+				truncate = i + 1
+				break
+			}
+		}
+		for _, t := range traceLines[0:truncate] {
+			str += "\n    " + strings.Replace(t, "\n", "\n    ", -1)
+		}
+		if truncate < len(traceLines)-1 {
+			str += "\n    ... (truncated)"
+		}
+		lastTraceLines = traceLines
+	}
+	errMsg := err.Error()
+	wrapper, ok := err.(causer)
+	if ok && wrapper.Cause() != nil {
+		cause := wrapper.Cause()
+		causeStr, lastTracedCause := errorCausesString(cause, lastTraceLines)
+		if str == "" {
+			return causeStr, lastTracedCause
+		}
+		causeMsg := ""
+		if lastTracedCause != nil {
+			causeMsg = lastTracedCause.Error()
+		}
+		pos := len(errMsg) - len(causeMsg)
+		if strings.HasSuffix(errMsg, ": "+causeMsg) && pos > 0 {
+			str = errMsg[0:pos-2] + str
+		} else {
+			str = errMsg + str
+		}
+		return str + "\n  " + causeStr, err
+	}
+	return errMsg + str, err
 }
 
 func usageError(msg string) UsageError {
