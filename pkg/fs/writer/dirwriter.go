@@ -299,14 +299,14 @@ func (w *DirWriter) writeMetadata(file string, a fs.FileAttrs) (err error) {
 		return errors.Wrapf(err, "clear xattrs: %s", file)
 	}
 	for k, v := range a.Xattrs {
-		if err = w.fsEval.Lsetxattr(file, k, []byte(v), 0); err != nil {
+		if e := w.fsEval.Lsetxattr(file, k, []byte(v), 0); e != nil {
 			// In rootless mode, some xattrs will fail (security.capability).
 			// This is _fine_ as long as not run as root
-			if w.rootless && os.IsPermission(errors.Cause(err)) {
-				w.warn.Printf("write file metadata: ignoring EPERM on setxattr %s: %v", k, err)
+			if w.rootless && os.IsPermission(errors.Cause(e)) {
+				w.warn.Printf("write file metadata: ignoring EPERM on setxattr %s: %v", k, e)
 				continue
 			}
-			return errors.Wrapf(err, "set xattr: %s", file)
+			return errors.Wrapf(e, "set xattr: %s", file)
 		}
 	}
 	return

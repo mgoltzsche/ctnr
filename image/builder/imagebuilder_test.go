@@ -121,9 +121,11 @@ func TestImageBuilder(t *testing.T) {
 					startTime = time.Now()
 					stage := strings.TrimSpace(assertionExpr[4:])
 					df, err := dockerfile.LoadDockerfile(b, srcDir, args, loggers.Warn)
-					require.NoError(t, err, filepath.Base(file)+"assertion")
-					err = df.ApplyStage(testee, stage)
-					require.NoError(t, err, filepath.Base(file)+"assertion")
+					require.NoError(t, err, filepath.Base(file)+" assertion: stage load")
+					err = df.Target(stage)
+					require.NoError(t, err, filepath.Base(file)+" assertion: set target")
+					err = df.Apply(testee)
+					require.NoError(t, err, filepath.Base(file)+" assertion: apply stage")
 					// Test if the build was cached since it has been built previously
 					elapsedTime2 := time.Now().Sub(startTime)
 					if elapsedTime2 > elapsedTime1/2 {

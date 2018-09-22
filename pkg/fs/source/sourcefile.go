@@ -72,6 +72,6 @@ func (s *sourceFile) Equal(o fs.Source) (bool, error) {
 	if err != nil {
 		return false, errors.Wrap(err, "equal")
 	}
-	hash, err := s.Hash()
-	return hash == oa.Hash, errors.Wrap(err, "equal")
+	a, err := s.DeriveAttrs()
+	return a.Equal(&oa), errors.Wrap(err, "equal")
 }

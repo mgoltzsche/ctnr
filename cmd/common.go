@@ -38,7 +38,7 @@ func wrapRun(cf func(cmd *cobra.Command, args []string) error) func(cmd *cobra.C
 	return func(cmd *cobra.Command, args []string) {
 		defer func() {
 			if err := recover(); err != nil {
-				msg := "\n  OUPS, THIS SEEMS TO BE A BUG! xl"
+				msg := "\n  OUPS, THIS SEEMS TO BE A BUG!"
 				msg += "\n  Please report it at"
 				msg += "\n    https://github.com/mgoltzsche/cntnr/issues/new"
 				msg += "\n  with a description of what you did and the stacktrace"

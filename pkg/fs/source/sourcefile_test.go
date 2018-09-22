@@ -35,15 +35,15 @@ func TestSourceFile(t *testing.T) {
 		t.FailNow()
 	}
 	if a.Mode != mode {
-		t.Errorf("DerivedAttrs() mode %s != %s", a.Mode, mode)
-	}
-	wa, err := testee.DeriveAttrs()
-	require.NoError(t, err)
-	if wa.Hash == "" {
-		t.Errorf("DerivedAttrs() hash == ''")
+		t.Errorf("mode %s != %s", a.Mode, mode)
 	}
 
 	// Test hash
+	wa, err := testee.DeriveAttrs()
+	require.NoError(t, err)
+	if wa.Hash == "" {
+		t.Errorf("hash == ''")
+	}
 	hash1 := wa.Hash
 	testee = NewSourceFile(fs.NewFileReader(srcFile, fsEval), fileAttrs)
 	wa, err = testee.DeriveAttrs()

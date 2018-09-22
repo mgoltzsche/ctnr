@@ -20,8 +20,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/containers/image/transports"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/image/builder"
@@ -99,6 +101,11 @@ to a local or remote destination.`,
 )
 
 func init() {
+	transportsHelp := "\n\nSupported transports:\n  " +
+		strings.Join(transports.ListNames(), "\n  ") +
+		"\n\nExample image refs:\n  docker://alpine:latest\n  oci:mydir:latest"
+	imageExportCmd.Long += transportsHelp
+	imageImportCmd.Long += transportsHelp
 	initImageBuildFlags(imageBuildCmd.Flags())
 	imageCmd.AddCommand(imageListCmd)
 	imageCmd.AddCommand(imageTagCmd)

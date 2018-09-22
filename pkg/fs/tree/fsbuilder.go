@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,10 +16,11 @@ import (
 )
 
 type FsBuilder struct {
-	fs      fs.FsNode
-	fsEval  fseval.FsEval
-	sources *source.Sources
-	err     error
+	fs              fs.FsNode
+	fsEval          fseval.FsEval
+	sources         *source.Sources
+	httpHeaderCache source.HttpHeaderCache
+	err             error
 }
 
 func FromDir(rootfs string, rootless bool) (fs.FsNode, error) {
@@ -37,16 +39,19 @@ func NewFsBuilder(rootfs fs.FsNode, opts fs.FSOptions) *FsBuilder {
 		attrMapper = fs.NewAttrMapper(opts.IdMappings)
 	}
 	return &FsBuilder{
-		fs:      rootfs,
-		fsEval:  fsEval,
-		sources: source.NewSources(fsEval, attrMapper),
+		fs:              rootfs,
+		fsEval:          fsEval,
+		sources:         source.NewSources(fsEval, attrMapper),
+		httpHeaderCache: source.NoopHttpHeaderCache(""),
 	}
 }
 
 func (b *FsBuilder) FS() (fs.FsNode, error) {
 	return b.fs, errors.Wrap(b.err, "fsbuilder")
 }
-
+func (b *FsBuilder) HttpHeaderCache(cache source.HttpHeaderCache) {
+	b.httpHeaderCache = cache
+}
 func (b *FsBuilder) Hash(attrs fs.AttrSet) (d digest.Digest, err error) {
 	if b.err != nil {
 		return d, errors.Wrap(b.err, "fsbuilder")
@@ -88,15 +93,33 @@ func (b *FsBuilder) AddAll(srcfs string, sources []string, dest string, usr *idu
 	}
 	for _, src := range sources {
 		if isUrl(src) {
-			// source from URL
-			// TODO: add url
-			panic("TODO: support URL")
+			b.AddURL(src, dest)
+			if b.err != nil {
+				return
+			}
 		} else {
 			if err := b.copy(srcfs, src, dest, usr, b.createOverlayOrFile); err != nil {
 				b.err = errors.Wrap(err, "add "+src)
 				return
 			}
 		}
+	}
+}
+
+func (b *FsBuilder) AddURL(rawURL, dest string) {
+	url, err := url.Parse(rawURL)
+	if err != nil {
+		b.err = errors.Wrapf(err, "add URL %s", url)
+		return
+	}
+	// append source base name to dest if dest ends with /
+	if dest, err = destFilePath(path.Dir(url.Path), dest); err != nil {
+		b.err = errors.Wrapf(err, "add URL %s", url)
+		return
+	}
+	if _, err = b.fs.AddUpper(dest, source.NewSourceURL(url.String(), b.httpHeaderCache, idutils.UserIds{})); err != nil {
+		b.err = errors.Wrapf(err, "add URL %s", url)
+		return
 	}
 }
 
@@ -135,10 +158,11 @@ func (b *FsBuilder) copy(srcfs, src, dest string, usr *idutils.UserIds, factory 
 		dest = filepath.Clean(dest) + string(filepath.Separator)
 	}
 	for _, file := range matches {
+		origSrcName := filepath.Base(file)
 		if file, err = secureSourceFile(srcfs, file); err != nil {
 			return
 		}
-		if err = b.addFiles(file, dest, usr, factory); err != nil {
+		if err = b.addFiles(file, origSrcName, dest, usr, factory); err != nil {
 			return
 		}
 	}
@@ -149,12 +173,12 @@ func (b *FsBuilder) AddFiles(srcFile, dest string, usr *idutils.UserIds) {
 	if b.err != nil {
 		return
 	}
-	if err := b.addFiles(srcFile, dest, usr, b.createFile); err != nil {
+	if err := b.addFiles(srcFile, filepath.Base(srcFile), dest, usr, b.createFile); err != nil {
 		b.err = err
 	}
 }
 
-func (b *FsBuilder) addFiles(srcFile, dest string, usr *idutils.UserIds, factory fileSourceFactory) (err error) {
+func (b *FsBuilder) addFiles(srcFile, origSrcName, dest string, usr *idutils.UserIds, factory fileSourceFactory) (err error) {
 	fi, err := b.fsEval.Lstat(srcFile)
 	if err != nil {
 		return
@@ -173,7 +197,7 @@ func (b *FsBuilder) addFiles(srcFile, dest string, usr *idutils.UserIds, factory
 		t := src.Attrs().NodeType
 		if t != fs.TypeDir && t != fs.TypeOverlay {
 			// append source base name to dest if dest ends with /
-			if dest, err = destFilePath(srcFile, dest); err != nil {
+			if dest, err = destFilePath(origSrcName, dest); err != nil {
 				return
 			}
 		}
@@ -241,13 +265,12 @@ func secureSourceFile(root, file string) (f string, err error) {
 	return
 }
 
-func destFilePath(src string, dest string) (string, error) {
+func destFilePath(srcFileName string, dest string) (string, error) {
 	if strings.HasSuffix(dest, "/") {
-		fileName := path.Base(filepath.ToSlash(src))
-		if fileName == "" {
-			return "", errors.Errorf("cannot derive file name for destination %q from source %q. Please specify file name within destination!", dest, src)
+		if srcFileName == "" {
+			return "", errors.Errorf("cannot derive file name for destination %q from source. Please specify file name within destination!", dest)
 		}
-		return filepath.Join(dest, fileName), nil
+		return filepath.Join(dest, srcFileName), nil
 	}
 	return dest, nil
 }

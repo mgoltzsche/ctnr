@@ -140,23 +140,11 @@ func (b *SpecBuilder) AddExposedPorts(ports []string) {
 
 func (b *SpecBuilder) SetPRootPath(prootPath string) {
 	b.prootPath = prootPath
-	spec := b.Generator.Spec()
 	// This has been derived from https://github.com/AkihiroSuda/runrootless/blob/b9a7df0120a7fee15c0223fd0fbc8c3885edd9b3/bundle/spec.go
-	spec.Mounts = append(spec.Mounts,
-		rspecs.Mount{
-			Destination: "/dev/proot",
-			Type:        "tmpfs",
-			Source:      "tmpfs",
-			Options:     []string{"exec", "mode=755", "size=32256k"},
-		},
-		rspecs.Mount{
-			Destination: "/dev/proot/proot",
-			Type:        "bind",
-			Source:      prootPath,
-			Options:     []string{"bind", "ro"},
-		},
-	)
-	spec.Process.Env = append(spec.Process.Env, "PROOT_TMP_DIR=/dev/proot", "PROOT_NO_SECCOMP=1")
+	b.AddTmpfsMount("/dev/proot", []string{"exec", "mode=755", "size=32256k"})
+	b.AddBindMount(prootPath, "/dev/proot/proot", []string{"bind", "ro"})
+	b.AddProcessEnv("PROOT_TMP_DIR", "/dev/proot")
+	b.AddProcessEnv("PROOT_NO_SECCOMP", "1")
 	b.AddProcessCapability("CAP_" + capability.CAP_SYS_PTRACE.String())
 	b.applyEntrypoint()
 	b.SetLinuxSeccompDefault()

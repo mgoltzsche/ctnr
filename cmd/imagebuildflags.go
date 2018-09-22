@@ -15,10 +15,17 @@
 package cmd
 
 import (
+	"errors"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/image/builder"
+	"github.com/mgoltzsche/cntnr/image/builder/dockerfile"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
+	"github.com/opencontainers/runtime-tools/validate"
 	"github.com/spf13/pflag"
 )
 
@@ -29,7 +36,8 @@ var (
 )
 
 type imageBuildFlags struct {
-	ops []func(*builder.ImageBuilder) error
+	ops           []func(*builder.ImageBuilder) error
+	dockerfileCtx *dockerfileBuildContext
 }
 
 func (s *imageBuildFlags) add(op func(*builder.ImageBuilder) error) {
@@ -38,7 +46,10 @@ func (s *imageBuildFlags) add(op func(*builder.ImageBuilder) error) {
 
 func initImageBuildFlags(f *pflag.FlagSet) {
 	ops := &flagImageBuildOps
-	f.Var((*iFromImage)(ops), "from", "Extends the provided parent image (must come first)")
+	f.Var((*iDockerfile)(ops), "dockerfile", "Builds the dockerfile at the provided path")
+	f.Var((*iDockerfileTarget)(ops), "target", "Specifies the last --dockerfile's build target")
+	f.Var((*iDockerfileArg)(ops), "build-arg", "Specifies the last --dockerfile's build arg")
+	f.Var((*iFromImage)(ops), "from", "Extends the provided parent")
 	f.Var((*iAuthor)(ops), "author", "Sets the new image's author")
 	f.Var((*iLabel)(ops), "label", "Adds labels to the image")
 	f.Var((*iEnv)(ops), "env", "Adds environment variables to the image")
@@ -47,11 +58,130 @@ func initImageBuildFlags(f *pflag.FlagSet) {
 	f.Var((*iCmd)(ops), "cmd", "Sets the new image's command")
 	f.Var((*iUser)(ops), "user", "Sets the new image's user")
 	f.Var((*iRun)(ops), "run", "Runs the provided command in the current image")
+	f.Var((*iRunCapAdd)(ops), "cap-add", "Adds a capability to subsequent build processes")
+	// TODO: remove
 	f.Var((*iRunShell)(ops), "run-sh", "Runs the provided commands using a shell in the current image")
 	f.Var((*iAdd)(ops), "add", "Adds glob pattern matching files to image: SRC... [DEST[:USER[:GROUP]]]")
 	f.Var((*iTag)(ops), "tag", "Tags the image")
 	f.BoolVar(&flagProot, "proot", false, "Enables PRoot")
 	f.BoolVar(&flagNoCache, "no-cache", false, "Disables caches")
+}
+
+type iFromImage imageBuildFlags
+
+func (o *iFromImage) Set(image string) (err error) {
+	err = checkNonEmpty(image)
+	s := (*imageBuildFlags)(o)
+	s.dockerfileCtx = nil
+	s.add(func(b *builder.ImageBuilder) error {
+		return b.FromImage(image)
+	})
+	return
+}
+
+func (o *iFromImage) Type() string {
+	return "string"
+}
+
+func (o *iFromImage) String() string {
+	return ""
+}
+
+type iDockerfile imageBuildFlags
+
+func (o *iDockerfile) Set(file string) (err error) {
+	err = checkNonEmpty(file)
+	if err != nil {
+		return
+	}
+	d, err := ioutil.ReadFile(file)
+	if err != nil {
+		return
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	if wd, err = filepath.Abs(wd); err != nil {
+		return
+	}
+	s := (*imageBuildFlags)(o)
+	ctx := &dockerfileBuildContext{map[string]string{}, nil}
+	s.dockerfileCtx = ctx
+	s.add(func(b *builder.ImageBuilder) (err error) {
+		// TODO: load dockerfile first and defer build only - when args can be provided after dockerfile has been loaded
+		df, err := dockerfile.LoadDockerfile(d, wd, ctx.args, loggers.Warn)
+		if err != nil {
+			return
+		}
+		for _, target := range ctx.targets {
+			if err = df.Target(target); err != nil {
+				return
+			}
+		}
+		b.SetImageResolver(builder.ResolveDockerImage)
+		defer b.SetImageResolver(image.GetImage)
+		return df.Apply(b)
+	})
+	return
+}
+
+type dockerfileBuildContext struct {
+	args    map[string]string
+	targets []string
+}
+
+func (o *iDockerfile) Type() string {
+	return "string"
+}
+
+func (o *iDockerfile) String() string {
+	return ""
+}
+
+type iDockerfileTarget imageBuildFlags
+
+func (o *iDockerfileTarget) Set(target string) (err error) {
+	err = checkNonEmpty(target)
+	if err != nil {
+		return
+	}
+	s := (*imageBuildFlags)(o)
+	if s.dockerfileCtx == nil {
+		return usageError("--dockerfile option must be specified first")
+	}
+	s.dockerfileCtx.targets = append(s.dockerfileCtx.targets, target)
+	return
+}
+
+func (o *iDockerfileTarget) Type() string {
+	return "string"
+}
+
+func (o *iDockerfileTarget) String() string {
+	return ""
+}
+
+type iDockerfileArg imageBuildFlags
+
+func (o *iDockerfileArg) Set(kv string) (err error) {
+	err = checkNonEmpty(kv)
+	if err != nil {
+		return
+	}
+	s := (*imageBuildFlags)(o)
+	if s.dockerfileCtx == nil {
+		return usageError("--dockerfile option must be specified first")
+	}
+	return addMapEntries(kv, &s.dockerfileCtx.args)
+}
+
+func (o *iDockerfileArg) Type() string {
+	return "string"
+}
+
+func (o *iDockerfileArg) String() string {
+	return ""
 }
 
 type iRun imageBuildFlags
@@ -98,6 +228,38 @@ func (o *iRunShell) String() string {
 	return ""
 }
 
+type iRunCapAdd imageBuildFlags
+
+func (o *iRunCapAdd) Set(capExpr string) (err error) {
+	if err = checkNonEmpty(capExpr); err != nil {
+		return
+	}
+	capabilities, err := parseStringEntries(capExpr)
+	if err != nil {
+		return
+	}
+	for _, cap := range capabilities {
+		if err = validate.CapValid("CAP_"+cap, true); err != nil {
+			return errors.New("unsupported capability")
+		}
+	}
+	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
+		for _, cap := range capabilities {
+			b.AddCap("CAP_" + cap)
+		}
+		return nil
+	})
+	return
+}
+
+func (o *iRunCapAdd) Type() string {
+	return "string"
+}
+
+func (o *iRunCapAdd) String() string {
+	return ""
+}
+
 type iAdd imageBuildFlags
 
 // TODO: support passing src image
@@ -136,24 +298,6 @@ func (o *iAdd) Type() string {
 }
 
 func (o *iAdd) String() string {
-	return ""
-}
-
-type iFromImage imageBuildFlags
-
-func (o *iFromImage) Set(image string) (err error) {
-	err = checkNonEmpty(image)
-	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
-		return b.FromImage(image)
-	})
-	return
-}
-
-func (o *iFromImage) Type() string {
-	return "string"
-}
-
-func (o *iFromImage) String() string {
 	return ""
 }
 

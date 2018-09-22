@@ -43,6 +43,12 @@ func (s *WriterMock) LowerNode(path, name string, a *fs.NodeAttrs) error {
 	if a.Hash != "" {
 		line += " hash=" + a.Hash
 	}
+	if a.URL != "" {
+		line += " url=" + a.URL
+	}
+	if a.HTTPInfo != "" {
+		line += " http=" + a.HTTPInfo
+	}
 	s.Nodes = append(s.Nodes, line)
 	return nil
 }
@@ -67,8 +73,16 @@ func (s *WriterMock) File(path string, src fs.FileSource) (fs.Source, error) {
 	if s.attrs&fs.AttrsHash != 0 {
 		da, err := src.DeriveAttrs()
 		require.NoError(s.t, err)
-		require.True(s.t, da.Hash != "", "%s: hash == ''", path)
-		line += " hash=" + da.Hash
+		require.True(s.t, da.Hash != "" || da.HTTPInfo != "", "%s: hash|http == ''; hash=%q, http=%q", path, da.Hash, da.HTTPInfo)
+		if da.Hash != "" {
+			line += " hash=" + da.Hash
+		}
+		if da.URL != "" {
+			line += " url=" + da.URL
+		}
+		if da.HTTPInfo != "" {
+			line += " http=" + da.HTTPInfo
+		}
 	}
 	s.Nodes = append(s.Nodes, line)
 	s.Written = append(s.Written, line)

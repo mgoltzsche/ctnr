@@ -5,25 +5,32 @@ import (
 	"path/filepath"
 
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/cntnr/pkg/fs/source"
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
 type ImageBuildCache interface {
-	Get(parent *digest.Digest, uniqHistoryEntry string) (digest.Digest, error)
-	Put(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) error
+	GetCachedImageId(parent *digest.Digest, uniqHistoryEntry string) (digest.Digest, error)
+	PutCachedImageId(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) error
+	HttpHeaderCache(image *digest.Digest) source.HttpHeaderCache
+	// TODO: add HttpEtagCache
 }
 
 type noOpCache string
 
-func (_ noOpCache) Get(parent *digest.Digest, uniqHistoryEntry string) (d digest.Digest, err error) {
+func (_ noOpCache) GetCachedImageId(parent *digest.Digest, uniqHistoryEntry string) (d digest.Digest, err error) {
 	err = exterrors.Typed(errCacheKeyNotExist, "image build cache is disabled")
 	return
 }
 
-func (_ noOpCache) Put(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) error {
+func (_ noOpCache) PutCachedImageId(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) error {
 	return nil
+}
+
+func (_ noOpCache) HttpHeaderCache(image *digest.Digest) source.HttpHeaderCache {
+	return source.NoopHttpHeaderCache("NoopHttpHeaderCache")
 }
 
 func NewNoOpCache() ImageBuildCache {
@@ -39,7 +46,7 @@ func NewImageBuildCache(dir string, warn log.FieldLogger) ImageBuildCache {
 	return &imageBuildCache{dir, warn}
 }
 
-func (s *imageBuildCache) Get(parent *digest.Digest, uniqHistoryEntry string) (child digest.Digest, err error) {
+func (s *imageBuildCache) GetCachedImageId(parent *digest.Digest, uniqHistoryEntry string) (child digest.Digest, err error) {
 	c := s.cache(parent, uniqHistoryEntry)
 	cached, err := c.Get(uniqHistoryEntry)
 	if err == nil {
@@ -52,13 +59,13 @@ func (s *imageBuildCache) Get(parent *digest.Digest, uniqHistoryEntry string) (c
 			}
 		}
 	}
-	return child, errors.Wrap(err, "get cached image")
+	return child, errors.Wrap(err, "build cache: get imageId")
 }
 
-func (s *imageBuildCache) Put(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) (err error) {
+func (s *imageBuildCache) PutCachedImageId(parent *digest.Digest, uniqHistoryEntry string, child digest.Digest) (err error) {
 	c := s.cache(parent, uniqHistoryEntry)
 	err = c.Put(uniqHistoryEntry, child.String())
-	return errors.Wrap(err, "image build cache")
+	return errors.Wrap(err, "build cache: put imageId")
 }
 
 func (s *imageBuildCache) cache(image *digest.Digest, uniqHistoryEntry string) CacheFile {
@@ -72,4 +79,14 @@ func (s *imageBuildCache) cache(image *digest.Digest, uniqHistoryEntry string) C
 		file = filepath.Join(s.dir, (*image).Algorithm().String(), (*image).Hex(), d.Algorithm().String(), d.Hex())
 	}
 	return NewCacheFile(file, warn)
+}
+
+func (s *imageBuildCache) HttpHeaderCache(image *digest.Digest) source.HttpHeaderCache {
+	var dir string
+	if image == nil {
+		dir = filepath.Join(s.dir, "default")
+	} else {
+		dir = filepath.Join(s.dir, (*image).Algorithm().String(), (*image).Hex(), "http")
+	}
+	return source.NewHttpHeaderCache(dir)
 }

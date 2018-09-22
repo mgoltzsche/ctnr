@@ -85,6 +85,9 @@ func NewProcess(container *Container, p *specs.Process, io run.ContainerIO, logg
 }
 
 func (p *Process) Start() (err error) {
+	if len(p.args) == 0 {
+		return errors.New("start process: no args specified")
+	}
 	p.log.Debug.WithField("args", p.args).Println("Starting process")
 
 	p.mutex.Lock()

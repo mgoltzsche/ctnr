@@ -26,6 +26,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/opencontainers/runtime-tools/validate"
 	"github.com/pkg/errors"
 )
 
@@ -56,6 +57,7 @@ type ImageBuilder struct {
 	namedImages   map[string]*image.Image
 	buildNames    []string
 	fsBuilder     *tree.FsBuilder
+	capabilities  []string
 	stdio         run.ContainerIO
 	tempDir       string
 	runRoot       string
@@ -179,9 +181,13 @@ func (b *ImageBuilder) initBundle() (err error) {
 	if b.proot != "" {
 		bb.SetPRootPath(b.proot)
 	}
+	for _, cap := range b.capabilities {
+		bb.AddProcessCapability(cap)
+	}
 	// TODO: use separate default network when not in rootless mode
 	bb.UseHostNetwork()
 	bb.SetProcessTerminal(false)
+	bb.SetLinuxSeccompDefault()
 	bundle, err := b.bundles.CreateBundle(bb, false)
 	if err == nil {
 		b.bundle = bundle
@@ -231,6 +237,12 @@ func (b *ImageBuilder) fs() (r *tree.FsBuilder, err error) {
 		b.fsBuilder = tree.NewFsBuilder(rootfs, fs.NewFSOptions(b.rootless))
 	}
 	r = b.fsBuilder
+	var imgId *digest.Digest
+	if b.image != nil {
+		id := b.image.ID()
+		imgId = &id
+	}
+	r.HttpHeaderCache(b.cache.HttpHeaderCache(imgId))
 	return
 }
 
@@ -248,6 +260,15 @@ func (b *ImageBuilder) BuildName(name string) {
 		b.loggers.Warn.Printf("shadowing build name %q", name)
 	}
 	b.buildNames = append(b.buildNames, name)
+}
+
+func (b *ImageBuilder) AddCap(cap string) (err error) {
+	cap = strings.ToUpper(cap)
+	if err = validate.CapValid(cap, true); err == nil {
+		b.capabilities = append(b.capabilities, cap)
+	}
+	b.closeContainerAndBundle()
+	return
 }
 
 func (b *ImageBuilder) FromImage(imageName string) (err error) {
@@ -514,6 +535,13 @@ func (b *ImageBuilder) newProcess(args []string, addEnv []string, spec *rspecs.S
 	p.Args = args
 	p.Env = append(b.config.Config.Env, addEnv...)
 	p.Cwd = b.config.Config.WorkingDir
+	/*p.Capabilities = &rspecs.LinuxCapabilities{
+		Bounding:    b.capabilities,
+		Effective:   b.capabilities,
+		Inheritable: b.capabilities,
+		Permitted:   b.capabilities,
+		Ambient:     b.capabilities,
+	}*/
 	return &p, nil
 }
 
@@ -753,7 +781,7 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 		parentImgId = &pImgId
 	}
 	var cachedImgId digest.Digest
-	cachedImgId, err = b.cache.Get(parentImgId, uniqCreatedBy)
+	cachedImgId, err = b.cache.GetCachedImageId(parentImgId, uniqCreatedBy)
 	if err == nil {
 		cachedImg, e := b.images.Image(cachedImgId)
 		if e == nil {
@@ -776,7 +804,7 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 		return
 	}
 
-	err = b.cache.Put(parentImgId, uniqCreatedBy, b.image.ID())
+	err = b.cache.PutCachedImageId(parentImgId, uniqCreatedBy, b.image.ID())
 
 	b.loggers.Info.WithField("img", (*b.image).ID()).Printf("Built new image")
 

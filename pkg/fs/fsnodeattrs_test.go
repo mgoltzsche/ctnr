@@ -76,11 +76,28 @@ func TestNodeInfoEquals(t *testing.T) {
 	assert.False(t, a.Equal(b), "a.Equal(changedMode)")
 }
 
+func TestDerivedAttrsEqual(t *testing.T) {
+	a := DerivedAttrs{"hash", "url", "httpinfo"}
+	assert.True(t, a.Equal(&a), "a.Equal(a)")
+	b := a
+	a.Hash = "changed"
+	assert.False(t, a.Equal(&b), "a.Equal(changedHash)")
+	b = a
+	a.URL = "changed"
+	assert.False(t, a.Equal(&b), "a.Equal(changedURL)")
+	b = a
+	a.HTTPInfo = "changed"
+	assert.False(t, a.Equal(&b), "a.Equal(changedHTTPInfo)")
+	b = a
+}
+
 func TestNodeAttrsString(t *testing.T) {
 	mtime, err := time.Parse(time.RFC3339, "2018-01-23T01:01:42Z")
 	require.NoError(t, err)
 	atime, err := time.Parse(time.RFC3339, "2018-02-23T01:02:42Z")
 	require.NoError(t, err)
+	da := DerivedAttrs{"sha256:hex", "http://example.org", "http info="}
+	da.URL = "http://example.org"
 	testee := NodeAttrs{
 		NodeInfo{
 			TypeFile,
@@ -96,10 +113,10 @@ func TestNodeAttrsString(t *testing.T) {
 				},
 			},
 		},
-		DerivedAttrs{"sha256:hex"},
+		da,
 	}
 	actual := testee.AttrString(AttrsAll)
-	expected := "type=file usr=33:99 mode=750 size=123 link=sdest xattr.k1=v1 xattr.k2=v2 mtime=1516669302 atime=1519347762 hash=sha256:hex"
+	expected := "type=file usr=33:99 mode=750 size=123 link=sdest xattr.k1=v1 xattr.k2=v2 mtime=1516669302 atime=1519347762 hash=sha256:hex url=http://example.org http=http+info%3D"
 	if expected != actual {
 		t.Errorf("attrs.AttrString(): expected\n  %s\nbut was\n  %s", expected, actual)
 		t.FailNow()

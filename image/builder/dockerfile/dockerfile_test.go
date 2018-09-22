@@ -89,7 +89,9 @@ Files:
 			testee := newTestee(t, file)
 			require.NoError(t, err, file)
 			mock = mockBuilder{returnErr: -1, stageCount: 1}
-			err = testee.ApplyStage(&mock, "slim")
+			err = testee.Target("slim")
+			require.NoError(t, err, file)
+			err = testee.Apply(&mock)
 			require.NoError(t, err, file)
 			if !assert.Equal(t, expectedOps, mock.ops, filepath.Base(file)+": apply slim stage") {
 				t.FailNow()

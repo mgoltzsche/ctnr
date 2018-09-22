@@ -117,7 +117,13 @@ type NodeAttrs struct {
 }
 
 type DerivedAttrs struct {
-	Hash string
+	Hash     string
+	URL      string
+	HTTPInfo string
+}
+
+func (s *DerivedAttrs) Equal(o *DerivedAttrs) bool {
+	return s.Hash == o.Hash && s.URL == o.URL && s.HTTPInfo == o.HTTPInfo
 }
 
 type NodeInfo struct {
@@ -191,6 +197,12 @@ func ParseNodeAttrs(s string) (r NodeAttrs, err error) {
 			}
 		case "hash":
 			r.Hash = v
+		case "url":
+			r.URL = v
+		case "http":
+			if r.HTTPInfo, err = url.QueryUnescape(v); err != nil {
+				return r, errors.Wrap(err, "parse file attrs: invalid http attr")
+			}
 		case "mtime":
 			tme, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
@@ -247,8 +259,16 @@ func parseUnixTime(s string) (t time.Time, err error) {
 
 func (a *NodeAttrs) AttrString(attrs AttrSet) string {
 	s := a.NodeInfo.AttrString(attrs)
-	if attrs&AttrsHash != 0 && a.Hash != "" {
-		s += " hash=" + a.Hash
+	if attrs&AttrsHash != 0 {
+		if a.Hash != "" {
+			s += " hash=" + a.Hash
+		}
+		if a.URL != "" {
+			s += " url=" + a.URL
+			if a.HTTPInfo != "" {
+				s += " http=" + url.QueryEscape(a.HTTPInfo)
+			}
+		}
 	}
 	return s
 }

@@ -512,7 +512,7 @@ func expectedNodeOps() []string {
 }
 
 func TestFsNodeEqual(t *testing.T) {
-	attrs1 := fs.NodeAttrs{fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0644}}, fs.DerivedAttrs{"hash"}}
+	attrs1 := fs.NodeAttrs{fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0644}}, fs.DerivedAttrs{Hash: "hash"}}
 	attrs2 := attrs1
 	eq := func() bool {
 		node1, err := NewFS().AddUpper("/file", &attrs1)

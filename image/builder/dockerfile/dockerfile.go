@@ -3,7 +3,6 @@ package dockerfile
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -46,6 +45,8 @@ type DockerfileBuilder struct {
 	runEnvMap map[string]string
 	varScope  map[string]string
 	shell     []string
+	// build state
+	selectedTargets map[*buildStage]bool
 }
 
 type buildStage struct {
@@ -106,7 +107,7 @@ func LoadDockerfile(src []byte, ctxDir string, args map[string]string, warn log.
 	return
 }
 
-func (s *DockerfileBuilder) ApplyStage(b ImageBuilder, name string) (err error) {
+func (s *DockerfileBuilder) Target(name string) error {
 	var stage *buildStage
 	for _, st := range s.stages {
 		if st.name == name {
@@ -116,14 +117,14 @@ func (s *DockerfileBuilder) ApplyStage(b ImageBuilder, name string) (err error) 
 	if stage == nil {
 		return errors.Errorf("dockerfile build stage %q not found", name)
 	}
-	for _, st := range s.stages {
-		if st == stage || stage.hasDependency(st) {
-			if err = st.apply(b); err != nil {
-				return
-			}
-		}
+	if s.selectedTargets == nil {
+		s.selectedTargets = map[*buildStage]bool{}
 	}
-	return
+	s.selectedTargets[stage] = true
+	for dep := range stage.dependencies {
+		s.selectedTargets[dep] = true
+	}
+	return nil
 }
 
 func (s *DockerfileBuilder) Apply(b ImageBuilder) (err error) {
@@ -131,8 +132,10 @@ func (s *DockerfileBuilder) Apply(b ImageBuilder) (err error) {
 		return errors.New("dockerfile: no build stage defined")
 	}
 	for _, stage := range s.stages {
-		if err = stage.apply(b); err != nil {
-			return
+		if s.selectedTargets == nil || s.selectedTargets[stage] {
+			if err = stage.apply(b); err != nil {
+				return
+			}
 		}
 	}
 	return
@@ -183,9 +186,7 @@ func (b *DockerfileBuilder) readNode(node *parser.Node) (err error) {
 		// TODO: HEALTHCHECK
 		// onbuild ignored here because not supported by OCI image format
 	default:
-		l, _ := readInstructionNode(node)
-		fmt.Printf("%+v  %s\n", l, node.Dump())
-		err = errors.Errorf("unsupported instruction %q", instr)
+		err = errors.Errorf("unsupported instruction: %s", node.Dump())
 	}
 	return errors.Wrapf(err, "line %d: %s", node.StartLine, instr)
 }
