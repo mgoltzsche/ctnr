@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -25,7 +24,6 @@ import (
 	"github.com/mgoltzsche/cntnr/image/builder"
 	"github.com/mgoltzsche/cntnr/image/builder/dockerfile"
 	"github.com/mgoltzsche/cntnr/pkg/idutils"
-	"github.com/opencontainers/runtime-tools/validate"
 	"github.com/spf13/pflag"
 )
 
@@ -58,7 +56,6 @@ func initImageBuildFlags(f *pflag.FlagSet) {
 	f.Var((*iCmd)(ops), "cmd", "Sets the new image's command")
 	f.Var((*iUser)(ops), "user", "Sets the new image's user")
 	f.Var((*iRun)(ops), "run", "Runs the provided command in the current image")
-	f.Var((*iRunCapAdd)(ops), "cap-add", "Adds a capability to subsequent build processes")
 	// TODO: remove
 	f.Var((*iRunShell)(ops), "run-sh", "Runs the provided commands using a shell in the current image")
 	f.Var((*iAdd)(ops), "add", "Adds glob pattern matching files to image: SRC... [DEST[:USER[:GROUP]]]")
@@ -225,38 +222,6 @@ func (o *iRunShell) Type() string {
 }
 
 func (o *iRunShell) String() string {
-	return ""
-}
-
-type iRunCapAdd imageBuildFlags
-
-func (o *iRunCapAdd) Set(capExpr string) (err error) {
-	if err = checkNonEmpty(capExpr); err != nil {
-		return
-	}
-	capabilities, err := parseStringEntries(capExpr)
-	if err != nil {
-		return
-	}
-	for _, cap := range capabilities {
-		if err = validate.CapValid("CAP_"+cap, true); err != nil {
-			return errors.New("unsupported capability")
-		}
-	}
-	(*imageBuildFlags)(o).add(func(b *builder.ImageBuilder) error {
-		for _, cap := range capabilities {
-			b.AddCap("CAP_" + cap)
-		}
-		return nil
-	})
-	return
-}
-
-func (o *iRunCapAdd) Type() string {
-	return "string"
-}
-
-func (o *iRunCapAdd) String() string {
 	return ""
 }
 
