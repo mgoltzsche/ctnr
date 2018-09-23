@@ -19,8 +19,8 @@ type sourceURL struct {
 	cache HttpHeaderCache
 }
 
-func NewSourceURL(url string, etagCache HttpHeaderCache, chown idutils.UserIds) fs.Source {
-	return &sourceURL{fs.FileAttrs{UserIds: chown, Mode: 0600}, fs.DerivedAttrs{URL: url}, etagCache}
+func NewSourceURL(url *url.URL, etagCache HttpHeaderCache, chown idutils.UserIds) fs.Source {
+	return &sourceURL{fs.FileAttrs{UserIds: chown, Mode: 0600}, fs.DerivedAttrs{URL: url.String()}, etagCache}
 }
 
 func (s *sourceURL) Attrs() fs.NodeInfo {

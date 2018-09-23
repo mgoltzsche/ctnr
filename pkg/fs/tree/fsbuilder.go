@@ -117,7 +117,7 @@ func (b *FsBuilder) AddURL(rawURL, dest string) {
 		b.err = errors.Wrapf(err, "add URL %s", url)
 		return
 	}
-	if _, err = b.fs.AddUpper(dest, source.NewSourceURL(url.String(), b.httpHeaderCache, idutils.UserIds{})); err != nil {
+	if _, err = b.fs.AddUpper(dest, source.NewSourceURL(url, b.httpHeaderCache, idutils.UserIds{})); err != nil {
 		b.err = errors.Wrapf(err, "add URL %s", url)
 		return
 	}

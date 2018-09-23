@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
@@ -96,16 +97,17 @@ func TestNodeAttrsString(t *testing.T) {
 	require.NoError(t, err)
 	atime, err := time.Parse(time.RFC3339, "2018-02-23T01:02:42Z")
 	require.NoError(t, err)
-	da := DerivedAttrs{"sha256:hex", "http://example.org", "http info="}
-	da.URL = "http://example.org"
+	parsed, err := url.Parse("http://example.org/my page")
+	require.NoError(t, err)
+	da := DerivedAttrs{"sha256:hex", parsed.String(), "http= info"}
 	testee := NodeAttrs{
 		NodeInfo{
 			TypeFile,
 			FileAttrs{
 				Mode:    0750,
 				UserIds: idutils.UserIds{33, 99},
-				Xattrs:  map[string]string{"k1": "v1", "k2": "v2"},
-				Symlink: "sdest",
+				Xattrs:  map[string]string{"k1= x": "v1= x", "k2": "v2"},
+				Symlink: "link= dest/x",
 				Size:    123,
 				FileTimes: FileTimes{
 					Atime: atime,
@@ -116,7 +118,7 @@ func TestNodeAttrsString(t *testing.T) {
 		da,
 	}
 	actual := testee.AttrString(AttrsAll)
-	expected := "type=file usr=33:99 mode=750 size=123 link=sdest xattr.k1=v1 xattr.k2=v2 mtime=1516669302 atime=1519347762 hash=sha256:hex url=http://example.org http=http+info%3D"
+	expected := "type=file usr=33:99 mode=750 size=123 link=link=%20dest/x xattr.k1%3D+x=v1%3D+x xattr.k2=v2 mtime=1516669302 atime=1519347762 hash=sha256:hex url=http://example.org/my%20page http=http%3D+info"
 	if expected != actual {
 		t.Errorf("attrs.AttrString(): expected\n  %s\nbut was\n  %s", expected, actual)
 		t.FailNow()

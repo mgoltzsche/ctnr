@@ -68,7 +68,7 @@ func (a *FileAttrs) AttrString(attrs AttrSet) string {
 	if len(a.Xattrs) > 0 {
 		xa := make([]string, 0, len(a.Xattrs))
 		for k, v := range a.Xattrs {
-			xa = append(xa, fmt.Sprintf("xattr.%s=%s", url.PathEscape(k), url.PathEscape(v)))
+			xa = append(xa, fmt.Sprintf("xattr.%s=%s", url.QueryEscape(k), url.QueryEscape(v)))
 		}
 		sort.Strings(xa)
 		s += " " + strings.Join(xa, " ")
@@ -163,7 +163,7 @@ func (s *NodeAttrs) Write(path, name string, w Writer, written map[Source]string
 
 func ParseNodeAttrs(s string) (r NodeAttrs, err error) {
 	for _, e := range strings.Split(s, " ") {
-		l := strings.Split(e, "=")
+		l := strings.SplitN(e, "=", 2)
 		if len(l) != 2 {
 			return r, errors.Errorf("parse file attrs: invalid attr %q in %q (missing '=')", e, s)
 		}
@@ -217,11 +217,11 @@ func ParseNodeAttrs(s string) (r NodeAttrs, err error) {
 			r.Atime = time.Unix(tme, 0)
 		default:
 			if strings.HasPrefix(k, "xattr.") {
-				k, err = url.PathUnescape(k[6:])
+				k, err = url.QueryUnescape(k[6:])
 				if err != nil {
 					return r, errors.Errorf("parse file attrs: invalid xattr key %q", k)
 				}
-				v, err = url.PathUnescape(v)
+				v, err = url.QueryUnescape(v)
 				if err != nil {
 					return r, errors.Errorf("parse file attrs: invalid xattr value %q", v)
 				}
@@ -264,6 +264,9 @@ func (a *NodeAttrs) AttrString(attrs AttrSet) string {
 			s += " hash=" + a.Hash
 		}
 		if a.URL != "" {
+			if strings.Contains(a.URL, " ") {
+				panic("attrs string: provided URL contains space: " + a.URL)
+			}
 			s += " url=" + a.URL
 			if a.HTTPInfo != "" {
 				s += " http=" + url.QueryEscape(a.HTTPInfo)

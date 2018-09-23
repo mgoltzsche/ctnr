@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -36,7 +37,7 @@ func TestSourceURL(t *testing.T) {
 	// Test derived attrs
 	wa, err := testee.DeriveAttrs()
 	require.NoError(t, err)
-	if wa.URL != url {
+	if wa.URL != url.String() {
 		t.Errorf("URL %q != %q", url, wa.URL)
 	}
 	if wa.Hash != "" {
@@ -57,11 +58,11 @@ func TestSourceURL(t *testing.T) {
 	// Test write
 	testee.Write("/file", "", writerMock, nil)
 	actual := strings.Join(writerMock.Written, "\n")
-	expected := "/file type=file usr=1:33 mode=600 size=13 url=" + url + " http=etag:mocked+%3D+etag1,time:Fri%2C+21+Sep+2018+20%3A52%3A35+GMT"
+	expected := "/file type=file usr=1:33 mode=600 size=13 url=" + url.String() + " http=etag:mocked+%3D+etag1,time:Fri%2C+21+Sep+2018+20%3A52%3A35+GMT"
 	assert.Equal(t, expected, actual)
 }
 
-func mockHttpResource(t *testing.T) (net.Listener, string) {
+func mockHttpResource(t *testing.T) (net.Listener, *url.URL) {
 	reqCount := 0
 	http.HandleFunc("/file", func(w http.ResponseWriter, r *http.Request) {
 		reqCount++
@@ -79,7 +80,9 @@ func mockHttpResource(t *testing.T) (net.Listener, string) {
 	listener, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 	go http.Serve(listener, nil)
-	return listener, fmt.Sprintf("http://127.0.0.1:%d/file", listener.Addr().(*net.TCPAddr).Port)
+	url, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d/file", listener.Addr().(*net.TCPAddr).Port))
+	require.NoError(t, err)
+	return listener, url
 }
 
 type mockedHttpCache struct {

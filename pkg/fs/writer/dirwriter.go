@@ -303,7 +303,7 @@ func (w *DirWriter) writeMetadata(file string, a fs.FileAttrs) (err error) {
 			// In rootless mode, some xattrs will fail (security.capability).
 			// This is _fine_ as long as not run as root
 			if w.rootless && os.IsPermission(errors.Cause(e)) {
-				w.warn.Printf("write file metadata: ignoring EPERM on setxattr %s: %v", k, e)
+				w.warn.Printf("write file metadata: %s: ignoring EPERM on setxattr %s: %v", file[len(w.dir):], k, e)
 				continue
 			}
 			return errors.Wrapf(e, "set xattr: %s", file)
