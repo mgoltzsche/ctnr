@@ -264,10 +264,10 @@ func (w *DirWriter) Remove(file string) (err error) {
 }
 
 func (w *DirWriter) remove(realFile string) (err error) {
-	delete(w.dirTimes, realFile)
 	if err = w.fsEval.RemoveAll(realFile); err != nil {
-		err = errors.Wrap(err, "write dir")
+		return errors.Wrap(err, "write dir")
 	}
+	delete(w.dirTimes, realFile)
 	return
 }
 
@@ -319,8 +319,10 @@ func (w *DirWriter) writeTimeMetadata(file string, t fs.FileTimes) error {
 	if t.Atime.IsZero() {
 		t.Atime = t.Mtime
 	}
-	err := w.fsEval.Lutimes(file, t.Atime, t.Mtime)
-	return errors.Wrapf(err, "write file times: %s", file)
+	if err := w.fsEval.Lutimes(file, t.Atime, t.Mtime); !os.IsNotExist(errors.Cause(err)) {
+		return errors.Wrapf(err, "write file times: %s", file)
+	}
+	return nil
 }
 
 func (w *DirWriter) validateLink(path, file, target string) (err error) {
