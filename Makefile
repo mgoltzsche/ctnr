@@ -44,8 +44,8 @@ generate: dependencies
 test: dependencies
 	# Run tests
 	export GOPATH="${GOPATH}"; \
-	go test -tags "${BUILDTAGS}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS}" ./... | grep -Ev '/vendor/|^${PKGNAME}/build/'`
-	#export GOPATH="${GOPATH}"; cd "${GOPATH}/src/github.com/mgoltzsche/cntnr/image/builder" && go test -tags "${BUILDTAGS}" -run ImageBuilder
+	#go test -tags "${BUILDTAGS}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS}" ./... | grep -Ev '/vendor/|^${PKGNAME}/build/'`
+	export GOPATH="${GOPATH}"; cd "${GOPATH}/src/github.com/mgoltzsche/cntnr/image/builder" && go test -tags "${BUILDTAGS}" -run ImageBuilder
 
 test-static: dependencies
 	# Run tests using BUILDTAGS_STATIC
@@ -93,7 +93,7 @@ cni-plugins:
 
 .buildimage:
 	# Building build image:
-	docker build -t ${BUILDIMAGE} .
+	docker build -t ${BUILDIMAGE} --target cntnr-build .
 
 build-sh: .buildimage
 	# Running dockerized interactive build shell
@@ -128,6 +128,11 @@ cobra: .workspace
 	# Build cobra CLI to manage the application's CLI
 	GOPATH="${GOPATH}" go get github.com/spf13/cobra/cobra
 	"${GOPATH}/bin/cobra"
+
+proot:
+	cntnr image create --verbose --dockerfile Dockerfile --target proot --tag local/proot
+	cntnr bundle create -b "${GOPATH}/proot-bundle" --update local/proot
+	cp "${GOPATH}/proot-bundle/rootfs/proot" "${REPODIR}/dist/bin/proot"
 
 liteide: dependencies
 	rm -rf "${LITEIDE_WORKSPACE}"
