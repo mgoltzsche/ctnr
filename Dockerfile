@@ -19,11 +19,10 @@ RUN curl -LOk https://github.com/protobuf-c/protobuf-c/releases/download/v${PROT
 	&& cd protobuf-c-${PROTOBUFC_VERSION} \
 	&& ./configure --prefix=/usr && make && make install \
 	&& rm -rf protobuf-c-${PROTOBUFC_VERSION}*
-ARG PROOT_VERSION=081bb63955eb4378e53cf4d0eb0ed0d3222bf66e
+ARG PROOT_VERSION=f4dc8cb6f5f31beda5f69f0d476a3196d31c4336
 RUN git clone https://github.com/rootless-containers/PRoot.git \
 	&& cd PRoot \
-	&& git checkout ${PROOT_VERSION} \
-	&& sed -Ei '/^#include <attr\/xattr.h>$/a#ifndef ENOATTR\n# define ENOATTR ENODATA\n#endif' src/extension/fake_id0/fake_id0.c
+	&& git checkout ${PROOT_VERSION}
 WORKDIR /PRoot/src
 ENV PKG_CONFIG_PATH=/usr/lib/pkgconfig
 RUN make && mv proot / && make clean
