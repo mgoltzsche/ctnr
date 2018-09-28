@@ -38,11 +38,28 @@ docker run -ti --name cnested --rm \
 > cntnr run  -ti --rootless --network=host docker://alpine:3.7
 ```
 Error: Cannot change the process namespace ("running exec setns process for init caused \"exit status 34\"")
+=> seccomp denies setns
+
+Adding a custom seccomp profile solves this problem but...
+(TODO: use docker-default apparmor profile without `deny mount`, see https://github.com/moby/moby/blob/master/profiles/apparmor/template.go)
+```
+docker run -ti --name test --rm --user=`id -u`:`id -g` \
+	--security-opt apparmor=unconfined \
+	--security-opt seccomp="$(pwd)/seccomp-container.json" \
+	-v /sys/fs/cgroup:/sys/fs/cgroup:ro \
+	-v "$HOME/.cntnr:/.cntnr" \
+	-v "$(pwd)/dist/bin:/usr/local/bin" \
+	debian:9 /bin/bash
+$ cntnr --state-dir /tmp/cntnr run --verbose -ti -b test --update --rootless --no-new-keyring --no-pivot docker://alpine:3.8
+```
+Error: run process: container_linux.go:348: starting container process caused "process_linux.go:402: container init caused \"rootfs_linux.go:58: mounting \\\"proc\\\" to rootfs \\\"/.cntnr/bundles/test/rootfs\\\" at \\\"/proc\\\" caused \\\"operation not permitted\\\"\""
+=> proc cannot be mounted
+=> See https://github.com/opencontainers/runc/issues/1658
 
 
 ## How to analyze container problems
 - Run parent container with `CAP_SYS_PTRACE` capability and child container with
-  `strace -f` to debug system calls
+  `strace -ff` to debug system calls
 - Run moby's `check-config` script _(requires kernel config to be mounted)_:  
 ```
 apk update && apk add bash
@@ -77,11 +94,12 @@ When using kernel >=4.6 it is possible to only make the process' cgroups writeab
 (see https://github.com/opencontainers/runc/issues/225).
 
 
-## Conclusion
-Containers can be run in privileged but not in unprivileged containers.
-The outer container requires the CAP_SYS_ADMIN capability which basically allows it to act as the calling user.  
-
-Alternatively a seccomp profile could be prepared that allows only the syscalls
-necessary to run a container - especially since CAP_SYS_ADMIN is overloaded
-(see http://man7.org/linux/man-pages/man7/capabilities.7.html).  
-(TODO: investigate)
+## Summary so far
+Containers can be run in privileged containers but nesting them in unprivileged containers is still problematic.
+Docker's sane seccomp and apparmor default profiles deny syscalls that are required to run a container.
+The seccomp profile denies `setns` and a few other syscalls. The apparmor profile denies `mount`.
+Unfortunately it still doesn't run when apparmor is disabled (or better a custom profile provided that allows mount)
+and a custom seccomp profile is provided since /proc cannot be mounted since masked by docker
+(see https://github.com/opencontainers/runc/issues/225,
+https://lists.linuxfoundation.org/pipermail/containers/2018-April/038864.html
+and https://www.mail-archive.com/linux-kernel@vger.kernel.org/msg1533642.html).
