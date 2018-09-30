@@ -32,6 +32,7 @@ func NewContainerManager(rootDir string, rootless bool, loggers log.Loggers) (r 
 	if err != nil {
 		return nil, errors.Wrapf(err, "new container manager: resolve %q executable", os.Args[0])
 	}
+	// TODO: also support systemd cgroup usage: libcontainer.SystemdCgroups
 	if r.factory, err = libcontainer.New(rootDir, libcontainer.Cgroupfs, libcontainer.InitArgs(binary, "init")); err != nil {
 		return
 	}

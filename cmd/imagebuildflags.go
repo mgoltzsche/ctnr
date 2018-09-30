@@ -31,6 +31,8 @@ var (
 	flagProot         bool
 	flagNoCache       bool
 	flagImageBuildOps imageBuildFlags
+	flagRm            bool
+	flagRmAll         bool
 )
 
 type imageBuildFlags struct {
@@ -56,12 +58,14 @@ func initImageBuildFlags(f *pflag.FlagSet) {
 	f.Var((*iCmd)(ops), "cmd", "Sets the new image's command")
 	f.Var((*iUser)(ops), "user", "Sets the new image's user")
 	f.Var((*iRun)(ops), "run", "Runs the provided command in the current image")
-	// TODO: remove
+	// TODO: remove?!
 	f.Var((*iRunShell)(ops), "run-sh", "Runs the provided commands using a shell in the current image")
 	f.Var((*iAdd)(ops), "add", "Adds glob pattern matching files to image: SRC... [DEST[:USER[:GROUP]]]")
 	f.Var((*iTag)(ops), "tag", "Tags the image")
 	f.BoolVar(&flagProot, "proot", false, "Enables PRoot")
 	f.BoolVar(&flagNoCache, "no-cache", false, "Disables caches")
+	f.BoolVar(&flagRm, "rm", true, "Remove intermediate containers after successful build")
+	f.BoolVar(&flagRmAll, "force-rm", false, "Always remove containers after build")
 }
 
 type iFromImage imageBuildFlags

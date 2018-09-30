@@ -59,7 +59,7 @@ func TestImageBuilder(t *testing.T) {
 		if file == "dockerfile/testfiles/10-add.test" {
 			continue
 		}
-		loggers.Info.Println("TEST CASE", file)
+		loggers.Info.Println("\n\n  TEST CASE " + file + "\n")
 		withNewTestee(t, tmpDir, loggers, func(testee *ImageBuilder) {
 			// Read input & assertion from file
 			b, err := ioutil.ReadFile(filepath.Join(wd, file))
@@ -183,19 +183,23 @@ func withNewTestee(t *testing.T, tmpDir string, loggers extlog.Loggers, assertio
 	}()
 
 	// Init bundle store
-	bundleStore, err := bstore.NewBundleStore(filepath.Join(tmpDir, "bundle-store"), loggers.Info, loggers.Debug)
+	bundleDir := filepath.Join(tmpDir, "bundle-store")
+	bundleStore, err := bstore.NewBundleStore(bundleDir, loggers.Info, loggers.Debug)
 	require.NoError(t, err)
 
 	// Init testee
+	builderTmpDir := filepath.Join(tmpDir, "tmp")
 	testee := NewImageBuilder(ImageBuildConfig{
-		Images:   lockedStore,
-		Bundles:  bundleStore,
-		Cache:    NewImageBuildCache(filepath.Join(tmpDir, "cache"), loggers.Warn),
-		Tempfs:   filepath.Join(tmpDir, "tmp"),
-		RunRoot:  filepath.Join(tmpDir, "run"),
-		Rootless: true,
-		PRoot:    "", // TODO: also test using proot
-		Loggers:  loggers,
+		Images:                 lockedStore,
+		Bundles:                bundleStore,
+		Cache:                  NewImageBuildCache(filepath.Join(tmpDir, "cache"), loggers.Warn),
+		Tempfs:                 builderTmpDir,
+		RunRoot:                filepath.Join(tmpDir, "run"),
+		Rootless:               true,
+		PRoot:                  "", // TODO: also test using proot
+		RemoveSucceededBundles: true,
+		RemoveFailedBundle:     true,
+		Loggers:                loggers,
 	})
 	defer func() {
 		if err := testee.Close(); err != nil {
@@ -206,5 +210,32 @@ func withNewTestee(t *testing.T, tmpDir string, loggers extlog.Loggers, assertio
 	// Do tests
 	assertions(testee)
 
-	// TODO: test that tmp and run directories are empty after test finished
+	// Close builder
+	require.NoError(t, testee.Close(), "close image builder")
+
+	// Assert no temp files left
+	if _, err = os.Stat(builderTmpDir); err == nil {
+		files, err := ioutil.ReadDir(builderTmpDir)
+		require.NoError(t, err)
+		if !assert.True(t, len(files) == 0, "builder temp dir should contain no files after closed but found: %v", toFileNames(files)) {
+			t.FailNow()
+		}
+	}
+
+	// Assert no bundles left
+	if _, err = os.Stat(bundleDir); err == nil {
+		files, err := ioutil.ReadDir(bundleDir)
+		require.NoError(t, err)
+		if !assert.True(t, len(files) == 0, "bundle store dir should contain no files after closed but found: %v", toFileNames(files)) {
+			t.FailNow()
+		}
+	}
+}
+
+func toFileNames(files []os.FileInfo) []string {
+	s := make([]string, len(files))
+	for i, e := range files {
+		s[i] = e.Name()
+	}
+	return s
 }

@@ -32,36 +32,41 @@ import (
 var portsRegex = regexp.MustCompile("^(( |^)[1-9][0-9]*(/[a-z0-9]+)?)+$")
 
 type ImageBuildConfig struct {
-	Images   image.ImageStoreRW
-	Bundles  bundle.BundleStore
-	Cache    ImageBuildCache
-	Tempfs   string
-	RunRoot  string
-	Rootless bool
-	PRoot    string
-	Loggers  log.Loggers
+	Images                 image.ImageStoreRW
+	Bundles                bundle.BundleStore
+	Cache                  ImageBuildCache
+	Tempfs                 string
+	RunRoot                string
+	Rootless               bool
+	PRoot                  string
+	RemoveSucceededBundles bool
+	RemoveFailedBundle     bool
+	Loggers                log.Loggers
 }
 
 type ImageBuilder struct {
-	images        image.ImageStoreRW
-	bundles       bundle.BundleStore
-	imageResolver ImageResolver
-	config        ispecs.Image
-	image         *image.Image
-	cache         ImageBuildCache
-	bundle        *bundle.LockedBundle
-	container     run.Container
-	lockedBundles []*bundle.LockedBundle
-	namedFs       map[string]*imageFs
-	namedImages   map[string]*image.Image
-	buildNames    []string
-	fsBuilder     *tree.FsBuilder
-	stdio         run.ContainerIO
-	tempDir       string
-	runRoot       string
-	rootless      bool
-	proot         string
-	loggers       log.Loggers
+	images                 image.ImageStoreRW
+	bundles                bundle.BundleStore
+	imageResolver          ImageResolver
+	config                 ispecs.Image
+	image                  *image.Image
+	cache                  ImageBuildCache
+	bundle                 *bundle.LockedBundle
+	container              run.Container
+	lockedBundles          []*bundle.LockedBundle
+	namedFs                map[string]*imageFs
+	namedImages            map[string]*image.Image
+	tmpImgFsDirs           []string
+	buildNames             []string
+	fsBuilder              *tree.FsBuilder
+	stdio                  run.ContainerIO
+	tempDir                string
+	runRoot                string
+	rootless               bool
+	proot                  string
+	removeSucceededBundles bool
+	removeFailedBundle     bool
+	loggers                log.Loggers
 }
 
 type imageFs struct {
@@ -111,6 +116,8 @@ func NewImageBuilder(cfg ImageBuildConfig) (r *ImageBuilder) {
 	r.initConfig()
 	r.namedFs = map[string]*imageFs{}
 	r.namedImages = map[string]*image.Image{}
+	r.removeSucceededBundles = cfg.RemoveSucceededBundles
+	r.removeFailedBundle = cfg.RemoveFailedBundle
 	return
 }
 
@@ -126,22 +133,41 @@ func (b *ImageBuilder) SetImageResolver(r ImageResolver) {
 	b.imageResolver = r
 }
 
+func (b *ImageBuilder) closeBundle(lb *bundle.LockedBundle) error { return lb.Close() }
+
+func (b *ImageBuilder) deleteBundle(lb *bundle.LockedBundle) error { return lb.Delete() }
+
 func (b *ImageBuilder) Close() (err error) {
-	err = b.closeContainerAndBundle()
-	for _, b := range b.lockedBundles {
-		err = exterrors.Append(err, b.Close())
+	// TODO: add option to not delete (only close) last bundle if build failed
+	succeededBundles := b.lockedBundles
+	var failedBundle *bundle.LockedBundle
+	hasFailedBundle := b.bundle == nil && len(succeededBundles) > 0
+	if hasFailedBundle {
+		failedBundle = succeededBundles[len(succeededBundles)-1]
+		succeededBundles = succeededBundles[:len(succeededBundles)-1]
+	}
+	err = exterrors.Append(err, b.resetBundle())
+	closeBundle := b.closeBundle
+	if b.removeSucceededBundles {
+		closeBundle = b.deleteBundle
+	}
+	for _, lb := range succeededBundles {
+		err = exterrors.Append(err, closeBundle(lb))
+	}
+	if failedBundle != nil {
+		closeBundle = b.closeBundle
+		if b.removeFailedBundle {
+			closeBundle = b.deleteBundle
+		}
+		err = exterrors.Append(err, closeBundle(failedBundle))
 	}
 	b.lockedBundles = nil
-	for _, imgfs := range b.namedFs {
-		err = exterrors.Append(err, os.RemoveAll(imgfs.rootfs))
+	for _, imgfs := range b.tmpImgFsDirs {
+		err = exterrors.Append(err, bundle.DeleteDirSafely(imgfs))
 	}
+	b.tmpImgFsDirs = nil
 	err = errors.WithMessage(err, "close image builder")
 	return
-}
-
-func (b *ImageBuilder) closeContainerAndBundle() (err error) {
-	err = b.closeContainer()
-	return exterrors.Append(err, b.closeBundle())
 }
 
 func (b *ImageBuilder) closeContainer() (err error) {
@@ -149,15 +175,12 @@ func (b *ImageBuilder) closeContainer() (err error) {
 		err = b.container.Close()
 		b.container = nil
 	}
-	err = exterrors.Append(err, b.closeBundle())
 	return
 }
 
-func (b *ImageBuilder) closeBundle() (err error) {
-	if b.bundle != nil {
-		err = b.bundle.Close()
-		b.bundle = nil
-	}
+func (b *ImageBuilder) resetBundle() (err error) {
+	err = b.closeContainer()
+	b.bundle = nil
 	return
 }
 
@@ -288,7 +311,7 @@ func (b *ImageBuilder) FromImage(imageName string) (err error) {
 		}
 	}
 	b.buildNames = nil
-	if err = b.closeBundle(); err != nil {
+	if err = b.resetBundle(); err != nil {
 		return
 	}
 	b.loggers.Info.Println("FROM", imageName)
@@ -626,6 +649,7 @@ func (b *ImageBuilder) CopyFilesFromImage(srcImage string, srcPattern []string, 
 			}
 			// Store this image's fs in named fs map to be able to reuse it
 			// (fs is deleted when builder is closed)
+			b.tmpImgFsDirs = append(b.tmpImgFsDirs, imgRootfs)
 			imgRootfs = filepath.Join(imgRootfs, "rootfs")
 			imgFs := imageFs{imgRootfs, imageId}
 			b.namedFs[srcImage] = &imgFs
@@ -692,7 +716,7 @@ func (b *ImageBuilder) addLayerAndUpdateBundleFS(imagefs fs.FsNode, createdBy st
 				err = dirWriter.Close()
 			}
 			if err != nil {
-				err = exterrors.Append(err, b.closeContainerAndBundle())
+				err = exterrors.Append(err, b.resetBundle())
 			}
 		}
 	}
@@ -752,8 +776,8 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 
 	defer func() {
 		if err != nil {
-			// Release bundle when operation failed
-			err = exterrors.Append(err, b.closeContainerAndBundle())
+			// Release bundle when operation failed to make sure it is not reused
+			err = exterrors.Append(err, b.resetBundle())
 		}
 	}()
 

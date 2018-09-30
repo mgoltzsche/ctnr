@@ -88,7 +88,9 @@ func (b *SpecBuilder) DropAllProcessCapabilities() {
 	c.Inheritable = caps
 }
 
-// Derives a reasonable default seccomp from the current spec
+// Derives a sane default seccomp profile from the current spec.
+// See https://github.com/jessfraz/blog/blob/master/content/post/how-to-use-new-docker-seccomp-profiles.md
+// and https://github.com/jessfraz/docker/blob/52f32818df8bad647e4c331878fa44317e724939/docs/security/seccomp.md
 func (b *SpecBuilder) SetLinuxSeccompDefault() {
 	spec := b.Generator.Spec()
 	spec.Linux.Seccomp = seccomp.DefaultProfile(spec)

@@ -180,7 +180,6 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 
 ## Roadmap
 
-- immediate deletion of image build containers - like docker's `--rm` and `--force-rm` options
 - improved garbage collection for containers, build caches, fsspecs
 - **0.7 beta release**
 - improved docker CLI compatibility regarding `build` and `run` commands in order to use cntnr to substitute docker easily in common build operations

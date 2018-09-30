@@ -115,7 +115,7 @@ func (b *Bundle) GC(before time.Time) (r bool, err error) {
 			return true, err
 		}
 		if st.ModTime().Before(before) {
-			if err = deleteDirSafely(b.dir); err != nil {
+			if err = DeleteDirSafely(b.dir); err != nil {
 				return true, err
 			}
 			return true, err
@@ -244,7 +244,7 @@ func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
 		id := image.ID()
 		imgId = &id
 	}
-	if err = deleteDirSafely(rootfs); err != nil && !os.IsNotExist(err) {
+	if err = DeleteDirSafely(rootfs); err != nil && !os.IsNotExist(err) {
 		return
 	}
 	if err = image.Unpack(rootfs); err != nil {
@@ -331,7 +331,7 @@ func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) (err error) {
 }
 
 func (b *LockedBundle) Delete() (err error) {
-	err = deleteDirSafely(b.Dir())
+	err = DeleteDirSafely(b.Dir())
 	err = exterrors.Append(err, b.Close())
 	return
 }
@@ -344,7 +344,7 @@ func lockBundle(bundle *Bundle) (l *lock.Lockfile, err error) {
 	return l, errors.Wrap(err, "lock bundle")
 }
 
-func deleteDirSafely(dir string) (err error) {
+func DeleteDirSafely(dir string) (err error) {
 	// TODO: FsEval impl should be provided from outside
 	if err = fseval.RootlessFsEval.RemoveAll(dir); err != nil {
 		err = errors.New("delete dir: " + err.Error())
