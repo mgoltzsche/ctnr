@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"time"
 
@@ -39,11 +38,12 @@ func NewBlobStoreExt(blobStore *BlobStore, fsSpecStore *FsSpecStore, rootless bo
 }
 
 func (s *BlobStoreOci) ImageManifest(manifestDigest digest.Digest) (r ispecs.Manifest, err error) {
-	b, err := s.readBlob(manifestDigest)
+	reader, err := s.Get(manifestDigest)
 	if err != nil {
 		return r, errors.WithMessage(err, "image manifest")
 	}
-	if err = json.Unmarshal(b, &r); err != nil {
+	defer reader.Close()
+	if err = json.NewDecoder(reader).Decode(&r); err != nil {
 		return r, errors.Errorf("unmarshal image manifest %s: %s", manifestDigest, err)
 	}
 	if r.Config.Digest.String() == "" {
@@ -59,11 +59,11 @@ func (s *BlobStoreOci) putImageManifest(m ispecs.Manifest) (d ispecs.Descriptor,
 }
 
 func (s *BlobStoreOci) ImageConfig(configDigest digest.Digest) (r ispecs.Image, err error) {
-	b, err := s.readBlob(configDigest)
+	reader, err := s.Get(configDigest)
 	if err != nil {
 		return r, errors.WithMessage(err, "image config")
 	}
-	if err = json.Unmarshal(b, &r); err != nil {
+	if err = json.NewDecoder(reader).Decode(&r); err != nil {
 		err = errors.Errorf("unmarshal image config %s: %s", configDigest, err)
 	}
 	return
@@ -106,7 +106,7 @@ func (s *BlobStoreOci) putJsonBlob(o interface{}) (d digest.Digest, size int64, 
 	if err = json.NewEncoder(&buf).Encode(o); err != nil {
 		return d, size, errors.New("put json blob: " + err.Error())
 	}
-	return s.putBlob(&buf)
+	return s.Put(&buf)
 }
 
 // Returns the layer chainID or nil if the image has no layers
@@ -147,8 +147,10 @@ func (s *BlobStoreOci) FS(manifestDigest digest.Digest) (r fs.FsNode, err error)
 func (s *BlobStoreOci) fsFromManifest(manifest *ispecs.Manifest) (r fs.FsNode, err error) {
 	r = tree.NewFS()
 	for _, l := range manifest.Layers {
-		d := l.Digest
-		layerFile := filepath.Join(s.blobDir, d.Algorithm().String(), d.Hex())
+		layerFile, e := s.keyFile(l.Digest)
+		if e != nil {
+			return nil, errors.Wrap(e, "fsspec from manifest")
+		}
 		var src fs.Source
 		switch l.MediaType {
 		case ispecs.MediaTypeImageLayerGzip:
@@ -179,7 +181,7 @@ func (s *BlobStoreOci) FSSpec(manifestDigest digest.Digest) (r fs.FsNode, err er
 		return
 	}
 	// Use cached fsspec ...
-	if r, err = s.fsspecs.Get(chainId); IsFsSpecNotExist(err) {
+	if r, err = s.fsspecs.Get(chainId); image.IsNotExist(err) {
 		// ... or derive and store new fsspec if cache key not found
 		if r, err = s.fsFromManifest(&manifest); err != nil {
 			return
@@ -227,7 +229,7 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 	}
 
 	if layerFs.Empty() {
-		return nil, image.ErrorEmptyLayerDiff("empty layer")
+		return nil, image.ErrEmptyLayerDiff(errors.New("empty layer"))
 	}
 	var layerStr bytes.Buffer
 	if err = layerFs.WriteTo(&layerStr, fs.AttrsMtime); err != nil {
@@ -284,7 +286,7 @@ func (s *BlobStoreOci) generateTar(rootfs fs.FsNode) io.ReadCloser {
 		defer func() {
 			writer.CloseWithError(errors.Wrap(err, "generate layer tar"))
 		}()
-		// Writer tar
+		// Write tar
 		tarWriter := fswriter.NewTarWriter(writer)
 		defer func() {
 			if err == nil {
@@ -323,8 +325,8 @@ func (s *BlobStoreOci) UnpackLayers(manifestDigest digest.Digest, dest string) (
 	// ATTENTION: rootfs must be a new empty directory to guarantee that the
 	// derived mtree represents the manifestDigest and doesn't get mixed up with
 	// other existing files
-	if err = os.Mkdir(dest, 0755); err != nil {
-		return errors.New(err.Error())
+	if err = os.Mkdir(dest, 0775); err != nil {
+		return
 	}
 	dirWriter := writer.NewDirWriter(dest, fs.NewFSOptions(s.rootless), s.warn)
 	var fsWriter fs.Writer = dirWriter

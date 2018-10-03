@@ -96,8 +96,8 @@ to a local or remote destination.`,
 		Long:  `Builds a new image from the provided options.`,
 		Run:   wrapRun(runImageBuildRun),
 	}
-	flagImageTTL time.Duration
-	flagImage    string
+	flagImageTTL    time.Duration
+	defaultImageTTL = time.Duration(1000 * 1000 * 1000 * 60 * 60 * 24 * 7 /*7 days*/)
 )
 
 func init() {
@@ -116,7 +116,7 @@ func init() {
 	imageCmd.AddCommand(imageExportCmd)
 	imageCmd.AddCommand(imageCatConfigCmd)
 	imageCmd.AddCommand(imageBuildCmd)
-	imageGcCmd.Flags().DurationVarP(&flagImageTTL, "ttl", "t", time.Duration(1000*1000*1000*60*60*24*7 /*7 days*/), "image lifetime before it gets garbage collected")
+	imageGcCmd.Flags().DurationVarP(&flagImageTTL, "ttl", "t", defaultImageTTL, "image lifetime before it gets garbage collected")
 }
 
 func runImageList(cmd *cobra.Command, args []string) (err error) {
@@ -130,7 +130,13 @@ func runImageList(cmd *cobra.Command, args []string) (err error) {
 	f := "%-35s %-15s  %-71s  %-15s  %8s\n"
 	fmt.Printf(f, "REPO", "REF", "ID", "CREATED", "SIZE")
 	for _, img := range imgs {
-		fmt.Printf(f, img.Repo, img.Ref, img.ID(), humanize.Time(img.Created), humanize.Bytes(img.Size()))
+		repo := ""
+		ref := ""
+		if img.Tag != nil {
+			repo = img.Tag.Repo
+			ref = img.Tag.Ref
+		}
+		fmt.Printf(f, repo, ref, img.ID(), humanize.Time(img.Created), humanize.Bytes(img.Size()))
 	}
 	return
 }
@@ -139,7 +145,7 @@ func runImageGc(cmd *cobra.Command, args []string) error {
 	if len(args) != 0 {
 		return usageError("No argument expected: " + args[0])
 	}
-	return store.ImageGC(time.Now().Add(-flagImageTTL))
+	return store.ImageGC(flagImageTTL)
 }
 
 func runImageRm(cmd *cobra.Command, args []string) error {
@@ -228,11 +234,7 @@ func runImageCatConfig(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	cfg, err := img.Config()
-	if err != nil {
-		return
-	}
-	b, err := json.MarshalIndent(cfg, "", "  ")
+	b, err := json.MarshalIndent(&img.Config, "", "  ")
 	if err != nil {
 		return
 	}

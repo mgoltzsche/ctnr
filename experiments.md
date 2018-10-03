@@ -100,6 +100,6 @@ Docker's sane seccomp and apparmor default profiles deny syscalls that are requi
 The seccomp profile denies `setns` and a few other syscalls. The apparmor profile denies `mount`.
 Unfortunately it still doesn't run when apparmor is disabled (or better a custom profile provided that allows mount)
 and a custom seccomp profile is provided since /proc cannot be mounted since masked by docker
-(see https://github.com/opencontainers/runc/issues/225,
+(see https://github.com/opencontainers/runc/issues/1658,
 https://lists.linuxfoundation.org/pipermail/containers/2018-April/038864.html
 and https://www.mail-archive.com/linux-kernel@vger.kernel.org/msg1533642.html).

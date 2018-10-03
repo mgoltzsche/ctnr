@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/mgoltzsche/cntnr/image"
 	"github.com/mgoltzsche/cntnr/pkg/fs"
 	"github.com/mgoltzsche/cntnr/pkg/fs/tree"
 	"github.com/opencontainers/go-digest"
@@ -19,6 +20,7 @@ import (
 func TestFsSpecStore(t *testing.T) {
 	dir, err := ioutil.TempDir("", ".tmp-test-fsspecstore-")
 	require.NoError(t, err)
+	defer os.RemoveAll(dir)
 	testee := NewFsSpecStore(dir, log.New(os.Stdout, "debug: ", 0))
 	fsspec1 := tree.NewFS()
 	fsspec2 := tree.NewFS()
@@ -50,7 +52,7 @@ func TestFsSpecStore(t *testing.T) {
 	// Test Get(nonExisting)
 	_, err = testee.Get(digest.FromString("non-existing"))
 	require.Error(t, err, "Get(nonExisting)")
-	assert.True(t, IsFsSpecNotExist(err), "IsFsSpecNotExist(err)")
+	assert.True(t, image.IsNotExist(err), "IsNotExist(err)")
 }
 
 func spec2string(t *testing.T, spec fs.FsNode) string {

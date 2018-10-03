@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/mgoltzsche/cntnr/image"
@@ -39,56 +40,83 @@ func (s *ImageStoreRO) ImageConfig(id digest.Digest) (ispecs.Image, error) {
 }
 
 func (s *ImageStoreRO) UnpackImageLayers(imageId digest.Digest, rootfs string) (err error) {
-	img, err := s.imageIds.ImageID(imageId)
-	if err == nil {
-		if err = s.imageIds.MarkUsed(imageId); err == nil {
-			return s.blobs.UnpackLayers(img.ManifestDigest, rootfs)
-		}
+	img, err := s.imageIds.Get(imageId)
+	if err != nil {
+		return errors.Wrap(err, "unpack image layers")
 	}
-	return errors.Wrap(err, "unpack image layers")
+	return s.blobs.UnpackLayers(img.ManifestDigest, rootfs)
 }
 
 func (s *ImageStoreRO) Image(id digest.Digest) (r image.Image, err error) {
-	imgId, err := s.imageIds.ImageID(id)
+	imgId, err := s.imageIds.Get(id)
 	if err == nil {
-		r, err = s.imageFromManifestDigest(imgId.ManifestDigest, imgId.LastUsed)
+		r, err = s.imageFromManifestDigest(imgId.ManifestDigest)
 	}
 	err = errors.Wrapf(err, "image %q", id)
 	return
 }
 
-func (s *ImageStoreRO) imageFromManifestDigest(manifestDigest digest.Digest, lastUsed time.Time) (r image.Image, err error) {
-	defer exterrors.Wrapd(&err, "unpack image layers")
+func (s *ImageStoreRO) imageInfoFromManifestDigest(manifestDigest digest.Digest) (r image.ImageInfo, err error) {
+	defer exterrors.Wrapd(&err, "image from manifest digest")
 	manifest, err := s.blobs.ImageManifest(manifestDigest)
 	if err != nil {
 		return
 	}
-	f, err := s.blobs.BlobFileInfo(manifestDigest)
+	mf, err := s.blobs.BlobFileInfo(manifestDigest)
 	if err != nil {
 		return
 	}
-	return image.NewImage(manifestDigest, "", "", f.ModTime(), lastUsed, manifest, nil, s.imageReader), err
+	cf, err := s.blobs.BlobFileInfo(manifest.Config.Digest)
+	if err != nil {
+		return
+	}
+	return image.NewImageInfo(manifestDigest, manifest, nil, mf.ModTime(), accessTime(cf)), nil
+}
+
+func (s *ImageStoreRO) imageFromManifestDigest(manifestDigest digest.Digest) (r image.Image, err error) {
+	img, err := s.imageInfoFromManifestDigest(manifestDigest)
+	if err != nil {
+		return
+	}
+	cfg, err := s.ImageConfig(img.Manifest.Config.Digest)
+	return image.NewImage(img, cfg, s.imageReader), err
+}
+
+func accessTime(fi os.FileInfo) time.Time {
+	stu := fi.Sys().(*syscall.Stat_t)
+	return time.Unix(int64(stu.Atim.Sec), int64(stu.Atim.Nsec))
 }
 
 func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
 	defer exterrors.Wrapdf(&err, "image tag %q", nameRef)
-	repo, ref := normalizeImageName(nameRef)
-	dir, err := s.repo2dir(repo)
+	tag := normalizeImageName(nameRef)
+	dir, err := s.repo2dir(tag.Repo)
 	if err != nil {
 		return
 	}
 	var idx ispecs.Index
 	if err = imageIndex(dir, &idx); err != nil {
 		if os.IsNotExist(err) {
-			err = image.ErrorImageNameNotExist("image repo %q not found in local store", repo)
+			err = image.ErrNotExist(errors.Errorf("image repo %q not found in local store", tag.Repo))
 		}
 		return
 	}
-	d, err := findManifestDigest(&idx, ref)
+	d, err := findManifestDigest(&idx, tag.Ref)
 	if err != nil {
 		return
 	}
-	return s.imageFromManifestDigest(d.Digest, time.Now())
+	if r, err = s.imageFromManifestDigest(d.Digest); err != nil {
+		return
+	}
+	idFileExists, err := s.imageIds.Exists(r.ID())
+	if err != nil {
+		return
+	}
+	if !idFileExists {
+		// Return ErrNotExist when inconsistency found - the caller then may reimport the image
+		return r, image.ErrNotExist(errors.Errorf("inconsistent state: image tag %s resolved but image ID file missing", nameRef))
+	}
+	return
 }
 
 func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err error) {
@@ -105,27 +133,28 @@ func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err
 		}
 	}
 	if refFound {
-		err = image.ErrorImageNameNotExist("image ref %q not found for architecture %s and OS %s", ref, runtime.GOARCH, runtime.GOOS)
+		err = errors.Errorf("image ref %q not found for architecture %s and OS %s", ref, runtime.GOARCH, runtime.GOOS)
 	} else {
-		err = image.ErrorImageNameNotExist("image ref %q not found", ref)
+		err = errors.Errorf("image ref %q not found", ref)
 	}
-	return
+	return d, image.ErrNotExist(err)
 }
 
-func (s *ImageStoreRO) Images() (r []image.Image, err error) {
+func (s *ImageStoreRO) Images() (r []*image.ImageInfo, err error) {
 	defer exterrors.Wrapd(&err, "images")
 
 	// Read all image IDs
-	imgIDs, err := s.imageIds.ImageIDs()
+	imgIDs, err := s.imageIds.Entries()
 	if err != nil {
 		return
 	}
-	imgMap := map[digest.Digest]*image.Image{}
+	imgMap := map[digest.Digest]*image.ImageInfo{}
+	imgManifestMap := map[digest.Digest]*image.ImageInfo{}
 	for _, imgId := range imgIDs {
-		img, e := s.imageFromManifestDigest(imgId.ManifestDigest, imgId.LastUsed)
+		img, e := s.imageInfoFromManifestDigest(imgId.ManifestDigest)
 		if e == nil {
-			img.LastUsed = imgId.LastUsed
 			imgMap[img.ID()] = &img
+			imgManifestMap[img.ManifestDigest] = &img
 		} else {
 			err = e
 		}
@@ -138,9 +167,8 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 			return
 		}
 	}
-	r = make([]image.Image, 0, len(fl))
+	r = make([]*image.ImageInfo, 0, len(fl))
 	var idx ispecs.Index
-	var manifest ispecs.Manifest
 	for _, f := range fl {
 		if f.IsDir() && f.Name()[0] != '.' {
 			name := f.Name()
@@ -157,13 +185,13 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 						if ref == "" {
 							e = errors.Errorf("manifest descriptor %s of image %q has no ref", d.Digest, name)
 						} else {
-							manifest, e = s.blobs.ImageManifest(d.Digest)
-							if e == nil {
-								if img := imgMap[manifest.Config.Digest]; img != nil {
-									r = append(r, image.NewImage(d.Digest, name, ref, img.Created, img.LastUsed, manifest, nil, s.imageReader))
-								} else {
-									e = errors.Errorf("image %s ID file is missing", manifest.Config.Digest)
-								}
+							img := imgManifestMap[d.Digest]
+							if img == nil {
+								e = errors.Errorf("image ID file for manifest %s is missing", d.Digest)
+							} else {
+								withTag := *img
+								withTag.Tag = &image.TagName{name, ref}
+								r = append(r, &withTag)
 							}
 						}
 					}
@@ -180,7 +208,7 @@ func (s *ImageStoreRO) Images() (r []image.Image, err error) {
 		delete(imgMap, img.ID())
 	}
 	for _, img := range imgMap {
-		r = append(r, *img)
+		r = append(r, img)
 	}
 	return
 }

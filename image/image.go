@@ -12,37 +12,23 @@ type ImageReader interface {
 	ImageConfig(id digest.Digest) (ispecs.Image, error)
 }
 
-type Image struct {
+type ImageInfo struct {
+	Tag            *TagName
 	ManifestDigest digest.Digest
-	Repo           string
-	Ref            string
-	//TODO: Tag      TagName
-	Manifest ispecs.Manifest
-	Created  time.Time
-	LastUsed time.Time
-	config   *ispecs.Image
-	reader   ImageReader
+	Manifest       ispecs.Manifest
+	Created        time.Time
+	LastUsed       time.Time
 }
 
-type TagName struct {
-	Repo string
-	Ref  string
+func NewImageInfo(manifestDigest digest.Digest, manifest ispecs.Manifest, name *TagName, created, lastUsed time.Time) ImageInfo {
+	return ImageInfo{name, manifestDigest, manifest, created, lastUsed}
 }
 
-type Tag struct {
-	Name    TagName
-	ImageID digest.Digest
-}
-
-func NewImage(manifestDigest digest.Digest, repo, ref string, created, lastUsed time.Time, manifest ispecs.Manifest, config *ispecs.Image, reader ImageReader) Image {
-	return Image{manifestDigest, repo, ref, manifest, created, lastUsed, config, reader}
-}
-
-func (img *Image) ID() digest.Digest {
+func (img *ImageInfo) ID() digest.Digest {
 	return img.Manifest.Config.Digest
 }
 
-func (img *Image) Size() (size uint64) {
+func (img *ImageInfo) Size() (size uint64) {
 	for _, l := range img.Manifest.Layers {
 		if l.Size > 0 {
 			size += uint64(l.Size)
@@ -51,19 +37,27 @@ func (img *Image) Size() (size uint64) {
 	return
 }
 
-func (img *Image) Config() (cfg ispecs.Image, err error) {
-	if img.config == nil {
-		if img.reader == nil {
-			panic("refused to load image config since image instance has not been loaded by locked store")
-		}
-		if cfg, err = img.reader.ImageConfig(img.Manifest.Config.Digest); err != nil {
-			return
-		}
-		img.config = &cfg
-	} else {
-		cfg = *img.config
+type Image struct {
+	ImageInfo
+	Config ispecs.Image
+	reader ImageReader
+}
+
+type TagName struct {
+	Repo string
+	Ref  string
+}
+
+func (t *TagName) String() string {
+	s := "<no tag>"
+	if t != nil {
+		s = t.Repo + ":" + t.Ref
 	}
-	return
+	return s
+}
+
+func NewImage(info ImageInfo, config ispecs.Image, reader ImageReader) Image {
+	return Image{info, config, reader}
 }
 
 func (img *Image) Unpack(dest string) error {

@@ -63,22 +63,23 @@ func (s *ImageStore) DelImage(ids ...digest.Digest) (err error) {
 	}
 	for _, id := range ids {
 		for _, img := range imgs {
-			if id == img.ID() && img.Repo != "" {
+			if id == img.ID() && img.Tag != nil {
 				// TODO: Use TagName struct as argument
 				// TODO: single delete batch per repository
-				if err = lockedStore.UntagImage(img.Repo + ":" + img.Ref); err != nil {
+				if err = lockedStore.UntagImage(img.Tag.String()); err != nil {
 					return
 				}
 			}
 		}
-		if err = s.imageIds.Del(id); err != nil {
+		if err = s.imageIds.Delete(id); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func (s *ImageStore) ImageGC(before time.Time) (err error) {
+func (s *ImageStore) ImageGC(ttl time.Duration) (err error) {
+	before := time.Now().Add(-ttl)
 	defer exterrors.Wrapd(&err, "image gc")
 	lockedStore, err := s.openLockedImageStore(s.lock)
 	if err != nil {
@@ -95,18 +96,20 @@ func (s *ImageStore) ImageGC(before time.Time) (err error) {
 	if err != nil {
 		return
 	}
+	imgMap := map[digest.Digest]*image.ImageInfo{}
 	for _, img := range imgs {
+		imgMap[img.ID()] = img
 		if img.LastUsed.Before(before) {
-			if img.Repo != "" {
+			if img.Tag != nil {
 				// TODO: single delete batch per repository
-				if err = lockedStore.UntagImage(img.Repo + ":" + img.Ref); err != nil {
+				if err = lockedStore.UntagImage(img.Tag.String()); err != nil {
 					return
 				}
 			}
 			delIDs[img.ID()] = true
 		} else {
+			keep[img.ID()] = true
 			keep[img.ManifestDigest] = true
-			keep[img.Manifest.Config.Digest] = true
 			for _, l := range img.Manifest.Layers {
 				keep[l.Digest] = true
 			}
@@ -115,11 +118,9 @@ func (s *ImageStore) ImageGC(before time.Time) (err error) {
 
 	// Delete image IDs
 	for delID, _ := range delIDs {
-		if err = s.imageIds.Del(delID); err != nil {
-			return
-		}
+		err = exterrors.Append(err, s.imageIds.Delete(delID))
 	}
 
 	// Delete all but the named blobs
-	return s.blobs.RetainBlobs(keep)
+	return s.blobs.Retain(keep)
 }

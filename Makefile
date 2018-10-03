@@ -168,8 +168,11 @@ ide: .liteideimage
 		liteide /work/src/github.com/mgoltzsche/cntnr
 	cntnr bundle run --verbose cntnr-liteide &
 
+.liteideimage:
+	cntnr image create --dockerfile=Dockerfile --target=liteide --tag=${LITEIDEIMAGE}
+
 LITEIDE_PKGS=g++ qt5-qttools qt5-qtbase-dev qt5-qtbase-x11 qt5-qtwebkit xkeyboard-config libcanberra-gtk3 adwaita-icon-theme ttf-dejavu
-.liteideimage: .buildimage
+.OLD_liteideimage: .buildimage
 	# TODO: clean this up when --workdir and --env options are supported
 	cntnr image create \
 		--from=docker-daemon:${BUILDIMAGE} \

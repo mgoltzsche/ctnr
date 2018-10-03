@@ -25,13 +25,11 @@ func Builder(id string) *BundleBuilder {
 func BuilderFromImage(id string, image BundleImage) (b *BundleBuilder, err error) {
 	spec := generate.NewSpecBuilder()
 	spec.SetRootPath("rootfs")
-	conf, err := image.Config()
-	if err == nil {
-		spec.ApplyImage(conf)
-		spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
-		b = FromSpec(&spec)
-		b.image = image
-	}
+	conf := image.Config()
+	spec.ApplyImage(conf)
+	spec.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
+	b = FromSpec(&spec)
+	b.image = image
 	return b, errors.Wrap(err, "bundle build from image")
 }
 

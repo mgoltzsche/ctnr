@@ -7,6 +7,7 @@ import (
 
 type BundleImage interface {
 	ID() digest.Digest
-	Config() (ispecs.Image, error)
+	// Returns the image's configuration - never nil
+	Config() *ispecs.Image
 	Unpack(dest string) error
 }

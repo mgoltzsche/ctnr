@@ -7,9 +7,11 @@ ARG argimg=alpine:3.7
 ARG argvol=/data
 ARG port1=80
 ARG port2=443/tcp
+ARG longarg="long val"
 
 ENV MYVARX ${argd}
 ENV MYVARY ${argp}
+ENV LONGVAR ${longarg}
 
 COPY $argd /dest
 COPY /entrypoint.sh $argd

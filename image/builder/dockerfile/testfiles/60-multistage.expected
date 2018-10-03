@@ -23,3 +23,6 @@ RUN "/bin/busybox" "sh" "/bin/script-copy-copy.sh"
 
 RUN "/bin/busybox" "sh" "-c" "[ ! \"$BASEVAR\" ] || (echo BASEVAR should not be set but is: \"$BASEVAR\"; false)"
 RUN "/bin/busybox" "sh" "-c" "[ ! \"$BASEARG\" ] || (echo BASEARG should not be set but is: \"$BASEARG\"; false)"
+
+FROM stage1-image
+RUN "/bin/sh" "-c" "[ -f /etc/script.sh ] || (echo not inherited from base; false)"

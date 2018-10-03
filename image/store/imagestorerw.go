@@ -74,7 +74,7 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	}
 
 	// Create temp image directory
-	name, ref := nameAndRef(srcRef)
+	tag := nameAndRef(srcRef)
 	if err = os.MkdirAll(s.repoDir, 0775); err != nil {
 		return img, errors.New(err.Error())
 	}
@@ -84,15 +84,16 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	}
 	defer os.RemoveAll(imgDir)
 	imgBlobDir := filepath.Join(imgDir, "blobs")
-	if err = os.MkdirAll(s.blobs.blobDir, 0775); err != nil {
+	extBlobDir := s.blobs.dir()
+	if err = os.MkdirAll(extBlobDir, 0775); err != nil {
 		return img, errors.New(err.Error())
 	}
-	if err = os.Symlink(s.blobs.blobDir, imgBlobDir); err != nil {
+	if err = os.Symlink(extBlobDir, imgBlobDir); err != nil {
 		return img, errors.New(err.Error())
 	}
 
 	// Parse destination
-	destRef, err := ocitransport.Transport.ParseReference(imgDir + ":" + ref)
+	destRef, err := ocitransport.Transport.ParseReference(imgDir + ":" + tag.Ref)
 	if err != nil {
 		err = errors.Wrapf(err, "invalid destination %q", imgDir)
 		return
@@ -122,19 +123,15 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 	for _, m := range idx.Manifests {
 		m.Annotations[AnnotationImported] = "true"
 	}
-	if err = s.addImages(name, idx.Manifests); err != nil {
+	if err = s.addImages(tag.Repo, idx.Manifests); err != nil {
 		return
 	}
 	return s.ImageByName(src)
 }
 
-func (s *ImageStoreRW) MarkUsedImage(id digest.Digest) error {
-	return s.imageIds.MarkUsed(id)
-}
-
 // Returns the image's fs spec (files not extractable)
 func (s *ImageStoreRW) FS(imageId digest.Digest) (r fs.FsNode, err error) {
-	imgId, err := s.imageIds.ImageID(imageId)
+	imgId, err := s.imageIds.Get(imageId)
 	if err != nil {
 		return nil, errors.Wrap(err, "load image fs spec: resolve image ID")
 	}
@@ -144,7 +141,7 @@ func (s *ImageStoreRW) FS(imageId digest.Digest) (r fs.FsNode, err error) {
 func (s *ImageStoreRW) AddLayer(rootfs fs.FsNode, parentImageId *digest.Digest, author, createdByOp string) (img image.Image, err error) {
 	var parentManifestId *digest.Digest
 	if parentImageId != nil {
-		pImgId, err := s.imageIds.ImageID(*parentImageId)
+		pImgId, err := s.imageIds.Get(*parentImageId)
 		if err != nil {
 			return img, errors.Wrap(err, "add image layer: resolve parent image ID")
 		}
@@ -158,11 +155,11 @@ func (s *ImageStoreRW) AddLayer(rootfs fs.FsNode, parentImageId *digest.Digest, 
 	if exists {
 		return s.Image(*parentImageId)
 	}
-	if err = s.imageIds.Add(c.Manifest.Config.Digest, c.Descriptor.Digest); err != nil {
+	if err = s.imageIds.Put(c.Manifest.Config.Digest, c.Descriptor.Digest); err != nil {
 		return img, errors.WithMessage(err, "add image layer")
 	}
 	now := time.Now()
-	return image.NewImage(c.Descriptor.Digest, "", "", now, now, c.Manifest, &c.Config, s), nil
+	return image.NewImage(image.NewImageInfo(c.Descriptor.Digest, c.Manifest, nil, now, now), c.Config, s), nil
 }
 
 func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.Digest) (img image.Image, err error) {
@@ -173,7 +170,7 @@ func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.D
 			delete(conf.Config.Labels, AnnotationParentImage)
 		}
 	} else {
-		pImg, err := s.imageIds.ImageID(*parentImageId)
+		pImg, err := s.imageIds.Get(*parentImageId)
 		if err != nil {
 			return img, errors.WithMessage(err, "add image config: resolve parent manifest")
 		}
@@ -189,9 +186,9 @@ func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.D
 	manifestRef, manifest, err := s.blobs.PutImageConfig(conf, parentManifest, nil)
 	if err == nil {
 		// Map imageID (config digest) to manifest
-		if err = s.imageIds.Add(manifest.Config.Digest, manifestRef.Digest); err == nil {
+		if err = s.imageIds.Put(manifest.Config.Digest, manifestRef.Digest); err == nil {
 			now := time.Now()
-			img = image.NewImage(manifestRef.Digest, "", "", now, now, manifest, &conf, s)
+			img = image.NewImage(image.NewImageInfo(manifestRef.Digest, manifest, nil, now, now), conf, s)
 		}
 	}
 	err = errors.WithMessage(err, "add image config")
@@ -199,18 +196,18 @@ func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.D
 }
 
 // Creates a new image ref. Overwrites existing refs.
-func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Image, err error) {
+func (s *ImageStoreRW) TagImage(imageId digest.Digest, tagStr string) (img image.ImageInfo, err error) {
 	defer exterrors.Wrapd(&err, "tag")
 
-	if tag == "" {
+	if tagStr == "" {
 		return img, errors.New("no tag provided")
 	}
-	imgId, err := s.imageIds.ImageID(imageId)
+	imgId, err := s.imageIds.Get(imageId)
 	if err != nil {
 		return
 	}
 	manifestDigest := imgId.ManifestDigest
-	repo, ref := normalizeImageName(tag)
+	tag := normalizeImageName(tagStr)
 	manifest, err := s.blobs.ImageManifest(manifestDigest)
 	if err != nil {
 		return
@@ -224,7 +221,7 @@ func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Im
 		Digest:    manifestDigest,
 		Size:      f.Size(),
 		Annotations: map[string]string{
-			ispecs.AnnotationRefName: ref,
+			ispecs.AnnotationRefName: tag.Ref,
 		},
 		Platform: &ispecs.Platform{
 			Architecture: runtime.GOARCH,
@@ -233,26 +230,26 @@ func (s *ImageStoreRW) TagImage(imageId digest.Digest, tag string) (img image.Im
 	}
 
 	// Create/update index.json
-	if err = s.addImages(repo, []ispecs.Descriptor{manifestDescriptor}); err != nil {
+	if err = s.addImages(tag.Repo, []ispecs.Descriptor{manifestDescriptor}); err != nil {
 		return
 	}
 
 	now := time.Now()
-	return image.NewImage(manifestDigest, repo, ref, now, now, manifest, nil, s), err
+	return image.NewImageInfo(manifestDigest, manifest, tag, now, now), err
 }
 
-func (s *ImageStoreRW) UntagImage(tag string) (err error) {
+func (s *ImageStoreRW) UntagImage(tagStr string) (err error) {
 	defer exterrors.Wrapd(&err, "untag")
-	repo, ref := normalizeImageName(tag)
-	err = s.updateImageIndex(repo, false, func(repo *ImageRepo) error {
+	tag := normalizeImageName(tagStr)
+	err = s.updateImageIndex(tag.Repo, false, func(repo *ImageRepo) error {
 		idx := &repo.index
-		if ref == "" {
+		if tag.Ref == "" {
 			idx.Manifests = nil
 		} else {
 			manifests := make([]ispecs.Descriptor, 0, len(idx.Manifests))
 			deleted := false
 			for _, m := range idx.Manifests {
-				if ref == m.Annotations[ispecs.AnnotationRefName] {
+				if tag.Ref == m.Annotations[ispecs.AnnotationRefName] {
 					deleted = true
 				} else {
 					manifests = append(manifests, m)
@@ -260,7 +257,7 @@ func (s *ImageStoreRW) UntagImage(tag string) (err error) {
 			}
 			idx.Manifests = manifests
 			if !deleted {
-				return errors.Errorf("image repo %q has no ref %q", repo, ref)
+				return errors.Errorf("image repo %q has no ref %q", tag.Repo, tag.Ref)
 			}
 		}
 		return nil
@@ -288,7 +285,7 @@ func (s *ImageStoreRW) addImages(repoName string, manifestDescriptors []ispecs.D
 		if err != nil {
 			return errors.Wrap(err, "add image")
 		}
-		if err = s.imageIds.Add(manifest.Config.Digest, manifestDescriptor.Digest); err != nil {
+		if err = s.imageIds.Put(manifest.Config.Digest, manifestDescriptor.Digest); err != nil {
 			return errors.Wrap(err, "add image")
 		}
 	}
@@ -305,7 +302,7 @@ func (s *ImageStoreRW) updateImageIndex(repoName string, create bool, transform 
 	dir, err := s.repo2dir(repoName)
 	if err == nil {
 		var repo *ImageRepo
-		repo, err = OpenImageRepo(dir, s.blobs.blobDir, create)
+		repo, err = OpenImageRepo(dir, s.blobs.dir(), create)
 		if err == nil {
 			defer func() {
 				err = exterrors.Append(err, repo.Close())

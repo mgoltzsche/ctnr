@@ -5,7 +5,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 
 	"github.com/mgoltzsche/cntnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
@@ -14,12 +13,12 @@ import (
 )
 
 type BlobStore struct {
-	blobDir string
-	debug   log.Logger
+	KVFileStore
+	debug log.Logger
 }
 
 func NewBlobStore(dir string, debug log.Logger) (r BlobStore) {
-	r.blobDir = dir
+	r.KVFileStore = NewKVFileStore(dir)
 	r.debug = debug
 	return
 }
@@ -44,7 +43,7 @@ func (s *BlobStore) PutLayer(reader io.Reader) (layer ispecs.Descriptor, diffIdD
 	}()
 
 	// Write blob
-	layer.Digest, layer.Size, err = s.putBlob(pipeReader)
+	layer.Digest, layer.Size, err = s.Put(pipeReader)
 	if err != nil {
 		return
 	}
@@ -54,75 +53,41 @@ func (s *BlobStore) PutLayer(reader io.Reader) (layer ispecs.Descriptor, diffIdD
 }
 
 func (s *BlobStore) BlobFileInfo(id digest.Digest) (st os.FileInfo, err error) {
-	if st, err = os.Stat(s.blobFile(id)); err != nil {
-		err = errors.New(err.Error())
+	file, err := s.keyFile(id)
+	if err != nil {
+		return
+	}
+	if st, err = os.Stat(file); err != nil {
+		err = errors.Wrap(err, "blob file info")
 	}
 	return
 }
 
-func (s *BlobStore) RetainBlobs(keep map[digest.Digest]bool) (err error) {
-	defer func() {
-		err = errors.Wrap(err, "retain blobs")
-	}()
-	var al, dl []os.FileInfo
-	if al, err = ioutil.ReadDir(s.blobDir); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		} else {
-			return errors.New(err.Error())
-		}
-	}
-	for _, f := range al {
-		if f.IsDir() {
-			alg := f.Name()
-			af := filepath.Join(s.blobDir, alg)
-			dl, err = ioutil.ReadDir(af)
-			if err != nil {
-				return errors.New(err.Error())
-			}
-			for _, f = range dl {
-				if blobDigest := digest.NewDigestFromHex(alg, f.Name()); blobDigest.Validate() == nil {
-					if !keep[blobDigest] {
-						if e := os.Remove(filepath.Join(af, f.Name())); e != nil {
-							err = errors.New(e.Error())
-							s.debug.Printf("blob %s: %s", blobDigest, e)
-						}
-					}
-				}
-			}
-		}
-	}
-	return
-}
-
-func (s *BlobStore) readBlob(id digest.Digest) (b []byte, err error) {
-	if err = id.Validate(); err != nil {
-		return nil, errors.New("blob digest " + id.String() + ": " + err.Error())
-	}
-	if b, err = ioutil.ReadFile(filepath.Join(s.blobDir, id.Algorithm().String(), id.Hex())); err != nil {
-		err = errors.New("read blob " + id.String() + ": " + err.Error())
-	}
-	return
-}
-
-func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err error) {
+// Writes a raw blob into the store using its digest as key
+func (s *BlobStore) Put(reader io.Reader) (d digest.Digest, size int64, err error) {
 	defer func() {
 		err = errors.WithMessage(err, "put blob")
 	}()
 
 	// Create blob dir
-	if err = os.MkdirAll(s.blobDir, 0775); err != nil {
+	blobDir := string(s.KVFileStore)
+	if err = os.MkdirAll(blobDir, 0775); err != nil {
 		err = errors.New(err.Error())
 		return
 	}
 	// Create temp file to write blob to
-	tmpBlob, err := ioutil.TempFile(s.blobDir, "blob-")
+	tmpBlob, err := ioutil.TempFile(blobDir, "blob-")
 	if err != nil {
 		err = errors.New(err.Error())
 		return
 	}
 	tmpPath := tmpBlob.Name()
-	defer tmpBlob.Close()
+	defer func() {
+		tmpBlob.Close()
+		if err != nil {
+			os.Remove(tmpPath)
+		}
+	}()
 
 	// Write temp blob
 	digester := digest.SHA256.Digester()
@@ -131,24 +96,24 @@ func (s *BlobStore) putBlob(reader io.Reader) (d digest.Digest, size int64, err 
 		err = errors.New(err.Error())
 		return
 	}
-	tmpBlob.Close()
+	if err = tmpBlob.Sync(); err != nil {
+		return
+	}
+	if err = tmpBlob.Close(); err != nil {
+		return
+	}
 
 	// Rename temp blob file
 	d = digester.Digest()
-	blobFile := s.blobFile(d)
-	if _, e := os.Stat(blobFile); os.IsNotExist(e) {
-		// Write blob if not exists
-		err = os.Rename(tmpPath, blobFile)
-	} else {
-		// Do not override already existing blob to make hash collisions obvious early
-		err = os.Remove(tmpPath)
-	}
+	blobFile, err := s.keyFile(d)
 	if err != nil {
-		err = errors.New(err.Error())
+		return
 	}
+	if _, e := os.Stat(blobFile); e == nil {
+		// Do not override existing blob
+		os.Remove(tmpPath)
+		return
+	}
+	err = errors.Wrap(os.Rename(tmpPath, blobFile), "put blob")
 	return
-}
-
-func (s *BlobStore) blobFile(d digest.Digest) string {
-	return filepath.Join(s.blobDir, d.Algorithm().String(), d.Hex())
 }

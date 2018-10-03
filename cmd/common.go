@@ -29,6 +29,7 @@ import (
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/run"
 	"github.com/mgoltzsche/cntnr/run/factory"
+	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -238,6 +239,14 @@ func createContainer(model *model.Service, res model.ResourceResolver, manager r
 	})
 }
 
+type bundleImage struct {
+	*image.Image
+}
+
+func (i *bundleImage) Config() *ispecs.Image {
+	return &i.Image.Config
+}
+
 func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b *bundle.LockedBundle, err error) {
 	if service.Image == "" {
 		return nil, errors.Errorf("service %q has no image", service.Name)
@@ -264,7 +273,7 @@ func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b 
 		if img, err = image.GetImage(istore, service.Image); err != nil {
 			return
 		}
-		if builder, err = bundle.BuilderFromImage(bundleId, &img); err != nil {
+		if builder, err = bundle.BuilderFromImage(bundleId, &bundleImage{&img}); err != nil {
 			return
 		}
 	}

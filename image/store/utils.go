@@ -9,6 +9,7 @@ import (
 
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
+	"github.com/mgoltzsche/cntnr/image"
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/lock"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -31,7 +32,7 @@ func imageIndex(dir string, r *ispecs.Index) (err error) {
 	return
 }
 
-func normalizeImageName(nameAndTag string) (name, ref string) {
+func normalizeImageName(nameAndTag string) *image.TagName {
 	imgRef, err := alltransports.ParseImageName(nameAndTag)
 	if err != nil {
 		return parseImageName(nameAndTag)
@@ -39,7 +40,7 @@ func normalizeImageName(nameAndTag string) (name, ref string) {
 	return nameAndRef(imgRef)
 }
 
-func nameAndRef(imgRef types.ImageReference) (string, string) {
+func nameAndRef(imgRef types.ImageReference) *image.TagName {
 	name := strings.TrimLeft(imgRef.StringWithinTransport(), "/")
 	dckrRef := imgRef.DockerReference()
 	if dckrRef != nil {
@@ -48,15 +49,16 @@ func nameAndRef(imgRef types.ImageReference) (string, string) {
 	return parseImageName(name)
 }
 
-func parseImageName(nameAndRef string) (repo, ref string) {
+func parseImageName(nameAndRef string) *image.TagName {
+	var r image.TagName
 	if li := strings.LastIndex(nameAndRef, ":"); li > 0 && li+1 < len(nameAndRef) {
-		repo = nameAndRef[:li]
-		ref = nameAndRef[li+1:]
+		r.Repo = nameAndRef[:li]
+		r.Ref = nameAndRef[li+1:]
 	} else {
-		repo = nameAndRef
-		ref = "latest"
+		r.Repo = nameAndRef
+		r.Ref = "latest"
 	}
-	return
+	return &r
 }
 
 func unlock(lock lock.Locker, err *error) {

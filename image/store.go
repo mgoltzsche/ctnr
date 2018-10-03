@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"time"
 
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/mgoltzsche/cntnr/pkg/fs"
-	digest "github.com/opencontainers/go-digest"
+	"github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
@@ -17,33 +16,25 @@ import (
 type ImageStore interface {
 	ImageStoreRO
 	OpenLockedImageStore() (ImageStoreRW, error)
-	ImageGC(before time.Time) error
+	ImageGC(ttl time.Duration) error
 	DelImage(id ...digest.Digest) error
 }
 
 type ImageStoreRO interface {
-	Images() ([]Image, error)
+	Images() ([]*ImageInfo, error)
 	Image(id digest.Digest) (Image, error)
 	ImageByName(name string) (Image, error)
 }
 
-type ImageTagStore interface {
-	AddTag(name string, imageID digest.Digest) error
-	DelTag(name string) error
-	Tag(name string) (Tag, error)
-	Tags() ([]Tag, error)
-}
-
 type ImageStoreRW interface {
 	ImageStoreRO
-	MarkUsedImage(imageId digest.Digest) error
 	ImportImage(name string) (Image, error)
 	SupportsTransport(transportName string) bool
 	AddImageConfig(m ispecs.Image, parentImageId *digest.Digest) (Image, error)
 	FS(imageId digest.Digest) (fs.FsNode, error)
 	// Creates a new layer as diff to parent. Returns errEmptyLayerDiff if nothing has changed
 	AddLayer(rootfs fs.FsNode, parentImageId *digest.Digest, author, createdByOp string) (Image, error)
-	TagImage(imageId digest.Digest, tag string) (Image, error)
+	TagImage(imageId digest.Digest, tag string) (ImageInfo, error)
 	UntagImage(tag string) error
 	Close() error
 }
@@ -53,34 +44,24 @@ type LayerSource interface {
 	Close() error
 }
 
-const (
-	errEmptyLayerDiff    = "github.com/mgoltzsche/cntnr/image/emptylayerdiff"
-	errImageIdNotExist   = "github.com/mgoltzsche/cntnr/image/idnotexist"
-	errImageNameNotExist = "github.com/mgoltzsche/cntnr/image/namenotexist"
-)
+type ErrNotExist error
 
-func IsImageIdNotExist(err error) bool {
-	return exterrors.HasType(err, errImageIdNotExist)
-}
+type ErrEmptyLayerDiff error
 
-func ErrorImageIdNotExist(format string, o ...interface{}) error {
-	return exterrors.Typedf(errImageIdNotExist, format, o...)
-}
-
-func IsImageNameNotExist(err error) bool {
-	return exterrors.HasType(err, errImageNameNotExist)
-}
-
-func ErrorImageNameNotExist(format string, o ...interface{}) error {
-	return exterrors.Typedf(errImageNameNotExist, format, o...)
+func IsNotExist(err error) bool {
+	switch errors.Cause(err).(type) {
+	case ErrNotExist:
+		return true
+	}
+	return false
 }
 
 func IsEmptyLayerDiff(err error) bool {
-	return exterrors.HasType(err, errEmptyLayerDiff)
-}
-
-func ErrorEmptyLayerDiff(msg string) error {
-	return exterrors.Typed(errEmptyLayerDiff, msg)
+	switch errors.Cause(err).(type) {
+	case ErrEmptyLayerDiff:
+		return true
+	}
+	return false
 }
 
 func GetLocalImage(store ImageStoreRO, image string) (img Image, err error) {
@@ -95,7 +76,7 @@ func GetLocalImage(store ImageStoreRO, image string) (img Image, err error) {
 }
 
 func GetImage(store ImageStoreRW, image string) (img Image, err error) {
-	if img, err = GetLocalImage(store, image); IsImageNameNotExist(err) {
+	if img, err = GetLocalImage(store, image); IsNotExist(err) {
 		img, err = store.ImportImage(image)
 	}
 	return

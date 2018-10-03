@@ -85,7 +85,8 @@ Files:
 		// Test single stage execution
 		if strings.Contains(file, "multistage") {
 			applyStageTested = true
-			expectedOps := mock.ops[mock.stage2OpOffset:]
+			expectedOps := mock.ops[mock.stage2OpOffset:mock.stage6OpOffset]
+			//panic(fmt.Sprintf("%d %s", mock.stage2OpOffset, strings.Join(expectedOps, "\n")))
 			testee := newTestee(t, file)
 			require.NoError(t, err, file)
 			mock = mockBuilder{returnErr: -1, stageCount: 1}
@@ -120,6 +121,7 @@ type mockBuilder struct {
 	returnCount    int
 	stageCount     int
 	stage2OpOffset int
+	stage6OpOffset int
 }
 
 func (s *mockBuilder) err() (err error) {
@@ -190,6 +192,9 @@ func (s *mockBuilder) FromImage(name string) error {
 	s.stageCount++
 	if s.stageCount == 2 {
 		s.stage2OpOffset = len(s.ops) - 1
+	}
+	if s.stageCount == 6 {
+		s.stage6OpOffset = len(s.ops) - 1
 	}
 	return s.err()
 }

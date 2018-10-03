@@ -2,6 +2,7 @@ FROM alpine:3.7
 
 ENV "MYVARX"="entrypoint.sh"
 ENV "MYVARY"="pval"
+ENV "LONGVAR"="long val"
 
 COPY dir="./ctx" "entrypoint.sh" "/dest" 0:0
 COPY dir="./ctx" "/entrypoint.sh" "entrypoint.sh" 0:0
@@ -21,7 +22,7 @@ VOLUME "pval" "/data"
 WORKDIR /data
 WORKDIR /
 
-RUN "argd"="entrypoint.sh" "argimg"="alpine:3.7" "argp"="pval" "argstop"="SIGTERM" "argusr"="0:0" "argvol"="/data" "port1"="80" "port2"="443/tcp" "/bin/sh" "-c" "echo $argd"
+RUN "argd"="entrypoint.sh" "argimg"="alpine:3.7" "argp"="pval" "argstop"="SIGTERM" "argusr"="0:0" "argvol"="/data" "longarg"="long val" "port1"="80" "port2"="443/tcp" "/bin/sh" "-c" "echo $argd"
 
 ENTRYPOINT "/bin/sh" "-c" "echo $argd"
 ENTRYPOINT "/bin/echo" "$argd"

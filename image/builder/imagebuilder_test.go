@@ -86,9 +86,8 @@ func TestImageBuilder(t *testing.T) {
 			}
 			img, err := testee.images.Image(imageId)
 			require.NoError(t, err, filepath.Base(file)+" load resulting image")
-			cfg, err := img.Config()
-			require.NoError(t, err, filepath.Base(file)+" load resulting image config")
 			elapsedTime1 := time.Now().Sub(startTime)
+			cfg := img.Config
 
 			// Assert
 			assertions := []string{}
@@ -110,6 +109,11 @@ func TestImageBuilder(t *testing.T) {
 					cmd := assertionExpr[4:]
 					err = testee.Run([]string{"/bin/sh", "-c", cmd}, nil)
 					require.NoError(t, err, filepath.Base(file)+" assertion")
+				case "ERR":
+					// Assert failing command results in error
+					cmd := assertionExpr[4:]
+					err = testee.Run([]string{"/bin/sh", "-c", cmd}, nil)
+					require.Error(t, err, filepath.Base(file)+" - should fail")
 				case "CFG":
 					// Assert by JSON query
 					query := assertionExpr[4:]

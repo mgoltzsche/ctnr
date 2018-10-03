@@ -69,6 +69,14 @@ type ImageBuilder struct {
 	loggers                log.Loggers
 }
 
+type bundleImage struct {
+	*image.Image
+}
+
+func (i *bundleImage) Config() *ispecs.Image {
+	return &i.Image.Config
+}
+
 type imageFs struct {
 	rootfs  string
 	imageId digest.Digest
@@ -77,7 +85,7 @@ type imageFs struct {
 type ImageResolver func(store image.ImageStoreRW, image string) (img image.Image, err error)
 
 func ResolveDockerImage(store image.ImageStoreRW, imageRef string) (img image.Image, err error) {
-	if img, err = image.GetLocalImage(store, imageRef); image.IsImageNameNotExist(err) {
+	if img, err = image.GetLocalImage(store, imageRef); image.IsNotExist(err) {
 		transport := ""
 		if p := strings.Index(imageRef, ":"); p > 0 {
 			transport = imageRef[:p]
@@ -86,7 +94,7 @@ func ResolveDockerImage(store image.ImageStoreRW, imageRef string) (img image.Im
 			imageRef = "docker://" + imageRef
 			img, err = image.GetLocalImage(store, imageRef)
 		}
-		if image.IsImageNameNotExist(err) {
+		if image.IsNotExist(err) {
 			img, err = store.ImportImage(imageRef)
 		}
 	}
@@ -193,7 +201,7 @@ func (b *ImageBuilder) initBundle() (err error) {
 	var bb *bundle.BundleBuilder
 	if b.image == nil {
 		bb = bundle.Builder("")
-	} else if bb, err = bundle.BuilderFromImage("", b.image); err != nil {
+	} else if bb, err = bundle.BuilderFromImage("", &bundleImage{b.image}); err != nil {
 		return errors.Wrap(err, "image builder")
 	}
 	if b.rootless {
@@ -324,7 +332,7 @@ func (b *ImageBuilder) FromImage(imageName string) (err error) {
 		imgp = &img
 	}
 	b.fsBuilder = nil
-	err = b.setImage(imgp)
+	b.setImage(imgp)
 	return
 }
 
@@ -467,15 +475,14 @@ func ValidateExposedPorts(ports []string) error {
 	return nil
 }
 
-func (b *ImageBuilder) setImage(img *image.Image) (err error) {
+func (b *ImageBuilder) setImage(img *image.Image) {
 	b.image = img
 	if img == nil {
 		b.config = ispecs.Image{}
 		b.initConfig()
 	} else {
-		b.config, err = img.Config()
+		b.config = img.Config
 	}
-	return
 }
 
 func (b *ImageBuilder) Run(args []string, addEnv map[string]string) (err error) {
@@ -556,7 +563,7 @@ func (b *ImageBuilder) Tag(tag string) (err error) {
 	}
 	img, err := b.images.TagImage(b.image.ID(), tag)
 	if err == nil {
-		b.image = &img
+		b.image.Tag = img.Tag
 		b.namedImages[tag] = b.image
 		b.loggers.Info.WithField("img", b.image.ID()).WithField("tag", tag).Println("Tagged image")
 	}
@@ -691,9 +698,7 @@ func (b *ImageBuilder) addLayer(imagefs fs.FsNode, createdBy string) (err error)
 	if err != nil {
 		return
 	}
-	if err = b.setImage(&img); err != nil {
-		return
-	}
+	b.setImage(&img)
 	b.fsBuilder = tree.NewFsBuilder(imagefs, fs.NewFSOptions(b.rootless))
 	if b.bundle != nil {
 		imgId := img.ID()
@@ -761,11 +766,10 @@ func (b *ImageBuilder) commitConfig(createdBy string) (err error) {
 	}
 	img, err := b.images.AddImageConfig(b.config, parentImgId)
 	if err == nil {
-		if err = b.setImage(&img); err == nil {
-			newImageId := img.ID()
-			if b.bundle != nil {
-				err = b.bundle.SetParentImageId(&newImageId)
-			}
+		b.setImage(&img)
+		newImageId := img.ID()
+		if b.bundle != nil {
+			err = b.bundle.SetParentImageId(&newImageId)
 		}
 	}
 	return errors.Wrap(err, "commit config")
@@ -792,11 +796,10 @@ func (b *ImageBuilder) cached(uniqCreatedBy string, call func(createdBy string) 
 		cachedImg, e := b.images.Image(cachedImgId)
 		if e == nil {
 			b.loggers.Info.WithField("img", cachedImg.ID()).Printf("Using cached image")
-			err = b.setImage(&cachedImg)
-			err = errors.Wrap(err, "cached image")
+			b.setImage(&cachedImg)
 			b.fsBuilder = nil
 			return
-		} else if !image.IsImageIdNotExist(e) {
+		} else if !image.IsNotExist(e) {
 			return errors.WithMessage(e, "load cached image")
 		}
 	} else if !IsCacheKeyNotExist(err) {

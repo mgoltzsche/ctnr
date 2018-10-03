@@ -18,30 +18,33 @@ import (
 	"os"
 	"time"
 
+	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
 var (
 	gcCmd = &cobra.Command{
 		Use:   "gc",
-		Short: "Garage collects all bundles in the bundle store",
-		Long:  `Garage collects all bundles in the bundle store.`,
-		Run:   wrapRun(runBundleGc),
+		Short: "Garage collects all bundles and images in the local store",
+		Long:  `Garage collects all bundles and images in the local store.`,
+		Run:   wrapRun(runGc),
 	}
-	bundleTTL time.Duration
+	flagGcBundleTTL time.Duration
+	flagGcImageTTL  time.Duration
 )
 
 func init() {
-	gcCmd.Flags().DurationVarP(&bundleTTL, "ttl", "t", time.Duration(1000*1000*1000*60*30 /*30min*/), "bundle lifetime before it gets garbage collected")
+	gcCmd.Flags().DurationVarP(&flagGcBundleTTL, "bundle-ttl", "b", defaultBundleTTL, "bundle lifetime before it gets garbage collected")
+	gcCmd.Flags().DurationVarP(&flagImageTTL, "image-ttl", "i", defaultImageTTL, "image lifetime before it gets garbage collected")
 }
 
-func runBundleGc(cmd *cobra.Command, args []string) error {
+func runGc(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		return usageError("No args expected")
 	}
-	gcd, err := store.BundleGC(bundleTTL)
+	gcd, err := store.BundleGC(flagGcBundleTTL)
 	for _, b := range gcd {
 		os.Stdout.WriteString(b.ID() + "\n")
 	}
-	return err
+	return exterrors.Append(err, store.ImageGC(flagGcImageTTL))
 }

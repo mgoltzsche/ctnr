@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"sort"
 	"syscall"
+	"time"
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/mgoltzsche/cntnr/bundle"
@@ -57,6 +58,14 @@ var (
 		Long:  `Runs an existing OCI runtime bundle`,
 		Run:   wrapRun(runBundleRun),
 	}
+	bundleGcCmd = &cobra.Command{
+		Use:   "gc",
+		Short: "Garage collects all bundles in the bundle store",
+		Long:  `Garage collects all bundles in the bundle store.`,
+		Run:   wrapRun(runBundleGc),
+	}
+	flagBundleTTL    time.Duration
+	defaultBundleTTL = time.Duration(1000 * 1000 * 1000 * 60 * 30) /*30min*/
 )
 
 func init() {
@@ -64,8 +73,10 @@ func init() {
 	bundleCmd.AddCommand(bundleDeleteCmd)
 	bundleCmd.AddCommand(bundleCreateCmd)
 	bundleCmd.AddCommand(bundleRunCmd)
+	bundleCmd.AddCommand(bundleGcCmd)
 	flagsBundle.InitContainerFlags(bundleCreateCmd.Flags())
 	flagsBundle.InitRunFlags(bundleRunCmd.Flags())
+	bundleGcCmd.Flags().DurationVarP(&flagBundleTTL, "ttl", "t", defaultBundleTTL, "bundle lifetime before it gets garbage collected")
 }
 
 func runBundleList(cmd *cobra.Command, args []string) (err error) {
@@ -138,6 +149,17 @@ func runBundleDelete(cmd *cobra.Command, args []string) (err error) {
 		err = fmt.Errorf("cannot delete bundles %+v", failedIds)
 	}
 	return
+}
+
+func runBundleGc(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return usageError("No args expected")
+	}
+	gcd, err := store.BundleGC(flagBundleTTL)
+	for _, b := range gcd {
+		os.Stdout.WriteString(b.ID() + "\n")
+	}
+	return err
 }
 
 func runBundleRun(cmd *cobra.Command, args []string) (err error) {

@@ -5,3 +5,4 @@ RUN echo "hello world" > /etc/hello
 RUN echo "special characters & whitespaces" > '/äh so'
 
 # ASSERT RUN [ -f '/etc/hello' ] && [ -f '/äh so' ]
+# ASSERT ERR false

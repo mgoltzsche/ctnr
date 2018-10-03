@@ -200,8 +200,10 @@ func (s *DockerfileBuilder) add(op func(ImageBuilder) error) error {
 	return nil
 }
 
-func (s *DockerfileBuilder) addStage(name string, op func(ImageBuilder) error) {
-	s.stages = append(s.stages, &buildStage{name, []func(ImageBuilder) error{op}, map[*buildStage]bool{}, digest.Digest("")})
+func (s *DockerfileBuilder) addStage(name string, op func(ImageBuilder) error) *buildStage {
+	stage := &buildStage{name, []func(ImageBuilder) error{op}, map[*buildStage]bool{}, digest.Digest("")}
+	s.stages = append(s.stages, stage)
+	return stage
 }
 
 // See https://docs.docker.com/engine/reference/builder/#from
@@ -222,9 +224,20 @@ func (s *DockerfileBuilder) from(n *parser.Node) (err error) {
 	if len(v) == 3 {
 		stageName = v[2]
 	}
-	s.addStage(stageName, func(b ImageBuilder) (err error) {
-		return b.FromImage(image)
+	baseStage, err := findStage(s.stages, image)
+	if err != nil {
+		return
+	}
+	stage := s.addStage(stageName, func(b ImageBuilder) (err error) {
+		img := image
+		if baseStage != nil {
+			img = baseStage.builtImageId.String()
+		}
+		return b.FromImage(img)
 	})
+	if baseStage != nil {
+		stage.addDependency(baseStage)
+	}
 	return
 }
 
@@ -282,10 +295,11 @@ func (s *DockerfileBuilder) copy(n *parser.Node, op addOp) (err error) {
 	}
 	ctxDir := s.ctxDir
 	if err = s.add(func(b ImageBuilder) error {
+		img := from
 		if srcStage != nil {
-			from = srcStage.builtImageId.String()
+			img = srcStage.builtImageId.String()
 		}
-		return op(b, from, ctxDir, srcPattern, dest, &usr)
+		return op(b, img, ctxDir, srcPattern, dest, &usr)
 	}); err != nil {
 		return
 	}
@@ -367,7 +381,7 @@ func (s *DockerfileBuilder) arg(n *parser.Node) (err error) {
 	} else {
 		k = l[0]
 		if p := strings.Index(k, "="); p > 0 {
-			v = k[p+1:]
+			v = unquote(k[p+1:])
 			k = unquote(k[:p])
 			hasVal = true
 		}

@@ -183,7 +183,7 @@ func (b *SpecBuilder) applyEntrypoint() {
 }
 
 // See image to runtime spec conversion rules: https://github.com/opencontainers/image-spec/blob/master/conversion.md
-func (b *SpecBuilder) ApplyImage(img ispecs.Image) {
+func (b *SpecBuilder) ApplyImage(img *ispecs.Image) {
 	cfg := &img.Config
 
 	// User
