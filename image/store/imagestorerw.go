@@ -30,7 +30,6 @@ var _ image.ImageStoreRW = &ImageStoreRW{}
 
 type ImageStoreRW struct {
 	*ImageStoreRO
-	fsCache       *ImageFSROCache
 	systemContext *types.SystemContext
 	//trustPolicy        *signature.PolicyContext
 	trustPolicy TrustPolicyContext
@@ -40,11 +39,11 @@ type ImageStoreRW struct {
 	loggers     log.Loggers
 }
 
-func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, fsCache *ImageFSROCache, tmpDir string, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, rootless bool, loggers log.Loggers) (r *ImageStoreRW, err error) {
+func NewImageStoreRW(locker lock.Locker, roStore *ImageStoreRO, tmpDir string, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, rootless bool, loggers log.Loggers) (r *ImageStoreRW, err error) {
 	if err = locker.Lock(); err != nil {
 		err = errors.Wrap(err, "open read/write image store")
 	}
-	return &ImageStoreRW{roStore.WithNonAtomicAccess(), fsCache, systemContext, trustPolicy, rootless, tmpDir, locker, loggers}, err
+	return &ImageStoreRW{roStore, systemContext, trustPolicy, rootless, tmpDir, locker, loggers}, err
 }
 
 func (s *ImageStoreRW) Close() (err error) {
@@ -159,7 +158,7 @@ func (s *ImageStoreRW) AddLayer(rootfs fs.FsNode, parentImageId *digest.Digest, 
 		return img, errors.WithMessage(err, "add image layer")
 	}
 	now := time.Now()
-	return image.NewImage(image.NewImageInfo(c.Descriptor.Digest, c.Manifest, nil, now, now), c.Config, s), nil
+	return image.NewImage(image.NewImageInfo(c.Descriptor.Digest, c.Manifest, nil, now, now), c.Config), nil
 }
 
 func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.Digest) (img image.Image, err error) {
@@ -188,7 +187,7 @@ func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.D
 		// Map imageID (config digest) to manifest
 		if err = s.imageIds.Put(manifest.Config.Digest, manifestRef.Digest); err == nil {
 			now := time.Now()
-			img = image.NewImage(image.NewImageInfo(manifestRef.Digest, manifest, nil, now, now), conf, s)
+			img = image.NewImage(image.NewImageInfo(manifestRef.Digest, manifest, nil, now, now), conf)
 		}
 	}
 	err = errors.WithMessage(err, "add image config")

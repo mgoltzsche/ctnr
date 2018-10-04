@@ -7,11 +7,6 @@ import (
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-type ImageReader interface {
-	UnpackImageLayers(id digest.Digest, rootfs string) error
-	ImageConfig(id digest.Digest) (ispecs.Image, error)
-}
-
 type ImageInfo struct {
 	Tag            *TagName
 	ManifestDigest digest.Digest
@@ -40,7 +35,6 @@ func (img *ImageInfo) Size() (size uint64) {
 type Image struct {
 	ImageInfo
 	Config ispecs.Image
-	reader ImageReader
 }
 
 type TagName struct {
@@ -56,13 +50,23 @@ func (t *TagName) String() string {
 	return s
 }
 
-func NewImage(info ImageInfo, config ispecs.Image, reader ImageReader) Image {
-	return Image{info, config, reader}
+func NewImage(info ImageInfo, config ispecs.Image) Image {
+	return Image{info, config}
 }
 
-func (img *Image) Unpack(dest string) error {
-	if img.reader == nil {
-		panic("refused to unpack image since image instance has not been loaded by locked store")
-	}
-	return img.reader.UnpackImageLayers(img.ID(), dest)
+type UnpackableImage struct {
+	*Image
+	unpacker ImageUnpacker
+}
+
+func NewUnpackableImage(img *Image, unpacker ImageUnpacker) *UnpackableImage {
+	return &UnpackableImage{img, unpacker}
+}
+
+func (img *UnpackableImage) Unpack(dest string) error {
+	return img.unpacker.UnpackImageLayers(img.ID(), dest)
+}
+
+func (img *UnpackableImage) Config() *ispecs.Image {
+	return &img.Image.Config
 }

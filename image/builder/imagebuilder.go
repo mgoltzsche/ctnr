@@ -69,14 +69,6 @@ type ImageBuilder struct {
 	loggers                log.Loggers
 }
 
-type bundleImage struct {
-	*image.Image
-}
-
-func (i *bundleImage) Config() *ispecs.Image {
-	return &i.Image.Config
-}
-
 type imageFs struct {
 	rootfs  string
 	imageId digest.Digest
@@ -201,7 +193,7 @@ func (b *ImageBuilder) initBundle() (err error) {
 	var bb *bundle.BundleBuilder
 	if b.image == nil {
 		bb = bundle.Builder("")
-	} else if bb, err = bundle.BuilderFromImage("", &bundleImage{b.image}); err != nil {
+	} else if bb, err = bundle.BuilderFromImage("", image.NewUnpackableImage(b.image, b.images)); err != nil {
 		return errors.Wrap(err, "image builder")
 	}
 	if b.rootless {
@@ -661,7 +653,7 @@ func (b *ImageBuilder) CopyFilesFromImage(srcImage string, srcPattern []string, 
 			imgFs := imageFs{imgRootfs, imageId}
 			b.namedFs[srcImage] = &imgFs
 			b.namedFs[imageId.String()] = &imgFs
-			if err = img.Unpack(imgRootfs); err != nil {
+			if err = b.images.UnpackImageLayers(img.ID(), imgRootfs); err != nil {
 				return
 			}
 

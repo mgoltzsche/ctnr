@@ -44,7 +44,7 @@ func (s *BlobStoreOci) ImageManifest(manifestDigest digest.Digest) (r ispecs.Man
 	}
 	defer reader.Close()
 	if err = json.NewDecoder(reader).Decode(&r); err != nil {
-		return r, errors.Errorf("unmarshal image manifest %s: %s", manifestDigest, err)
+		return r, errors.Wrapf(err, "unmarshal image manifest %s", manifestDigest)
 	}
 	if r.Config.Digest.String() == "" {
 		return r, errors.Errorf("image manifest: loaded JSON blob %q is not an OCI image manifest", manifestDigest)
@@ -306,6 +306,7 @@ func (s *BlobStoreOci) UnpackLayers(manifestDigest digest.Digest, dest string) (
 		err = errors.Wrap(err, "unpack image layers")
 	}()
 	s.debug.Println("Unpacking layers")
+	// TODO: avoid loading manifest + config again (already loaded to build bundle config)
 	manifest, err := s.ImageManifest(manifestDigest)
 	if err != nil {
 		return

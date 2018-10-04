@@ -28,6 +28,7 @@ type ImageStoreRO interface {
 
 type ImageStoreRW interface {
 	ImageStoreRO
+	ImageUnpacker
 	ImportImage(name string) (Image, error)
 	SupportsTransport(transportName string) bool
 	AddImageConfig(m ispecs.Image, parentImageId *digest.Digest) (Image, error)
@@ -37,6 +38,10 @@ type ImageStoreRW interface {
 	TagImage(imageId digest.Digest, tag string) (ImageInfo, error)
 	UntagImage(tag string) error
 	Close() error
+}
+
+type ImageUnpacker interface {
+	UnpackImageLayers(id digest.Digest, rootfs string) error
 }
 
 type LayerSource interface {

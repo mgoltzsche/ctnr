@@ -20,19 +20,14 @@ import (
 var _ image.ImageStoreRO = &ImageStoreRO{}
 
 type ImageStoreRO struct {
-	blobs       *BlobStoreOci
-	imageReader image.ImageReader
-	imageIds    ImageIdStore
-	repoDir     string
-	warn        log.Logger
+	blobs    *BlobStoreOci
+	imageIds ImageIdStore
+	repoDir  string
+	warn     log.Logger
 }
 
 func NewImageStoreRO(dir string, blobStore *BlobStoreOci, imageIds ImageIdStore, warn log.Logger) (r *ImageStoreRO) {
-	return &ImageStoreRO{blobStore, nil, imageIds, dir, warn}
-}
-
-func (s *ImageStoreRO) WithNonAtomicAccess() *ImageStoreRO {
-	return &ImageStoreRO{s.blobs, s, s.imageIds, s.repoDir, s.warn}
+	return &ImageStoreRO{blobStore, imageIds, dir, warn}
 }
 
 func (s *ImageStoreRO) ImageConfig(id digest.Digest) (ispecs.Image, error) {
@@ -79,7 +74,7 @@ func (s *ImageStoreRO) imageFromManifestDigest(manifestDigest digest.Digest) (r 
 		return
 	}
 	cfg, err := s.ImageConfig(img.Manifest.Config.Digest)
-	return image.NewImage(img, cfg, s.imageReader), err
+	return image.NewImage(img, cfg), err
 }
 
 func accessTime(fi os.FileInfo) time.Time {

@@ -49,7 +49,6 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 		blobDir := filepath.Join(dir, "blobs")
 		fsspecDir := filepath.Join(dir, ".fsspec")
 		imageRepoDir := filepath.Join(dir, "image-repos")
-		fsCacheDir := filepath.Join(dir, ".rofs-cache")
 		imageIdDir := filepath.Join(dir, "image-ids")
 		bundleDir := filepath.Join(dir, "bundles")
 		tempDir := filepath.Join(dir, ".temp")
@@ -57,8 +56,7 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 		blobStore := istore.NewBlobStore(blobDir, loggers.Debug)
 		blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, loggers.Warn)
 		rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), loggers.Warn)
-		fsCache := istore.NewImageFSROCache(fsCacheDir)
-		r.ImageStore, err = istore.NewImageStore(rostore, fsCache, tempDir, systemContext, trustPolicy, rootless, loggers)
+		r.ImageStore, err = istore.NewImageStore(rostore, tempDir, systemContext, trustPolicy, rootless, loggers)
 		if err == nil {
 			r.BundleStore, err = bstore.NewBundleStore(bundleDir, loggers.Info, loggers.Debug)
 		}

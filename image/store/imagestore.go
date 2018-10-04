@@ -23,7 +23,6 @@ var _ image.ImageStore = &ImageStore{}
 type ImageStore struct {
 	lock lock.ExclusiveLocker
 	*ImageStoreRO
-	fsCache       *ImageFSROCache
 	temp          string
 	systemContext *types.SystemContext
 	trustPolicy   TrustPolicyContext
@@ -31,12 +30,12 @@ type ImageStore struct {
 	loggers       log.Loggers
 }
 
-func NewImageStore(store *ImageStoreRO, fsCache *ImageFSROCache, temp string, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, rootless bool, loggers log.Loggers) (*ImageStore, error) {
+func NewImageStore(store *ImageStoreRO, temp string, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, rootless bool, loggers log.Loggers) (*ImageStore, error) {
 	lck, err := lock.NewExclusiveDirLocker(filepath.Join(os.TempDir(), "cntnr", "lock"))
 	if err != nil {
 		err = errors.Wrap(err, "new image store")
 	}
-	return &ImageStore{lck, store, fsCache, temp, systemContext, trustPolicy, rootless, loggers}, err
+	return &ImageStore{lck, store, temp, systemContext, trustPolicy, rootless, loggers}, err
 }
 
 func (s *ImageStore) OpenLockedImageStore() (image.ImageStoreRW, error) {
@@ -44,7 +43,7 @@ func (s *ImageStore) OpenLockedImageStore() (image.ImageStoreRW, error) {
 }
 
 func (s *ImageStore) openLockedImageStore(locker lock.Locker) (image.ImageStoreRW, error) {
-	return NewImageStoreRW(locker, s.ImageStoreRO, s.fsCache, s.temp, s.systemContext, s.trustPolicy, s.rootless, s.loggers)
+	return NewImageStoreRW(locker, s.ImageStoreRO, s.temp, s.systemContext, s.trustPolicy, s.rootless, s.loggers)
 }
 
 func (s *ImageStore) DelImage(ids ...digest.Digest) (err error) {
@@ -64,7 +63,6 @@ func (s *ImageStore) DelImage(ids ...digest.Digest) (err error) {
 	for _, id := range ids {
 		for _, img := range imgs {
 			if id == img.ID() && img.Tag != nil {
-				// TODO: Use TagName struct as argument
 				// TODO: single delete batch per repository
 				if err = lockedStore.UntagImage(img.Tag.String()); err != nil {
 					return
@@ -90,7 +88,9 @@ func (s *ImageStore) ImageGC(ttl time.Duration) (err error) {
 	}()
 
 	// Collect all image IDs and delete
-	keep := map[digest.Digest]bool{}
+	keepBlobs := map[digest.Digest]bool{}
+	keepImgIds := map[digest.Digest]bool{}
+	keepFsSpecs := map[digest.Digest]bool{}
 	delIDs := map[digest.Digest]bool{}
 	imgs, err := s.Images()
 	if err != nil {
@@ -101,6 +101,8 @@ func (s *ImageStore) ImageGC(ttl time.Duration) (err error) {
 		imgMap[img.ID()] = img
 		if img.LastUsed.Before(before) {
 			if img.Tag != nil {
+				// TODO: don't delete tagged images at all but
+				//   maybe introduce separate gc timeout for tags
 				// TODO: single delete batch per repository
 				if err = lockedStore.UntagImage(img.Tag.String()); err != nil {
 					return
@@ -108,10 +110,15 @@ func (s *ImageStore) ImageGC(ttl time.Duration) (err error) {
 			}
 			delIDs[img.ID()] = true
 		} else {
-			keep[img.ID()] = true
-			keep[img.ManifestDigest] = true
+			// TODO: also keep parents of a used image to preserve build caches
+			keepImgIds[img.ID()] = true
+			keepBlobs[img.ID()] = true
+			keepBlobs[img.ManifestDigest] = true
 			for _, l := range img.Manifest.Layers {
-				keep[l.Digest] = true
+				keepBlobs[l.Digest] = true
+			}
+			if conf, e := s.blobs.ImageConfig(img.Manifest.Config.Digest); e == nil {
+				keepFsSpecs[chainID(conf.RootFS.DiffIDs)] = true
 			}
 		}
 	}
@@ -121,6 +128,9 @@ func (s *ImageStore) ImageGC(ttl time.Duration) (err error) {
 		err = exterrors.Append(err, s.imageIds.Delete(delID))
 	}
 
-	// Delete all but the named blobs
-	return s.blobs.Retain(keep)
+	// Delete everything but the least recently used fsspecs, imageids, blobs
+	err = exterrors.Append(err, s.blobs.fsspecs.Retain(keepFsSpecs))
+	err = exterrors.Append(err, s.imageIds.Retain(keepImgIds))
+	err = exterrors.Append(err, s.blobs.Retain(keepBlobs))
+	return
 }

@@ -1,6 +1,6 @@
 package store
 
-import (
+/*import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -14,7 +14,7 @@ type ImageFSROCache struct {
 	dir string
 }
 
-func NewImageFSROCache(dir string) *ImageFSROCache {
+func NewImageFSROCache(dir string, store ImageStoreRW) *ImageFSROCache {
 	return &ImageFSROCache{dir}
 }
 
@@ -42,3 +42,4 @@ func (s *ImageFSROCache) GetRootfs(img *image.Image) (dir string, err error) {
 	}
 	return
 }
+*/
