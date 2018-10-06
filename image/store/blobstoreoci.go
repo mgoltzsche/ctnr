@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"os"
@@ -20,11 +21,12 @@ import (
 	"github.com/pkg/errors"
 )
 
-type BlobStoreOci struct {
-	*BlobStore
+type OCIBlobStore struct {
+	*ContentAddressableStore
 	fsspecs  *FsSpecStore
 	rootless bool
 	warn     log.Logger
+	debug    log.Logger
 }
 
 type CommitResult struct {
@@ -33,11 +35,11 @@ type CommitResult struct {
 	Descriptor ispecs.Descriptor
 }
 
-func NewBlobStoreExt(blobStore *BlobStore, fsSpecStore *FsSpecStore, rootless bool, warn log.Logger) BlobStoreOci {
-	return BlobStoreOci{blobStore, fsSpecStore, rootless, warn}
+func NewOCIBlobStore(blobStore *ContentAddressableStore, fsSpecStore *FsSpecStore, rootless bool, warn log.Logger, debug log.Logger) OCIBlobStore {
+	return OCIBlobStore{blobStore, fsSpecStore, rootless, warn, debug}
 }
 
-func (s *BlobStoreOci) ImageManifest(manifestDigest digest.Digest) (r ispecs.Manifest, err error) {
+func (s *OCIBlobStore) ImageManifest(manifestDigest digest.Digest) (r ispecs.Manifest, err error) {
 	reader, err := s.Get(manifestDigest)
 	if err != nil {
 		return r, errors.WithMessage(err, "image manifest")
@@ -52,13 +54,13 @@ func (s *BlobStoreOci) ImageManifest(manifestDigest digest.Digest) (r ispecs.Man
 	return
 }
 
-func (s *BlobStoreOci) putImageManifest(m ispecs.Manifest) (d ispecs.Descriptor, err error) {
+func (s *OCIBlobStore) putImageManifest(m ispecs.Manifest) (d ispecs.Descriptor, err error) {
 	d.Digest, d.Size, err = s.putJsonBlob(m)
 	d.MediaType = ispecs.MediaTypeImageManifest
 	return d, errors.WithMessage(err, "put image manifest")
 }
 
-func (s *BlobStoreOci) ImageConfig(configDigest digest.Digest) (r ispecs.Image, err error) {
+func (s *OCIBlobStore) ImageConfig(configDigest digest.Digest) (r ispecs.Image, err error) {
 	reader, err := s.Get(configDigest)
 	if err != nil {
 		return r, errors.WithMessage(err, "image config")
@@ -69,28 +71,28 @@ func (s *BlobStoreOci) ImageConfig(configDigest digest.Digest) (r ispecs.Image, 
 	return
 }
 
-func (s *BlobStoreOci) PutImageConfig(cfg ispecs.Image, parentManifestId *digest.Digest, m modifier) (d ispecs.Descriptor, manifest ispecs.Manifest, err error) {
+func (s *OCIBlobStore) PutImageConfig(cfg ispecs.Image, parentManifestId *digest.Digest) (d ispecs.Descriptor, manifest ispecs.Manifest, err error) {
 	manifest.Versioned.SchemaVersion = 2
 	if parentManifestId != nil {
 		if manifest, err = s.ImageManifest(*parentManifestId); err != nil {
 			err = errors.WithMessage(err, "put image config: parent manifest")
 			return
 		}
+		// Add parent manifest annotation to respect the dependency during garbage collection
+		if manifest.Annotations == nil {
+			manifest.Annotations = map[string]string{}
+		}
+		manifest.Annotations[AnnotationParentManifest] = parentManifestId.String()
 	}
-	d, err = s.putImageConfig(cfg, &manifest, func(*ispecs.Manifest) {})
+	d, err = s.putImageConfig(cfg, &manifest)
 	return
 }
 
-type modifier func(m *ispecs.Manifest)
-
-func (s *BlobStoreOci) putImageConfig(cfg ispecs.Image, manifest *ispecs.Manifest, m modifier) (d ispecs.Descriptor, err error) {
+func (s *OCIBlobStore) putImageConfig(cfg ispecs.Image, manifest *ispecs.Manifest) (d ispecs.Descriptor, err error) {
 	d.MediaType = ispecs.MediaTypeImageConfig
 	if d.Digest, d.Size, err = s.putJsonBlob(cfg); err != nil {
 		return
 	}
-
-	m(manifest)
-
 	manifest.Config = d
 	d, err = s.putImageManifest(*manifest)
 	d.Platform = &ispecs.Platform{
@@ -101,7 +103,7 @@ func (s *BlobStoreOci) putImageConfig(cfg ispecs.Image, manifest *ispecs.Manifes
 	return
 }
 
-func (s *BlobStoreOci) putJsonBlob(o interface{}) (d digest.Digest, size int64, err error) {
+func (s *OCIBlobStore) putJsonBlob(o interface{}) (d digest.Digest, size int64, err error) {
 	var buf bytes.Buffer
 	if err = json.NewEncoder(&buf).Encode(o); err != nil {
 		return d, size, errors.New("put json blob: " + err.Error())
@@ -109,7 +111,6 @@ func (s *BlobStoreOci) putJsonBlob(o interface{}) (d digest.Digest, size int64, 
 	return s.Put(&buf)
 }
 
-// Returns the layer chainID or nil if the image has no layers
 func layerChainID(cfg *ispecs.Image) (r digest.Digest, err error) {
 	if len(cfg.RootFS.DiffIDs) == 0 {
 		return r, errors.New("No layer diffIDs contained in image config")
@@ -133,7 +134,7 @@ func chainID(layerIds []digest.Digest) (r digest.Digest) {
 	return
 }
 
-func (s *BlobStoreOci) FS(manifestDigest digest.Digest) (r fs.FsNode, err error) {
+func (s *OCIBlobStore) FS(manifestDigest digest.Digest) (r fs.FsNode, err error) {
 	defer func() {
 		err = errors.Wrap(err, "load fs from layers")
 	}()
@@ -144,7 +145,7 @@ func (s *BlobStoreOci) FS(manifestDigest digest.Digest) (r fs.FsNode, err error)
 	return s.fsFromManifest(&manifest)
 }
 
-func (s *BlobStoreOci) fsFromManifest(manifest *ispecs.Manifest) (r fs.FsNode, err error) {
+func (s *OCIBlobStore) fsFromManifest(manifest *ispecs.Manifest) (r fs.FsNode, err error) {
 	r = tree.NewFS()
 	for _, l := range manifest.Layers {
 		layerFile, e := s.keyFile(l.Digest)
@@ -167,7 +168,7 @@ func (s *BlobStoreOci) fsFromManifest(manifest *ispecs.Manifest) (r fs.FsNode, e
 	return
 }
 
-func (s *BlobStoreOci) FSSpec(manifestDigest digest.Digest) (r fs.FsNode, err error) {
+func (s *OCIBlobStore) FSSpec(manifestDigest digest.Digest) (r fs.FsNode, err error) {
 	manifest, err := s.ImageManifest(manifestDigest)
 	if err != nil {
 		return
@@ -195,7 +196,7 @@ func (s *BlobStoreOci) FSSpec(manifestDigest digest.Digest) (r fs.FsNode, err er
 }
 
 // Creates a new image with a layer containing the provided file system's difference to the parent provided image.
-func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.Digest, author, createdBy string) (r *CommitResult, err error) {
+func (s *OCIBlobStore) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.Digest, author, createdBy string) (r *CommitResult, err error) {
 	// Load parent
 	parentFs := tree.NewFS()
 	r = &CommitResult{}
@@ -206,8 +207,7 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 	r.Config.RootFS.Type = "layers"
 	r.Manifest.Versioned.SchemaVersion = 2
 	if parentManifestDigest != nil {
-		r.Manifest, err = s.ImageManifest(*parentManifestDigest)
-		if err == nil {
+		if r.Manifest, err = s.ImageManifest(*parentManifestDigest); err == nil {
 			if r.Config, err = s.ImageConfig(r.Manifest.Config.Digest); err == nil && len(r.Manifest.Layers) > 0 {
 				parentFs, err = s.FSSpec(*parentManifestDigest)
 			}
@@ -215,6 +215,11 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 		if err != nil {
 			return nil, errors.WithMessage(err, "put layer: parent")
 		}
+		// Add parent manifest annotation to respect the dependency during garbage collection
+		if r.Manifest.Annotations == nil {
+			r.Manifest.Annotations = map[string]string{}
+		}
+		r.Manifest.Annotations[AnnotationParentManifest] = parentManifestDigest.String()
 		if s.rootless {
 			// Convert devices to files since dirwriter does so in rootless mode.
 			// (If this wouldn't be done device files contained within a parent
@@ -240,9 +245,11 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 	// Save layer
 	tarReader := s.generateTar(layerFs)
 	defer func() {
-		tarReader.Close()
+		if e := tarReader.Close(); e != nil && err == nil {
+			err = e
+		}
 	}()
-	layerDescriptor, diffIdDigest, err := s.BlobStore.PutLayer(tarReader)
+	layerDescriptor, diffIdDigest, err := s.putGz(tarReader)
 	if err != nil {
 		return
 	}
@@ -251,15 +258,14 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 	if createdBy == "" {
 		createdBy = "layer"
 	}
+	r.Manifest.Layers = append(r.Manifest.Layers, layerDescriptor)
 	r.Config.History = append(r.Config.History, ispecs.History{
 		Author:     author,
 		CreatedBy:  createdBy,
 		EmptyLayer: false,
 	})
 	r.Config.RootFS.DiffIDs = append(r.Config.RootFS.DiffIDs, diffIdDigest)
-	r.Descriptor, err = s.putImageConfig(r.Config, &r.Manifest, func(m *ispecs.Manifest) {
-		m.Layers = append(m.Layers, layerDescriptor)
-	})
+	r.Descriptor, err = s.putImageConfig(r.Config, &r.Manifest)
 	r.Descriptor.MediaType = ispecs.MediaTypeImageManifest
 	r.Descriptor.Platform = &ispecs.Platform{
 		Architecture: r.Config.Architecture,
@@ -279,7 +285,36 @@ func (s *BlobStoreOci) AddLayer(rootfs fs.FsNode, parentManifestDigest *digest.D
 	return
 }
 
-func (s *BlobStoreOci) generateTar(rootfs fs.FsNode) io.ReadCloser {
+func (s *OCIBlobStore) putGz(reader io.Reader) (layer ispecs.Descriptor, diffIdDigest digest.Digest, err error) {
+	// diffID digest
+	diffIdDigester := digest.SHA256.Digester()
+	hashReader := io.TeeReader(reader, diffIdDigester.Hash())
+	pipeReader, pipeWriter := io.Pipe()
+	defer pipeReader.Close()
+
+	// gzip
+	gzw := gzip.NewWriter(pipeWriter)
+	defer gzw.Close()
+	go func() {
+		if _, err := io.Copy(gzw, hashReader); err != nil {
+			pipeWriter.CloseWithError(errors.Wrap(err, "compressing layer blob"))
+			return
+		}
+		gzw.Close()
+		pipeWriter.Close()
+	}()
+
+	// Write blob
+	layer.Digest, layer.Size, err = s.Put(pipeReader)
+	if err != nil {
+		return
+	}
+	diffIdDigest = diffIdDigester.Digest()
+	layer.MediaType = ispecs.MediaTypeImageLayerGzip
+	return
+}
+
+func (s *OCIBlobStore) generateTar(rootfs fs.FsNode) io.ReadCloser {
 	reader, writer := io.Pipe()
 	go func() (err error) {
 		// Close writer with the returned error.
@@ -301,7 +336,7 @@ func (s *BlobStoreOci) generateTar(rootfs fs.FsNode) io.ReadCloser {
 }
 
 // Unpacks all layers contained in the referenced manifest into rootfs
-func (s *BlobStoreOci) UnpackLayers(manifestDigest digest.Digest, dest string) (err error) {
+func (s *OCIBlobStore) UnpackLayers(manifestDigest digest.Digest, dest string) (err error) {
 	defer func() {
 		err = errors.Wrap(err, "unpack image layers")
 	}()

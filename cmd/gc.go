@@ -29,13 +29,17 @@ var (
 		Long:  `Garage collects all bundles and images in the local store.`,
 		Run:   wrapRun(runGc),
 	}
-	flagGcBundleTTL time.Duration
-	flagGcImageTTL  time.Duration
+	flagGcBundleTTL        time.Duration
+	flagGcImageTTL         time.Duration
+	flagGcImageRefTTL      time.Duration
+	flagGcMaxImagesPerRepo int
 )
 
 func init() {
 	gcCmd.Flags().DurationVarP(&flagGcBundleTTL, "bundle-ttl", "b", defaultBundleTTL, "bundle lifetime before it gets garbage collected")
-	gcCmd.Flags().DurationVarP(&flagImageTTL, "image-ttl", "i", defaultImageTTL, "image lifetime before it gets garbage collected")
+	gcCmd.Flags().DurationVarP(&flagGcImageTTL, "image-ttl", "i", defaultImageTTL, "image lifetime before it gets garbage collected")
+	gcCmd.Flags().DurationVarP(&flagGcImageRefTTL, "ref-ttl", "r", 0, "tagged image lifetime before it gets garbage collected")
+	gcCmd.Flags().IntVarP(&flagGcMaxImagesPerRepo, "max", "m", 0, "max entries per repo (default 0 == unlimited)")
 }
 
 func runGc(cmd *cobra.Command, args []string) error {
@@ -46,5 +50,5 @@ func runGc(cmd *cobra.Command, args []string) error {
 	for _, b := range gcd {
 		os.Stdout.WriteString(b.ID() + "\n")
 	}
-	return exterrors.Append(err, store.ImageGC(flagGcImageTTL))
+	return exterrors.Append(err, store.ImageGC(flagGcImageTTL, flagGcImageRefTTL, flagGcMaxImagesPerRepo))
 }

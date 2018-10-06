@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -20,13 +19,13 @@ import (
 var _ image.ImageStoreRO = &ImageStoreRO{}
 
 type ImageStoreRO struct {
-	blobs    *BlobStoreOci
+	blobs    *OCIBlobStore
 	imageIds ImageIdStore
 	repoDir  string
 	warn     log.Logger
 }
 
-func NewImageStoreRO(dir string, blobStore *BlobStoreOci, imageIds ImageIdStore, warn log.Logger) (r *ImageStoreRO) {
+func NewImageStoreRO(dir string, blobStore *OCIBlobStore, imageIds ImageIdStore, warn log.Logger) (r *ImageStoreRO) {
 	return &ImageStoreRO{blobStore, imageIds, dir, warn}
 }
 
@@ -57,15 +56,22 @@ func (s *ImageStoreRO) imageInfoFromManifestDigest(manifestDigest digest.Digest)
 	if err != nil {
 		return
 	}
-	mf, err := s.blobs.BlobFileInfo(manifestDigest)
+	fi, err := s.blobs.GetInfo(manifestDigest)
 	if err != nil {
 		return
 	}
-	cf, err := s.blobs.BlobFileInfo(manifest.Config.Digest)
-	if err != nil {
-		return
+	modTime := fi.ModTime()
+	accessTime := modTime
+	if len(manifest.Layers) > 0 {
+		// ATTENTION: Here the last layer's access time is used as image last used time.
+		// This also affects child images with a changed configuration only.
+		if fi, err = s.blobs.GetInfo(manifest.Layers[len(manifest.Layers)-1].Digest); err != nil {
+			return
+		}
+		stu := fi.Sys().(*syscall.Stat_t)
+		accessTime = time.Unix(int64(stu.Atim.Sec), int64(stu.Atim.Nsec))
 	}
-	return image.NewImageInfo(manifestDigest, manifest, nil, mf.ModTime(), accessTime(cf)), nil
+	return image.NewImageInfo(manifestDigest, manifest, nil, modTime, accessTime), nil
 }
 
 func (s *ImageStoreRO) imageFromManifestDigest(manifestDigest digest.Digest) (r image.Image, err error) {
@@ -77,11 +83,6 @@ func (s *ImageStoreRO) imageFromManifestDigest(manifestDigest digest.Digest) (r 
 	return image.NewImage(img, cfg), err
 }
 
-func accessTime(fi os.FileInfo) time.Time {
-	stu := fi.Sys().(*syscall.Stat_t)
-	return time.Unix(int64(stu.Atim.Sec), int64(stu.Atim.Nsec))
-}
-
 func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
 	defer exterrors.Wrapdf(&err, "image tag %q", nameRef)
 	tag := normalizeImageName(nameRef)
@@ -89,14 +90,14 @@ func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
 	if err != nil {
 		return
 	}
-	var idx ispecs.Index
-	if err = imageIndex(dir, &idx); err != nil {
-		if os.IsNotExist(err) {
+	repo, err := NewImageRepo(tag.Repo, dir)
+	if err != nil {
+		if image.IsNotExist(err) {
 			err = image.ErrNotExist(errors.Errorf("image repo %q not found in local store", tag.Repo))
 		}
 		return
 	}
-	d, err := findManifestDigest(&idx, tag.Ref)
+	d, err := repo.Manifest(tag.Ref)
 	if err != nil {
 		return
 	}
@@ -109,30 +110,9 @@ func (s *ImageStoreRO) ImageByName(nameRef string) (r image.Image, err error) {
 	}
 	if !idFileExists {
 		// Return ErrNotExist when inconsistency found - the caller then may reimport the image
-		return r, image.ErrNotExist(errors.Errorf("inconsistent state: image tag %s resolved but image ID file missing", nameRef))
+		return r, image.ErrNotExist(errors.Errorf("inconsistent image store state: image name %s resolved but image ID file missing", nameRef))
 	}
 	return
-}
-
-func findManifestDigest(idx *ispecs.Index, ref string) (d ispecs.Descriptor, err error) {
-	refFound := false
-	for _, descriptor := range idx.Manifests {
-		if descriptor.Annotations[ispecs.AnnotationRefName] == ref {
-			refFound = true
-			if descriptor.Platform.Architecture == runtime.GOARCH && descriptor.Platform.OS == runtime.GOOS {
-				if descriptor.MediaType != ispecs.MediaTypeImageManifest {
-					err = errors.Errorf("unsupported manifest media type %q", descriptor.MediaType)
-				}
-				return descriptor, err
-			}
-		}
-	}
-	if refFound {
-		err = errors.Errorf("image ref %q not found for architecture %s and OS %s", ref, runtime.GOARCH, runtime.GOOS)
-	} else {
-		err = errors.Errorf("image ref %q not found", ref)
-	}
-	return d, image.ErrNotExist(err)
 }
 
 func (s *ImageStoreRO) Images() (r []*image.ImageInfo, err error) {
@@ -156,44 +136,23 @@ func (s *ImageStoreRO) Images() (r []*image.ImageInfo, err error) {
 	}
 
 	// Read image repos
-	var fl []os.FileInfo
-	if _, e := os.Stat(s.repoDir); e == nil || !os.IsNotExist(e) {
-		if fl, err = ioutil.ReadDir(s.repoDir); err != nil {
-			return
-		}
+	repos, err := s.Repos()
+	if err != nil {
+		return
 	}
-	r = make([]*image.ImageInfo, 0, len(fl))
-	var idx ispecs.Index
-	for _, f := range fl {
-		if f.IsDir() && f.Name()[0] != '.' {
-			name := f.Name()
-			name, e := s.dir2repo(name)
-			if e == nil {
-				dir, e := s.repo2dir(name)
-				if e != nil {
-					s.warn.Println(e)
-					continue
-				}
-				if e = imageIndex(dir, &idx); e == nil {
-					for _, d := range idx.Manifests {
-						ref := d.Annotations[ispecs.AnnotationRefName]
-						if ref == "" {
-							e = errors.Errorf("manifest descriptor %s of image %q has no ref", d.Digest, name)
-						} else {
-							img := imgManifestMap[d.Digest]
-							if img == nil {
-								e = errors.Errorf("image ID file for manifest %s is missing", d.Digest)
-							} else {
-								withTag := *img
-								withTag.Tag = &image.TagName{name, ref}
-								r = append(r, &withTag)
-							}
-						}
-					}
-				}
-			}
-			if e != nil {
-				s.warn.Printf("image %q: %s", name, e)
+	for _, repo := range repos {
+		refs, e := repo.Manifests()
+		if e != nil {
+			err = exterrors.Append(err, e)
+		}
+		r = append(make([]*image.ImageInfo, 0, len(r)+len(refs)), r...)
+		for _, d := range refs {
+			if img := imgManifestMap[d.Digest]; img != nil {
+				withTag := *img
+				withTag.Tag = &image.TagName{repo.Name, d.Annotations[ispecs.AnnotationRefName]}
+				r = append(r, &withTag)
+			} else {
+				s.warn.Printf("image ID file for manifest %s is missing", d.Digest)
 			}
 		}
 	}
@@ -204,6 +163,49 @@ func (s *ImageStoreRO) Images() (r []*image.ImageInfo, err error) {
 	}
 	for _, img := range imgMap {
 		r = append(r, img)
+	}
+	return
+}
+
+func (s *ImageStoreRO) RetainRepo(repoName string, keep map[digest.Digest]bool, maxPerRepo int) (err error) {
+	dir, err := s.repo2dir(repoName)
+	if err != nil {
+		return
+	}
+	repo, err := NewLockedImageRepo(repoName, dir, s.blobs.dir())
+	if err != nil {
+		return
+	}
+	repo.Retain(keep)
+	repo.Limit(maxPerRepo)
+	return repo.Close()
+}
+
+func (s *ImageStoreRO) Repos() (r []*ImageRepo, err error) {
+	fl, e := ioutil.ReadDir(s.repoDir)
+	if e != nil {
+		if os.IsNotExist(e) {
+			return
+		} else {
+			return nil, errors.Wrap(e, "image repos")
+		}
+	}
+	r = make([]*ImageRepo, 0, len(fl))
+	for _, f := range fl {
+		if !f.IsDir() || f.Name()[0] == '.' {
+			continue
+		}
+		repoName, e := s.dir2repo(f.Name())
+		if e != nil {
+			err = exterrors.Append(err, e)
+			continue
+		}
+		repo, e := NewImageRepo(repoName, filepath.Join(s.repoDir, f.Name()))
+		if e != nil {
+			err = exterrors.Append(err, e)
+			continue
+		}
+		r = append(r, repo)
 	}
 	return
 }

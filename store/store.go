@@ -53,8 +53,8 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 		bundleDir := filepath.Join(dir, "bundles")
 		tempDir := filepath.Join(dir, ".temp")
 		mtreeStore := istore.NewFsSpecStore(fsspecDir, loggers.Debug)
-		blobStore := istore.NewBlobStore(blobDir, loggers.Debug)
-		blobStoreExt := istore.NewBlobStoreExt(&blobStore, &mtreeStore, rootless, loggers.Warn)
+		blobStore := istore.NewContentAddressableStore(blobDir)
+		blobStoreExt := istore.NewOCIBlobStore(&blobStore, &mtreeStore, rootless, loggers.Warn, loggers.Debug)
 		rostore := istore.NewImageStoreRO(imageRepoDir, &blobStoreExt, istore.NewImageIdStore(imageIdDir), loggers.Warn)
 		r.ImageStore, err = istore.NewImageStore(rostore, tempDir, systemContext, trustPolicy, rootless, loggers)
 		if err == nil {

@@ -96,8 +96,10 @@ to a local or remote destination.`,
 		Long:  `Builds a new image from the provided options.`,
 		Run:   wrapRun(runImageBuildRun),
 	}
-	flagImageTTL    time.Duration
-	defaultImageTTL = time.Duration(1000 * 1000 * 1000 * 60 * 60 * 24 * 7 /*7 days*/)
+	flagImageTTL        time.Duration
+	flagImageRefTTL     time.Duration
+	flagImageMaxPerRepo int
+	defaultImageTTL     = time.Duration(1000 * 1000 * 1000 * 60 * 60 * 24 * 7 /*7 days*/)
 )
 
 func init() {
@@ -117,6 +119,8 @@ func init() {
 	imageCmd.AddCommand(imageCatConfigCmd)
 	imageCmd.AddCommand(imageBuildCmd)
 	imageGcCmd.Flags().DurationVarP(&flagImageTTL, "ttl", "t", defaultImageTTL, "image lifetime before it gets garbage collected")
+	imageGcCmd.Flags().DurationVarP(&flagImageRefTTL, "ref-ttl", "r", 0, "tagged image lifetime before it gets garbage collected")
+	imageGcCmd.Flags().IntVarP(&flagImageMaxPerRepo, "max", "m", 0, "max entries per repo (default 0 == unlimited)")
 }
 
 func runImageList(cmd *cobra.Command, args []string) (err error) {
@@ -145,7 +149,7 @@ func runImageGc(cmd *cobra.Command, args []string) error {
 	if len(args) != 0 {
 		return usageError("No argument expected: " + args[0])
 	}
-	return store.ImageGC(flagImageTTL)
+	return store.ImageGC(flagImageTTL, flagImageRefTTL, flagImageMaxPerRepo)
 }
 
 func runImageRm(cmd *cobra.Command, args []string) error {

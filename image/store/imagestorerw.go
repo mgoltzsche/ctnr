@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -23,8 +22,6 @@ import (
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
-
-const AnnotationParentImage = "com.github.mgoltzsche.cntnr.image.parent"
 
 var _ image.ImageStoreRW = &ImageStoreRW{}
 
@@ -114,15 +111,41 @@ func (s *ImageStoreRW) ImportImage(src string) (img image.Image, err error) {
 		return
 	}
 
-	// Add manifests to store's index
-	var idx ispecs.Index
-	if err = imageIndex(imgDir, &idx); err != nil {
+	// Read downloaded image index
+	tmpRepo, err := NewImageRepo(tag.Repo, imgDir)
+	if err != nil {
 		return
 	}
-	for _, m := range idx.Manifests {
-		m.Annotations[AnnotationImported] = "true"
+	dir, err := s.repo2dir(tag.Repo)
+	if err != nil {
+		return
 	}
-	if err = s.addImages(tag.Repo, idx.Manifests); err != nil {
+	manifests, err := tmpRepo.Manifests()
+	if err != nil {
+		s.warn.Println(err)
+	}
+
+	// Map image IDs to manifests
+	for _, m := range manifests {
+		manifest, e := s.blobs.ImageManifest(m.Digest)
+		if e != nil {
+			return img, e
+		}
+		if err = s.imageIds.Put(manifest.Config.Digest, m.Digest); err != nil {
+			return
+		}
+	}
+
+	// Add manifests (with ref) to store's index
+	repo, err := NewLockedImageRepo(tag.Repo, dir, s.blobs.dir())
+	if err != nil {
+		return
+	}
+	for _, m := range manifests {
+		m.Annotations[AnnotationImported] = "true"
+		repo.AddManifest(m)
+	}
+	if err = repo.Close(); err != nil {
 		return
 	}
 	return s.ImageByName(src)
@@ -166,7 +189,7 @@ func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.D
 	var parentManifest *digest.Digest
 	if parentImageId == nil {
 		if conf.Config.Labels != nil {
-			delete(conf.Config.Labels, AnnotationParentImage)
+			delete(conf.Config.Labels, AnnotationParentManifest)
 		}
 	} else {
 		pImg, err := s.imageIds.Get(*parentImageId)
@@ -178,11 +201,11 @@ func (s *ImageStoreRW) AddImageConfig(conf ispecs.Image, parentImageId *digest.D
 		if conf.Config.Labels == nil {
 			conf.Config.Labels = map[string]string{}
 		}
-		conf.Config.Labels[AnnotationParentImage] = (*parentImageId).String()
+		conf.Config.Labels[AnnotationParentManifest] = (*parentImageId).String()
 	}
 
 	// Write image config and new manifest
-	manifestRef, manifest, err := s.blobs.PutImageConfig(conf, parentManifest, nil)
+	manifestRef, manifest, err := s.blobs.PutImageConfig(conf, parentManifest)
 	if err == nil {
 		// Map imageID (config digest) to manifest
 		if err = s.imageIds.Put(manifest.Config.Digest, manifestRef.Digest); err == nil {
@@ -211,7 +234,7 @@ func (s *ImageStoreRW) TagImage(imageId digest.Digest, tagStr string) (img image
 	if err != nil {
 		return
 	}
-	f, err := s.blobs.BlobFileInfo(manifestDigest)
+	f, err := s.blobs.GetInfo(manifestDigest)
 	if err != nil {
 		return
 	}
@@ -229,85 +252,35 @@ func (s *ImageStoreRW) TagImage(imageId digest.Digest, tagStr string) (img image
 	}
 
 	// Create/update index.json
-	if err = s.addImages(tag.Repo, []ispecs.Descriptor{manifestDescriptor}); err != nil {
+	dir, err := s.repo2dir(tag.Repo)
+	if err != nil {
 		return
 	}
-
-	now := time.Now()
-	return image.NewImageInfo(manifestDigest, manifest, tag, now, now), err
+	repo, err := NewLockedImageRepo(tag.Repo, dir, s.blobs.dir())
+	if err != nil {
+		return
+	}
+	defer func() {
+		err = repo.Close()
+	}()
+	repo.AddManifest(manifestDescriptor)
+	return image.NewImageInfo(manifestDigest, manifest, tag, f.ModTime(), f.ModTime()), err
 }
 
 func (s *ImageStoreRW) UntagImage(tagStr string) (err error) {
 	defer exterrors.Wrapd(&err, "untag")
 	tag := normalizeImageName(tagStr)
-	err = s.updateImageIndex(tag.Repo, false, func(repo *ImageRepo) error {
-		idx := &repo.index
-		if tag.Ref == "" {
-			idx.Manifests = nil
-		} else {
-			manifests := make([]ispecs.Descriptor, 0, len(idx.Manifests))
-			deleted := false
-			for _, m := range idx.Manifests {
-				if tag.Ref == m.Annotations[ispecs.AnnotationRefName] {
-					deleted = true
-				} else {
-					manifests = append(manifests, m)
-				}
-			}
-			idx.Manifests = manifests
-			if !deleted {
-				return errors.Errorf("image repo %q has no ref %q", tag.Repo, tag.Ref)
-			}
-		}
-		return nil
-	})
+	dir, err := s.repo2dir(tag.Repo)
+	if err != nil {
+		return
+	}
+	repo, err := NewLockedImageRepo(tag.Repo, dir, s.blobs.dir())
+	if err != nil {
+		return
+	}
+	defer func() {
+		err = repo.Close()
+	}()
+	repo.DelManifest(tag.Ref)
 	return
-}
-
-// Adds manifests to an image repo. This is an atomic operation
-func (s *ImageStoreRW) addImages(repoName string, manifestDescriptors []ispecs.Descriptor) (err error) {
-	if len(manifestDescriptors) == 0 {
-		return nil
-	}
-	for _, manifestDescriptor := range manifestDescriptors {
-		if manifestDescriptor.Annotations[ispecs.AnnotationRefName] == "" {
-			return errors.Errorf("no image ref defined in manifest descriptor (%s annotation)", ispecs.AnnotationRefName)
-		}
-		if manifestDescriptor.Digest == digest.Digest("") || manifestDescriptor.Size < 1 || manifestDescriptor.Platform.Architecture == "" || manifestDescriptor.Platform.OS == "" {
-			str := ""
-			if b, e := json.Marshal(&manifestDescriptor); e == nil {
-				str = string(b)
-			}
-			return errors.Errorf("add image: incomplete manifest descriptor %s", str)
-		}
-		manifest, err := s.blobs.ImageManifest(manifestDescriptor.Digest)
-		if err != nil {
-			return errors.Wrap(err, "add image")
-		}
-		if err = s.imageIds.Put(manifest.Config.Digest, manifestDescriptor.Digest); err != nil {
-			return errors.Wrap(err, "add image")
-		}
-	}
-
-	return s.updateImageIndex(repoName, true, func(repo *ImageRepo) error {
-		for _, ref := range manifestDescriptors {
-			repo.AddRef(ref)
-		}
-		return nil
-	})
-}
-
-func (s *ImageStoreRW) updateImageIndex(repoName string, create bool, transform func(*ImageRepo) error) (err error) {
-	dir, err := s.repo2dir(repoName)
-	if err == nil {
-		var repo *ImageRepo
-		repo, err = OpenImageRepo(dir, s.blobs.dir(), create)
-		if err == nil {
-			defer func() {
-				err = exterrors.Append(err, repo.Close())
-			}()
-			err = transform(repo)
-		}
-	}
-	return errors.Wrapf(err, "update image repo %q index", repoName)
 }

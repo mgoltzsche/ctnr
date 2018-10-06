@@ -9,7 +9,7 @@ import (
 )
 
 type ImageIdStore struct {
-	KVFileStore
+	BlobStore
 }
 
 type ImageID struct {
@@ -22,7 +22,7 @@ func (s ImageID) String() string {
 }
 
 func NewImageIdStore(dir string) ImageIdStore {
-	return ImageIdStore{NewKVFileStore(dir)}
+	return ImageIdStore{NewBlobStore(dir)}
 }
 
 func (s *ImageIdStore) Put(imageID, manifestDigest digest.Digest) (err error) {
@@ -32,13 +32,13 @@ func (s *ImageIdStore) Put(imageID, manifestDigest digest.Digest) (err error) {
 	if err = manifestDigest.Validate(); err != nil {
 		return errors.Errorf("invalid manifest digest")
 	}
-	_, err = s.KVFileStore.Put(imageID, strings.NewReader(manifestDigest.String()))
+	_, err = s.BlobStore.Put(imageID, strings.NewReader(manifestDigest.String()))
 	return
 }
 
 func (s *ImageIdStore) Get(imageID digest.Digest) (r ImageID, err error) {
 	r.ID = imageID
-	reader, err := s.KVFileStore.Get(imageID)
+	reader, err := s.BlobStore.Get(imageID)
 	if err == nil {
 		if b, err := ioutil.ReadAll(reader); err == nil {
 			r.ManifestDigest, err = digest.Parse(string(b))
@@ -48,7 +48,7 @@ func (s *ImageIdStore) Get(imageID digest.Digest) (r ImageID, err error) {
 }
 
 func (s *ImageIdStore) Entries() (r []ImageID, err error) {
-	imageIds, err := s.KVFileStore.Keys()
+	imageIds, err := s.Keys()
 	if err != nil {
 		return
 	}

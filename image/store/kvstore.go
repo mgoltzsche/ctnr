@@ -13,14 +13,13 @@ import (
 	"github.com/pkg/errors"
 )
 
-// TODO: RetainAll(fsIds), list()
-type KVFileStore string
+type BlobStore string
 
-func NewKVFileStore(dir string) KVFileStore {
-	return KVFileStore(dir)
+func NewBlobStore(dir string) BlobStore {
+	return BlobStore(dir)
 }
 
-func (s KVFileStore) Keys() (r []digest.Digest, err error) {
+func (s BlobStore) Keys() (r []digest.Digest, err error) {
 	dl, err := ioutil.ReadDir(string(s))
 	if err != nil && !os.IsNotExist(err) {
 		return r, errors.Wrap(err, "keys")
@@ -47,7 +46,7 @@ func (s KVFileStore) Keys() (r []digest.Digest, err error) {
 	return
 }
 
-func (s KVFileStore) Exists(key digest.Digest) (r bool, err error) {
+func (s BlobStore) Exists(key digest.Digest) (r bool, err error) {
 	file, err := s.keyFile(key)
 	if err != nil {
 		return
@@ -62,7 +61,7 @@ func (s KVFileStore) Exists(key digest.Digest) (r bool, err error) {
 	return true, nil
 }
 
-func (s KVFileStore) Get(key digest.Digest) (f io.ReadCloser, err error) {
+func (s BlobStore) Get(key digest.Digest) (f io.ReadCloser, err error) {
 	file, err := s.keyFile(key)
 	if err != nil {
 		return
@@ -77,7 +76,7 @@ func (s KVFileStore) Get(key digest.Digest) (f io.ReadCloser, err error) {
 	return
 }
 
-func (s KVFileStore) Put(key digest.Digest, content io.Reader) (written int64, err error) {
+func (s BlobStore) Put(key digest.Digest, content io.Reader) (written int64, err error) {
 	file, err := s.keyFile(key)
 	if err != nil {
 		return
@@ -88,7 +87,7 @@ func (s KVFileStore) Put(key digest.Digest, content io.Reader) (written int64, e
 	return written, errors.Wrap(err, "kvstore: put")
 }
 
-func (s KVFileStore) Delete(key digest.Digest) (err error) {
+func (s BlobStore) Delete(key digest.Digest) (err error) {
 	file, err := s.keyFile(key)
 	if err != nil {
 		return
@@ -103,7 +102,7 @@ func (s KVFileStore) Delete(key digest.Digest) (err error) {
 	return
 }
 
-func (s KVFileStore) Retain(keep map[digest.Digest]bool) (err error) {
+func (s BlobStore) Retain(keep map[digest.Digest]bool) (err error) {
 	defer func() {
 		err = errors.Wrap(err, "retain blobs")
 	}()
@@ -140,11 +139,11 @@ func (s KVFileStore) Retain(keep map[digest.Digest]bool) (err error) {
 	return
 }
 
-func (s KVFileStore) dir() string {
+func (s BlobStore) dir() string {
 	return string(s)
 }
 
-func (s KVFileStore) keyFile(key digest.Digest) (string, error) {
+func (s BlobStore) keyFile(key digest.Digest) (string, error) {
 	if err := key.Validate(); err != nil {
 		return "", errors.Wrapf(err, "kvstore: invalid key %q", key)
 	}

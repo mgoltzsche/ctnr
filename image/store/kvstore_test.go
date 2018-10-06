@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestKVFileStore(t *testing.T) {
+func TestBlobStore(t *testing.T) {
 	dir, err := ioutil.TempDir("", ".tmp-test-kvstore-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
-	testee := NewKVFileStore(dir)
+	testee := NewBlobStore(dir)
 	for i, s := range []string{"content1", "content2"} {
 		key := digest.FromString(fmt.Sprintf("id%d", i))
 		written, err := testee.Put(key, strings.NewReader(s))

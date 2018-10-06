@@ -1,36 +1,12 @@
 package store
 
 import (
-	"encoding/json"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
 	"github.com/mgoltzsche/cntnr/image"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/lock"
-	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/pkg/errors"
 )
-
-// TODO: Move into imagerepo after repo lock is made optional
-func imageIndex(dir string, r *ispecs.Index) (err error) {
-	idxFile := filepath.Join(dir, "index.json")
-	b, err := ioutil.ReadFile(idxFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return err
-		}
-		return errors.New("read image index: " + err.Error())
-	}
-	if err = json.Unmarshal(b, r); err != nil {
-		err = errors.New("unmarshal image index " + idxFile + ": " + err.Error())
-	}
-	return
-}
 
 func normalizeImageName(nameAndTag string) *image.TagName {
 	imgRef, err := alltransports.ParseImageName(nameAndTag)
@@ -59,8 +35,4 @@ func parseImageName(nameAndRef string) *image.TagName {
 		r.Ref = "latest"
 	}
 	return &r
-}
-
-func unlock(lock lock.Locker, err *error) {
-	*err = exterrors.Append(*err, lock.Unlock())
 }

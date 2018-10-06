@@ -16,7 +16,7 @@ import (
 type ImageStore interface {
 	ImageStoreRO
 	OpenLockedImageStore() (ImageStoreRW, error)
-	ImageGC(ttl time.Duration) error
+	ImageGC(ttl, refTTL time.Duration, maxPerRepo int) error
 	DelImage(id ...digest.Digest) error
 }
 

@@ -138,7 +138,6 @@ func (b *ImageBuilder) closeBundle(lb *bundle.LockedBundle) error { return lb.Cl
 func (b *ImageBuilder) deleteBundle(lb *bundle.LockedBundle) error { return lb.Delete() }
 
 func (b *ImageBuilder) Close() (err error) {
-	// TODO: add option to not delete (only close) last bundle if build failed
 	succeededBundles := b.lockedBundles
 	var failedBundle *bundle.LockedBundle
 	hasFailedBundle := b.bundle == nil && len(succeededBundles) > 0
@@ -482,7 +481,6 @@ func (b *ImageBuilder) Run(args []string, addEnv map[string]string) (err error) 
 		err = errors.New("cannot run a command in an empty image")
 		return
 	}
-
 	env := kvEntries(addEnv)
 	createdBy := "RUN"
 	for _, e := range env {

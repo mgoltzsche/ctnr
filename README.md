@@ -180,7 +180,9 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 
 ## Roadmap / TODO
 
-- improved garbage collection for containers, build caches, fsspecs
+- clean up CLI
+- change project name
+- setup CI/CD
 - **0.7 beta release**
 - system.Context aware processes, unpacking/packing images
 - improved docker CLI compatibility regarding `build` and `run` commands in order to use cntnr to substitute docker easily in common build operations
@@ -189,7 +191,6 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 - rootless network simulation on the host network (using proot's port mapping)
 - separate OCI CNI network hook binary
 - support starting a rootless container with a user other than 0 (using proot)
-- improved garbage collection options for images
 - health check
 - improved Docker Compose support
 - service discovery integration (hook / DNS; consul, etcd)

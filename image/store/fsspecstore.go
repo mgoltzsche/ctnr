@@ -12,17 +12,17 @@ import (
 )
 
 type FsSpecStore struct {
-	KVFileStore
+	BlobStore
 	debug log.Logger
 }
 
 func NewFsSpecStore(dir string, debug log.Logger) FsSpecStore {
-	return FsSpecStore{NewKVFileStore(dir), debug}
+	return FsSpecStore{NewBlobStore(dir), debug}
 }
 
 func (s *FsSpecStore) Get(fsId digest.Digest) (spec fs.FsNode, err error) {
 	s.debug.Printf("Getting layer fsspec %s", fsId.Hex()[:13])
-	r, err := s.KVFileStore.Get(fsId)
+	r, err := s.BlobStore.Get(fsId)
 	if err != nil {
 		return nil, errors.Wrap(err, "fsspecstore")
 	}
@@ -48,6 +48,6 @@ func (s *FsSpecStore) Put(fsId digest.Digest, spec fs.FsNode) (err error) {
 		}()
 		return spec.WriteTo(writer, fs.AttrsAll)
 	}()
-	_, err = s.KVFileStore.Put(fsId, reader)
+	_, err = s.BlobStore.Put(fsId, reader)
 	return errors.Wrap(err, "fsspecstore")
 }
