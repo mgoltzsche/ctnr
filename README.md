@@ -180,6 +180,7 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 
 ## Roadmap / TODO
 
+- add kill command
 - clean up CLI
 - change project name
 - setup CI/CD
@@ -188,7 +189,7 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 - improved docker CLI compatibility regarding `build` and `run` commands in order to use cntnr to substitute docker easily in common build operations
 - improved multi-user support (store per user group, file permissions, lock location)
 - CLI integration tests
-- rootless network simulation on the host network (using proot's port mapping)
+- rootless networking
 - separate OCI CNI network hook binary
 - support starting a rootless container with a user other than 0 (using proot)
 - health check
