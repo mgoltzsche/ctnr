@@ -2,8 +2,7 @@ FROM golang:alpine3.8 AS cntnr-build
 RUN apk add --update --no-cache gcc musl-dev libseccomp-dev btrfs-progs-dev lvm2-dev make git
 
 FROM fedora:28 as proot
-RUN dnf update -y \
-	&& dnf install -y make gcc gcc-c++ glibc-devel glibc-static libstdc++-static libattr-devel libseccomp-devel protobuf-devel curl python \
+RUN dnf install -y make gcc gcc-c++ glibc-devel glibc-static libstdc++-static libattr-devel libseccomp-devel protobuf-devel curl python \
 	&& (dnf install -y git || true)
 ARG TALLOC_VERSION=2.1.8
 RUN curl -LOk https://www.samba.org/ftp/talloc/talloc-${TALLOC_VERSION}.tar.gz \
