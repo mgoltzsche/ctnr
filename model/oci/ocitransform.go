@@ -138,6 +138,8 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 	// Use host networks by removing 'network' namespace
 	if useHostNetwork {
 		spec.UseHostNetwork()
+	} else {
+		spec.AddOrReplaceLinuxNamespace(specs.NetworkNamespace, "")
 	}
 
 	// Add hostname. Empty string results in host's hostname
