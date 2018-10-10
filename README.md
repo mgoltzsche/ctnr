@@ -88,7 +88,7 @@ hello world
 ### Create and run Firefox as unprivileged user
 Build a Firefox ESR container image `local/firefox:alpine` (cached operation):
 ```
-$ cntnr image create \
+$ cntnr image build \
 	--from=docker://alpine:3.8 \
 	--author='John Doe' \
 	--run='apk add --update --no-cache firefox-esr libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family' \
@@ -123,9 +123,9 @@ FROM debian:9
 RUN apt-get update && apt-get install -y cowsay
 ENTRYPOINT ["/usr/games/cowsay"]
 ```
-Build the image (Please note that this works only with `--proot` enabled. With plain cntnr/runc this doesn't work since `apt-get` fails to change uid/gid.):
+Build the image (Please note that this works only with `--proot` enabled. With plain cntnr/runc `apt-get` fails to change uid/gid.):
 ```
-$ cntnr image create --proot --dockerfile Dockerfile-cowsay --tag example/cowsay
+$ cntnr image build --proot --dockerfile Dockerfile-cowsay --tag example/cowsay
 ```
 Run a container using the previously built image (Please note that `--proot` is not required anymore):
 ```
@@ -189,7 +189,7 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 - improved docker CLI compatibility regarding `build` and `run` commands in order to use cntnr to substitute docker easily in common build operations
 - improved multi-user support (store per user group, file permissions, lock location)
 - CLI integration tests
-- rootless networking
+- rootless networking****
 - separate OCI CNI network hook binary
 - support starting a rootless container with a user other than 0 (using proot)
 - health check

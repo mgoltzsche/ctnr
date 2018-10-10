@@ -21,9 +21,9 @@ import (
 )
 
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "Lists all active containers in the local store (--state-dir)",
-	Long:  `Lists all containers in the local store.`,
+	Use:   "ps",
+	Short: "Lists all active containers in --state-dir",
+	Long:  `Lists all containers in the runtime root directory (--state-dir).`,
 	Run:   wrapRun(runList),
 }
 
