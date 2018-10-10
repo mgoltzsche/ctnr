@@ -44,7 +44,7 @@ type ContainerManager interface {
 	NewContainer(cfg *ContainerConfig) (Container, error)
 	Get(id string) (Container, error)
 	List() ([]ContainerInfo, error)
-	Kill(id, signal string, all bool) error
+	Kill(id string, signal os.Signal, all bool) error
 }
 
 type Container interface {

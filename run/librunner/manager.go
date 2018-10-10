@@ -47,8 +47,12 @@ func (m *ContainerManager) Get(id string) (run.Container, error) {
 	return LoadContainer(id, m.factory, m.loggers)
 }
 
-func (m *ContainerManager) Kill(id, signal string, all bool) error {
-	panic("TODO: kill any container that might not be controlled by this process")
+func (m *ContainerManager) Kill(id string, signal os.Signal, all bool) (err error) {
+	c, err := LoadContainer(id, m.factory, m.loggers)
+	if err != nil {
+		return
+	}
+	return c.container.Signal(signal, all)
 }
 
 func (m *ContainerManager) List() (r []run.ContainerInfo, err error) {

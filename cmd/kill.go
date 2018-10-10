@@ -15,6 +15,12 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"syscall"
+
 	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -26,12 +32,12 @@ var (
 		Long:  `Kills a running container.`,
 		Run:   wrapRun(runKill),
 	}
-	flagSignal string
+	flagSignal os.Signal = syscall.SIGTERM
 	flagAll    bool
 )
 
 func init() {
-	killCmd.Flags().StringVarP(&flagSignal, "signal", "s", "TERM", "Signal to be sent to container process")
+	killCmd.Flags().VarP(&fSignal{&flagSignal}, "signal", "s", "Signal to be sent to container process")
 	killCmd.Flags().BoolVarP(&flagAll, "all", "a", false, "Send the specified signal to all processes inside the container")
 }
 
@@ -52,4 +58,36 @@ func runKill(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 	return
+}
+
+type fSignal struct {
+	v *os.Signal
+}
+
+func (c fSignal) Set(v string) (err error) {
+	*c.v, err = parseSignal(v)
+	return
+}
+
+func (c fSignal) Type() string {
+	return "SIGNAL"
+}
+
+func (c fSignal) String() string {
+	if c.v == nil {
+		return ""
+	}
+	return (*c.v).String()
+}
+
+func parseSignal(rawSignal string) (syscall.Signal, error) {
+	s, err := strconv.Atoi(rawSignal)
+	if err == nil {
+		return syscall.Signal(s), nil
+	}
+	signal, ok := signalMap[strings.TrimPrefix(strings.ToUpper(rawSignal), "SIG")]
+	if !ok {
+		return -1, fmt.Errorf("unknown signal %q", rawSignal)
+	}
+	return signal, nil
 }

@@ -38,12 +38,12 @@ func (m *ContainerManager) Get(id string) (run.Container, error) {
 	return nil, nil
 }
 
-func (m *ContainerManager) Kill(id, signal string, all bool) error {
+func (m *ContainerManager) Kill(id string, signal os.Signal, all bool) error {
 	var args []string
 	if all {
-		args = []string{"--root", m.rootDir, "kill", "--all=true", id, signal}
+		args = []string{"--root", m.rootDir, "kill", "--all=true", id, signal.String()}
 	} else {
-		args = []string{"--root", m.rootDir, "kill", id, signal}
+		args = []string{"--root", m.rootDir, "kill", id, signal.String()}
 	}
 	c := exec.Command("runc", args...)
 	var buf bytes.Buffer

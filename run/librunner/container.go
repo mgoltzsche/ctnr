@@ -40,7 +40,6 @@ type Container struct {
 	log            log.Loggers
 }
 
-// TODO: Add to ContainerManager interface
 func LoadContainer(id string, factory libcontainer.Factory, loggers log.Loggers) (r *Container, err error) {
 	c, err := factory.Load(id)
 	return &Container{

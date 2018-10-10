@@ -62,7 +62,7 @@ func runExec(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	container, err := manager.Get(args[0]) // TODO: get id as args[0]
+	container, err := manager.Get(args[0])
 	if err != nil {
 		return
 	}
