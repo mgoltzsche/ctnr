@@ -3,7 +3,7 @@ package source
 import (
 	"time"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
 )
 
 var _ fs.Source = &SourceDir{}

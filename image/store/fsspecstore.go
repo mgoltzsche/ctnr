@@ -4,9 +4,9 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
-	"github.com/mgoltzsche/cntnr/pkg/fs/tree"
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs/tree"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

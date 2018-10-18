@@ -20,13 +20,13 @@ import (
 	"path/filepath"
 	"strconv"
 
-	utils "github.com/mgoltzsche/cntnr/pkg/sliceutils"
+	utils "github.com/mgoltzsche/ctnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-tools/generate"
 	"github.com/pkg/errors"
 )
 
-const ANNOTATION_HOOK_ARGS = "com.github.mgoltzsche.cntnr.bundle.hook.args"
+const ANNOTATION_HOOK_ARGS = "com.github.mgoltzsche.ctnr.bundle.hook.args"
 
 type NetConfig struct {
 	DnsNameserver []string          `json:"dns,omitempty"`
@@ -116,7 +116,7 @@ func (b *HookBuilder) Build(spec *generate.Generator) (err error) {
 		}
 	}()
 
-	//hookBinary, err := exec.LookPath("cntnr-hooks")
+	//hookBinary, err := exec.LookPath("ctnr-hooks")
 	executable, err := os.Executable()
 	if err != nil {
 		return errors.Wrap(err, "find network hook binary")
@@ -138,9 +138,9 @@ func (b *HookBuilder) Build(spec *generate.Generator) (err error) {
 	}
 
 	netInitHookArgs := make([]string, 0, 10)
-	netInitHookArgs = append(netInitHookArgs, "cntnr", "net", "init")
+	netInitHookArgs = append(netInitHookArgs, "ctnr", "net", "init")
 	netRmHookArgs := make([]string, 0, 5)
-	netRmHookArgs = append(netRmHookArgs, "cntnr", "net", "rm")
+	netRmHookArgs = append(netRmHookArgs, "ctnr", "net", "rm")
 	if b.hook.Domainname != "" {
 		netInitHookArgs = append(netInitHookArgs, "--domainname="+b.hook.Domainname)
 	}

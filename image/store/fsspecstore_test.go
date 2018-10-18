@@ -8,9 +8,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/mgoltzsche/cntnr/image"
-	"github.com/mgoltzsche/cntnr/pkg/fs"
-	"github.com/mgoltzsche/cntnr/pkg/fs/tree"
+	"github.com/mgoltzsche/ctnr/image"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs/tree"
 	"github.com/opencontainers/go-digest"
 
 	"github.com/stretchr/testify/assert"

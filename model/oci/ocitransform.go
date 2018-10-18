@@ -8,18 +8,18 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/pkg/generate"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
-	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
+	"github.com/mgoltzsche/ctnr/model"
+	"github.com/mgoltzsche/ctnr/pkg/generate"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
 const (
-	ANNOTATION_BUNDLE_IMAGE_NAME = "com.github.mgoltzsche.cntnr.bundle.image.name"
-	ANNOTATION_BUNDLE_CREATED    = "com.github.mgoltzsche.cntnr.bundle.created"
-	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.cntnr.bundle.id"
+	ANNOTATION_BUNDLE_IMAGE_NAME = "com.github.mgoltzsche.ctnr.bundle.image.name"
+	ANNOTATION_BUNDLE_CREATED    = "com.github.mgoltzsche.ctnr.bundle.created"
+	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.ctnr.bundle.id"
 )
 
 func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, prootPath string, spec *generate.SpecBuilder) (err error) {

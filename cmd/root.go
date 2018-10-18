@@ -18,8 +18,8 @@ import (
 	"os/exec"
 	"strconv"
 
-	"github.com/mgoltzsche/cntnr/pkg/log"
-	"github.com/mgoltzsche/cntnr/pkg/log/logrusadapt"
+	"github.com/mgoltzsche/ctnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/pkg/log/logrusadapt"
 	"github.com/spf13/cobra"
 
 	//homedir "github.com/mitchellh/go-homedir"
@@ -28,9 +28,9 @@ import (
 	"path/filepath"
 
 	"github.com/containers/image/types"
-	image "github.com/mgoltzsche/cntnr/image"
-	istore "github.com/mgoltzsche/cntnr/image/store"
-	storepkg "github.com/mgoltzsche/cntnr/store"
+	image "github.com/mgoltzsche/ctnr/image"
+	istore "github.com/mgoltzsche/ctnr/image/store"
+	storepkg "github.com/mgoltzsche/ctnr/store"
 	"github.com/mitchellh/go-homedir"
 	"github.com/sirupsen/logrus"
 )
@@ -52,9 +52,9 @@ var (
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "cntnr",
+	Use:   "ctnr",
 	Short: "a lightweight container engine",
-	Long: `cntnr is a lightweight OCI container engine built around runc.
+	Long: `ctnr is a lightweight OCI container engine built around runc.
 It supports container and image management and aims to run in every linux environment.`,
 	PersistentPreRun: preRun,
 }
@@ -84,7 +84,7 @@ func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
-	//RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cntnr.yaml)")
+	//RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.ctnr.yaml)")
 
 	logrus.SetLevel(logrus.DebugLevel)
 	logger = logrus.New()
@@ -97,11 +97,11 @@ func init() {
 	uid := os.Geteuid()
 	homeDir, err := homedir.Dir()
 	if err == nil {
-		flagStoreDir = filepath.Join(homeDir, ".cntnr")
+		flagStoreDir = filepath.Join(homeDir, ".ctnr")
 	}
-	flagStateDir = "/run/cntnr"
+	flagStateDir = "/run/ctnr"
 	if uid != 0 {
-		flagStateDir = "/run/user/" + strconv.Itoa(uid) + "/cntnr"
+		flagStateDir = "/run/user/" + strconv.Itoa(uid) + "/ctnr"
 	}
 	flagImagePolicy = "insecure"
 	policyFile := "/etc/containers/policy.json"
@@ -180,9 +180,9 @@ func findPRootBinary() string {
 			exitError(1, "%s", err)
 		}
 
-		// Search config in home directory with name ".cntnr" (without extension).
+		// Search config in home directory with name ".ctnr" (without extension).
 		viper.AddConfigPath(home)
-		viper.SetConfigName(".cntnr")
+		viper.SetConfigName(".ctnr")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match

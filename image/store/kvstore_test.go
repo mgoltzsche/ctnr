@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mgoltzsche/cntnr/image"
+	"github.com/mgoltzsche/ctnr/image"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

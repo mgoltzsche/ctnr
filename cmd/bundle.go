@@ -23,8 +23,8 @@ import (
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
-	"github.com/mgoltzsche/cntnr/bundle"
-	"github.com/mgoltzsche/cntnr/run"
+	"github.com/mgoltzsche/ctnr/bundle"
+	"github.com/mgoltzsche/ctnr/run"
 	"github.com/spf13/cobra"
 )
 

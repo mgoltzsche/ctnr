@@ -5,8 +5,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 )
 
 type ContainerGroup struct {

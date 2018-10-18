@@ -25,8 +25,8 @@ import (
 
 	"github.com/containers/image/transports"
 	humanize "github.com/dustin/go-humanize"
-	"github.com/mgoltzsche/cntnr/image"
-	"github.com/mgoltzsche/cntnr/image/builder"
+	"github.com/mgoltzsche/ctnr/image"
+	"github.com/mgoltzsche/ctnr/image/builder"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"

@@ -9,8 +9,8 @@ import (
 
 	"github.com/docker/docker/builder/dockerfile/parser"
 	"github.com/docker/docker/builder/dockerfile/shell"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

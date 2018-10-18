@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/containers/image/types"
-	"github.com/mgoltzsche/cntnr/image"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/lock"
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/image"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/pkg/lock"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -27,7 +27,7 @@ type ImageStore struct {
 }
 
 func NewImageStore(store *ImageStoreRO, temp string, systemContext *types.SystemContext, trustPolicy TrustPolicyContext, rootless bool, loggers log.Loggers) (*ImageStore, error) {
-	lck, err := lock.NewExclusiveDirLocker(filepath.Join(os.TempDir(), "cntnr", "lock"))
+	lck, err := lock.NewExclusiveDirLocker(filepath.Join(os.TempDir(), "ctnr", "lock"))
 	if err != nil {
 		err = errors.Wrap(err, "new image store")
 	}

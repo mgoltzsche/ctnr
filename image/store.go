@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
 	"github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"

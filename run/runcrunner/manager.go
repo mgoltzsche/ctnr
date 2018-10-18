@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mgoltzsche/cntnr/pkg/log"
-	"github.com/mgoltzsche/cntnr/run"
+	"github.com/mgoltzsche/ctnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/run"
 	"github.com/pkg/errors"
 )
 

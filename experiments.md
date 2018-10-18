@@ -3,24 +3,24 @@
 ... on an ubuntu 16.04 host
 
 
-## Run cntnr container inside privileged docker container
+## Run ctnr container inside privileged docker container
 ```
 docker run -ti --privileged --name cnestedpriv --rm \
-	-v $(pwd)/dist/bin/cntnr:/bin/cntnr \
+	-v $(pwd)/dist/bin/ctnr:/bin/ctnr \
 	alpine:3.7
-> cntnr run -t --network=host docker://alpine:3.7
+> ctnr run -t --network=host docker://alpine:3.7
 ```
 
 
-## Run cntnr container inside unprivileged user's privileged cntnr container
+## Run ctnr container inside unprivileged user's privileged ctnr container
 ```
-dist/bin/cntnr run -b outerc --update -t \
+dist/bin/ctnr run -b outerc --update -t \
 	--cap-add=SYS_ADMIN \
-	--mount=src=./dist/bin/cntnr,dst=/bin/cntnr:exec:ro \
+	--mount=src=./dist/bin/ctnr,dst=/bin/ctnr:exec:ro \
 	--mount=src=/dist/cni-plugins,dst=/cni \
 	--mount=src=/boot/config-4.4.0-104-generic,dst=/boot/config-4.4.0-104-generic \
 	docker://alpine:3.7
-> cntnr run -t --rootless --no-new-keyring --no-pivot --network=host docker://alpine:3.7
+> ctnr run -t --rootless --no-new-keyring --no-pivot --network=host docker://alpine:3.7
 ```
 Attention: The parent container has low isolation to the calling user due to the
 CAP_SYS_ADMIN capability and the `--no-new-keyring` option allows the inner
@@ -29,13 +29,13 @@ This still may provide a sufficient level of security in some use cases when run
 an unprivileged user.
 
 
-## Not working: Run cntnr container inside unprivileged docker container
+## Not working: Run ctnr container inside unprivileged docker container
 ```
 docker run -ti --name cnested --rm \
-	-v $(pwd)/dist/bin/cntnr:/bin/cntnr \
+	-v $(pwd)/dist/bin/ctnr:/bin/ctnr \
 	-v /boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic \
 	alpine:3.7
-> cntnr run  -ti --rootless --network=host docker://alpine:3.7
+> ctnr run  -ti --rootless --network=host docker://alpine:3.7
 ```
 Error: Cannot change the process namespace ("running exec setns process for init caused \"exit status 34\"")
 => seccomp denies setns
@@ -47,12 +47,12 @@ docker run -ti --name test --rm --user=`id -u`:`id -g` \
 	--security-opt apparmor=unconfined \
 	--security-opt seccomp="$(pwd)/seccomp-container.json" \
 	-v /sys/fs/cgroup:/sys/fs/cgroup:ro \
-	-v "$HOME/.cntnr:/.cntnr" \
+	-v "$HOME/.ctnr:/.ctnr" \
 	-v "$(pwd)/dist/bin:/usr/local/bin" \
 	debian:9 /bin/bash
-$ cntnr --state-dir /tmp/cntnr run --verbose -ti -b test --update --rootless --no-new-keyring --no-pivot docker://alpine:3.8
+$ ctnr --state-dir /tmp/ctnr run --verbose -ti -b test --update --rootless --no-new-keyring --no-pivot docker://alpine:3.8
 ```
-Error: run process: container_linux.go:348: starting container process caused "process_linux.go:402: container init caused \"rootfs_linux.go:58: mounting \\\"proc\\\" to rootfs \\\"/.cntnr/bundles/test/rootfs\\\" at \\\"/proc\\\" caused \\\"operation not permitted\\\"\""
+Error: run process: container_linux.go:348: starting container process caused "process_linux.go:402: container init caused \"rootfs_linux.go:58: mounting \\\"proc\\\" to rootfs \\\"/.ctnr/bundles/test/rootfs\\\" at \\\"/proc\\\" caused \\\"operation not permitted\\\"\""
 => proc cannot be mounted
 => See https://github.com/opencontainers/runc/issues/1658
 
@@ -79,7 +79,7 @@ _(also see https://github.com/opencontainers/runc/issues/1456)_
   -> add `--cap-add=SYS_ADMIN` to rootless outer container and `--rootless` to inner
 - "mkdir /sys/fs/cgroup/cpuset/05dh[...]: permission denied"  
   -> inner container: add --rootless option  
-  -> {cntnr} outer container: add --mount-cgroup=rw option
+  -> {ctnr} outer container: add --mount-cgroup=rw option
 - "could not create session key: operation not permitted"  
   -> inner container: enable --no-new-keyring option  
   -> outer container: allow corresponding syscall in seccomp profile (dirty: set --seccomp=unconfined)

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runc/libcontainer/specconv"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"

@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mgoltzsche/cntnr/image"
-	"github.com/mgoltzsche/cntnr/pkg/atomic"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/image"
+	"github.com/mgoltzsche/ctnr/pkg/atomic"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

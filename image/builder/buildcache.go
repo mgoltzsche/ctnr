@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/fs/source"
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/pkg/fs/source"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

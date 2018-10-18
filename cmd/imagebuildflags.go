@@ -20,10 +20,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mgoltzsche/cntnr/image"
-	"github.com/mgoltzsche/cntnr/image/builder"
-	"github.com/mgoltzsche/cntnr/image/builder/dockerfile"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/image"
+	"github.com/mgoltzsche/ctnr/image/builder"
+	"github.com/mgoltzsche/ctnr/image/builder/dockerfile"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
 	"github.com/spf13/pflag"
 )
 

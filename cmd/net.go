@@ -22,7 +22,7 @@ import (
 	"strconv"
 
 	"github.com/containernetworking/cni/libcni"
-	"github.com/mgoltzsche/cntnr/net"
+	"github.com/mgoltzsche/ctnr/net"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"

@@ -1,4 +1,4 @@
-FROM golang:alpine3.8 AS cntnr-build
+FROM golang:alpine3.8 AS ctnr-build
 RUN apk add --update --no-cache gcc musl-dev libseccomp-dev btrfs-progs-dev lvm2-dev make git
 
 FROM fedora:28 as proot
@@ -26,7 +26,7 @@ WORKDIR /PRoot/src
 ENV PKG_CONFIG_PATH=/usr/lib/pkgconfig
 RUN make && mv proot / && make clean
 
-FROM cntnr-build AS liteide
+FROM ctnr-build AS liteide
 ARG LITEIDE_PKGS="g++ qt5-qttools qt5-qtbase-dev qt5-qtbase-x11 qt5-qtwebkit xkeyboard-config libcanberra-gtk3 adwaita-icon-theme ttf-dejavu"
 RUN apk add --update --no-cache ${LITEIDE_PKGS} || /usr/lib/qt5/bin/qmake -help >/dev/null
 RUN git clone https://github.com/visualfc/liteide.git \

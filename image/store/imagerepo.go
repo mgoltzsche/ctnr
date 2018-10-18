@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/mgoltzsche/cntnr/image"
+	"github.com/mgoltzsche/ctnr/image"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )

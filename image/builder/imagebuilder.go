@@ -13,16 +13,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/bundle"
-	"github.com/mgoltzsche/cntnr/image"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/fs"
-	"github.com/mgoltzsche/cntnr/pkg/fs/tree"
-	"github.com/mgoltzsche/cntnr/pkg/fs/writer"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
-	"github.com/mgoltzsche/cntnr/pkg/log"
-	"github.com/mgoltzsche/cntnr/run"
-	"github.com/mgoltzsche/cntnr/run/factory"
+	"github.com/mgoltzsche/ctnr/bundle"
+	"github.com/mgoltzsche/ctnr/image"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs/tree"
+	"github.com/mgoltzsche/ctnr/pkg/fs/writer"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/run"
+	"github.com/mgoltzsche/ctnr/run/factory"
 	"github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
@@ -102,7 +102,7 @@ func NewImageBuilder(cfg ImageBuildConfig) (r *ImageBuilder) {
 		r.tempDir = cfg.Tempfs
 	}
 	if cfg.RunRoot == "" {
-		r.runRoot = "/tmp/cntnr"
+		r.runRoot = "/tmp/ctnr"
 	} else {
 		r.runRoot = cfg.RunRoot
 	}

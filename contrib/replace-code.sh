@@ -6,4 +6,5 @@ escExpr() {
 	echo "$1" | sed 's/\//\\\//g'
 }
 
-find . -type f -name "*.go" -exec sed -i "s/$(escExpr "$1")/$(escExpr "$2")/g" {} +
+find . -type f -not \( -path './.git/*' -o -path './vendor/*' -o -path './build/*' \) \
+	-exec sed -i "s/$(escExpr "$1")/$(escExpr "$2")/g" {} +

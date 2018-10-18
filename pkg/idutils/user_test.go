@@ -34,7 +34,7 @@ func TestParseUserExpr(t *testing.T) {
 func TestUserResolve(t *testing.T) {
 	rootfs := newTestRootfs(t)
 	defer os.RemoveAll(rootfs)
-	dir, err := ioutil.TempDir("", "cntnr-test-usr-")
+	dir, err := ioutil.TempDir("", "ctnr-test-usr-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	for _, c := range []struct {

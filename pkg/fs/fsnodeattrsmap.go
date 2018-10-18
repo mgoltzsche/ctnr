@@ -2,7 +2,7 @@ package fs
 
 import (
 	"github.com/golang/protobuf/proto"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/rootlesscontainers-proto"
 	"github.com/pkg/errors"
 )

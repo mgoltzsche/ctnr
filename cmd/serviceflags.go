@@ -18,8 +18,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/net"
+	"github.com/mgoltzsche/ctnr/model"
+	"github.com/mgoltzsche/ctnr/net"
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 )

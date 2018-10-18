@@ -22,13 +22,13 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/mgoltzsche/cntnr/bundle"
-	"github.com/mgoltzsche/cntnr/image"
-	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/model/oci"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/run"
-	"github.com/mgoltzsche/cntnr/run/factory"
+	"github.com/mgoltzsche/ctnr/bundle"
+	"github.com/mgoltzsche/ctnr/image"
+	"github.com/mgoltzsche/ctnr/model"
+	"github.com/mgoltzsche/ctnr/model/oci"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/run"
+	"github.com/mgoltzsche/ctnr/run/factory"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -40,10 +40,10 @@ func wrapRun(cf func(cmd *cobra.Command, args []string) error) func(cmd *cobra.C
 			if err := recover(); err != nil {
 				msg := "\n  OUPS, THIS SEEMS TO BE A BUG!"
 				msg += "\n  Please report it at"
-				msg += "\n    https://github.com/mgoltzsche/cntnr/issues/new"
+				msg += "\n    https://github.com/mgoltzsche/ctnr/issues/new"
 				msg += "\n  with a description of what you did and the stacktrace"
 				msg += "\n  below if you cannot find an already existing issue at"
-				msg += "\n    https://github.com/mgoltzsche/cntnr/issues\n"
+				msg += "\n    https://github.com/mgoltzsche/ctnr/issues\n"
 				stackTrace := strings.Replace(string(debug.Stack()), "\n", "\n  ", -1)
 				// TODO: Add version
 				logrus.Fatalf("%+v\n%s\n  PANIC: %s\n  %s", err, msg, err, stackTrace)

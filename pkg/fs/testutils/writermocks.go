@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
 	"github.com/stretchr/testify/require"
 )
 

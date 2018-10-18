@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/bundle"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/bundle"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 	"github.com/pkg/errors"
 )
 

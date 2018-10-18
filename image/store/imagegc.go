@@ -3,14 +3,14 @@ package store
 import (
 	"time"
 
-	"github.com/mgoltzsche/cntnr/image"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/image"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
 	"github.com/opencontainers/go-digest"
 )
 
 const (
-	AnnotationImported       = "com.github.mgoltzsche.cntnr.image.imported"
-	AnnotationParentManifest = "com.github.mgoltzsche.cntnr.image.parent.manifest"
+	AnnotationImported       = "com.github.mgoltzsche.ctnr.image.imported"
+	AnnotationParentManifest = "com.github.mgoltzsche.ctnr.image.parent.manifest"
 )
 
 type imageGC struct {

@@ -9,10 +9,10 @@ import (
 
 	"github.com/docker/cli/cli/compose/loader"
 	"github.com/docker/cli/cli/compose/types"
-	"github.com/mgoltzsche/cntnr/model"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/log"
-	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
+	"github.com/mgoltzsche/ctnr/model"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/pkg/sliceutils"
 	"github.com/pkg/errors"
 )
 

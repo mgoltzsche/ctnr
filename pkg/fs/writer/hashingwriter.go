@@ -3,7 +3,7 @@ package writer
 import (
 	"io"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
 	"github.com/opencontainers/go-digest"
 	//	"github.com/pkg/errors"
 )

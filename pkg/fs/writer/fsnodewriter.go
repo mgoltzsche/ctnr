@@ -1,8 +1,8 @@
 package writer
 
 import (
-	"github.com/mgoltzsche/cntnr/pkg/fs"
-	"github.com/mgoltzsche/cntnr/pkg/fs/source"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs/source"
 	"github.com/pkg/errors"
 )
 

@@ -3,7 +3,7 @@ package testutils
 import (
 	"path/filepath"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
 )
 
 type SourceMock struct {

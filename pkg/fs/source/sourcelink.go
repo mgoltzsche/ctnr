@@ -1,7 +1,7 @@
 package source
 
 import (
-	"github.com/mgoltzsche/cntnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
 )
 
 type SourceUpperLink struct {

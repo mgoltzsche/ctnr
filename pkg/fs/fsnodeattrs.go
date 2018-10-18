@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
 	"github.com/pkg/errors"
 )
 

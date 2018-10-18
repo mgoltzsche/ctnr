@@ -1,11 +1,11 @@
-# cntnr
+# ctnr
 
 CNTNR DEVELOPMENT IS IN AN EARLY STATE!
 
-cntnr is a CLI built on top of [runc](https://github.com/opencontainers/runc)
+ctnr is a CLI built on top of [runc](https://github.com/opencontainers/runc)
 to manage and build OCI images as well as containers.  
-cntnr aims to ease system container creation and execution as unprivileged user.  
-Also cntnr is a platform to try out new runc features.
+ctnr aims to ease system container creation and execution as unprivileged user.  
+Also ctnr is a platform to try out new runc features.
 
 
 ## Features
@@ -47,7 +47,7 @@ As a result in a restrictive environment without root access only the host netwo
 This is caused by the fact that all operations in the container are still run by the host user (who is just mapped to user 0 inside the container).
 Unfortunately this stops many package managers as well as official docker images from working:
 While `apk` already works with plain [runc](https://github.com/opencontainers/runc) `apt-get` does not since it requires to change a user permanently.  
-To overcome this limitation cntnr supports the `user.rootlesscontainers` xattr and integrates with [PRoot](https://github.com/rootless-containers/PRoot)*.  
+To overcome this limitation ctnr supports the `user.rootlesscontainers` xattr and integrates with [PRoot](https://github.com/rootless-containers/PRoot)*.  
 
 
 For more details see Aleksa Sarai's [summary](https://rootlesscontaine.rs/) of the state of the art of rootless containers.
@@ -58,17 +58,17 @@ For more details see Aleksa Sarai's [summary](https://rootlesscontaine.rs/) of t
 
 ## Build
 
-Build the binary `dist/bin/cntnr` as well as `dist/bin/cni-plugins` on a Linux machine with git, make and docker:
+Build the binary `dist/bin/ctnr` as well as `dist/bin/cni-plugins` on a Linux machine with git, make and docker:
 ```
-git clone https://github.com/mgoltzsche/cntnr.git
-cd cntnr
+git clone https://github.com/mgoltzsche/ctnr.git
+cd ctnr
 make
 ```  
 Install in `/usr/local`:
 ```
 sudo make install
 ```  
-Optionally the project can now be opened with LiteIDE running in a cntnr container  
+Optionally the project can now be opened with LiteIDE running in a ctnr container  
 _(Please note that it takes some time to build the LiteIDE container image)_:
 ```
 make ide
@@ -81,14 +81,14 @@ The following examples assume your policy accepts docker images or you have copi
 
 ### Create and run container from Docker image
 ```
-$ cntnr run docker://alpine:3.8 echo hello world
+$ ctnr run docker://alpine:3.8 echo hello world
 hello world
 ```
 
 ### Create and run Firefox as unprivileged user
 Build a Firefox ESR container image `local/firefox:alpine` (cached operation):
 ```
-$ cntnr image build \
+$ ctnr image build \
 	--from=docker://alpine:3.8 \
 	--author='John Doe' \
 	--run='apk add --update --no-cache firefox-esr libcanberra-gtk3 adwaita-icon-theme ttf-ubuntu-font-family' \
@@ -98,7 +98,7 @@ $ cntnr image build \
 
 Create and run a bundle named `firefox` from the previously built image:
 ```
-$ cntnr run -b firefox --update \
+$ ctnr run -b firefox --update \
 	--env DISPLAY=$DISPLAY \
 	--mount src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
 	--mount src=/etc/machine-id,dst=/etc/machine-id,opt=ro \
@@ -107,11 +107,11 @@ $ cntnr run -b firefox --update \
 _(Unfortunately tabs in firefox tend to crash)_
 The `-b <BUNDLE>` and `--update` options make this operation idempotent:
 The bundle's file system is reused and only recreated when the underlying image has changed.
-Use these options to restart containers very quickly. Without them cntnr copies the
+Use these options to restart containers very quickly. Without them ctnr copies the
 image file system on bundle creation which can take some time and disk space depending on the image's size.  
 Also these options enable a container update on restart when the base image is frequently updated before the child image is rebuilt using the following command:
 ```
-$ cntnr image import docker://alpine:3.8
+$ ctnr image import docker://alpine:3.8
 ```
 
 ### Build Dockerfile as unprivileged user
@@ -123,13 +123,13 @@ FROM debian:9
 RUN apt-get update && apt-get install -y cowsay
 ENTRYPOINT ["/usr/games/cowsay"]
 ```
-Build the image (Please note that this works only with `--proot` enabled. With plain cntnr/runc `apt-get` fails to change uid/gid.):
+Build the image (Please note that this works only with `--proot` enabled. With plain ctnr/runc `apt-get` fails to change uid/gid.):
 ```
-$ cntnr image build --proot --dockerfile Dockerfile-cowsay --tag example/cowsay
+$ ctnr image build --proot --dockerfile Dockerfile-cowsay --tag example/cowsay
 ```
 Run a container using the previously built image (Please note that `--proot` is not required anymore):
 ```
-$ cntnr run example/cowsay hello from container
+$ ctnr run example/cowsay hello from container
  ______________________
 < hello from container >
  ----------------------
@@ -144,7 +144,7 @@ $ cntnr run example/cowsay hello from container
 ## The OCI standard and this implementation
 
 An *[OCI image](https://github.com/opencontainers/image-spec/tree/v1.0.0)* provides a base [configuration](https://github.com/opencontainers/image-spec/blob/v1.0.0/config.md) and file system to create an OCI bundle from. The file system consists of a list of layers represented by tar files each containing the diff to its predecessor.  
-cntnr manages images in its local store directory in the [OCI image layout format](https://github.com/opencontainers/image-spec/blob/v1.0.0/image-layout.md).
+ctnr manages images in its local store directory in the [OCI image layout format](https://github.com/opencontainers/image-spec/blob/v1.0.0/image-layout.md).
 Images are imported into the local store using the [containers/image](https://github.com/containers/image) library.
 A new bundle is created by extracting the image's file system into a directory and [deriving](https://github.com/opencontainers/image-spec/blob/v1.0.0/conversion.md) the bundle's default configuration from the image's configuration plus user-defined options.
 
@@ -152,13 +152,13 @@ A new bundle is created by extracting the image's file system into a directory a
 An *[OCI bundle](https://github.com/opencontainers/runtime-spec/blob/v1.0.0/bundle.md)* describes a container by
 a [configuration](https://github.com/opencontainers/runtime-spec/blob/v1.0.0/config.md) and a file system.
 Basically it is a directory containing a `config.json` file with the configuration and a sub directory with the root file system.  
-cntnr manages bundles in its local store directory. Alternatively a custom directory can also be used as bundle.
-OCI bundles generated by cntnr can also be run with other OCI-compliant container engines as [runc](https://github.com/opencontainers/runc/).
+ctnr manages bundles in its local store directory. Alternatively a custom directory can also be used as bundle.
+OCI bundles generated by ctnr can also be run with other OCI-compliant container engines as [runc](https://github.com/opencontainers/runc/).
 
 
 An *[OCI container](https://github.com/opencontainers/runtime-spec/blob/v1.0.0/runtime.md)* is a host-specific bundle instance.
 On Linux it is a set of namespaces in which a configured process can be run.  
-cntnr provides two wrapper implementations of the OCI runtime reference implementation
+ctnr provides two wrapper implementations of the OCI runtime reference implementation
 [runc/libcontainer](https://github.com/opencontainers/runc/blob/v1.0.0-rc5/libcontainer/README.md)
 to either use an external runc binary or use libcontainer (no runtime dependencies!) controlled by a compiler flag.
 
@@ -181,11 +181,10 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 ## Roadmap / TODO
 
 - clean up CLI
-- change project name
 - setup CI/CD
 - **0.7 beta release**
 - system.Context aware processes, unpacking/packing images
-- improved docker CLI compatibility regarding `build` and `run` commands in order to use cntnr to substitute docker easily in common build operations
+- improved docker CLI compatibility regarding `build` and `run` commands in order to use ctnr to substitute docker easily in common build operations
 - improved multi-user support (store per user group, file permissions, lock location)
 - CLI integration tests
 - rootless networking (using proot port mapping or tun/tap CNI plugin)

@@ -1,26 +1,26 @@
-BUILDIMAGE=local/cntnr-build:latest
-LITEIDEIMAGE=local/cntnr-build:liteide
-DOCKERRUN=docker run --name cntnr-build --rm -v "${REPODIR}:/work" -w /work -u `id -u`:`id -u`
+BUILDIMAGE=local/ctnr-build:latest
+LITEIDEIMAGE=local/ctnr-build:liteide
+DOCKERRUN=docker run --name ctnr-build --rm -v "${REPODIR}:/work" -w /work -u `id -u`:`id -u`
 
 REPODIR=$(shell pwd)
 GOPATH=${REPODIR}/build
 LITEIDE_WORKSPACE=${GOPATH}/liteide-workspace
-PKGNAME=github.com/mgoltzsche/cntnr
+PKGNAME=github.com/mgoltzsche/ctnr
 PKGRELATIVEROOT=$(shell echo /src/${PKGNAME} | sed -E 's/\/+[^\/]*/..\//g')
 VENDORLOCK=${REPODIR}/vendor/ready
-BINARY=cntnr
+BINARY=ctnr
 
 # 'apparmor' tag cannot be used for runc yet since package is not yet available in alpine:3.7
 BUILDTAGS_RUNC=seccomp selinux ambient
 BUILDTAGS?=containers_image_ostree_stub containers_image_storage_stub containers_image_openpgp libdm_no_deferred_remove btrfs_noversion ${BUILDTAGS_RUNC}
-BUILDTAGS_STATIC=${BUILDTAGS} linux static_build exclude_graphdriver_devicemapper mgoltzsche_cntnr_libcontainer
+BUILDTAGS_STATIC=${BUILDTAGS} linux static_build exclude_graphdriver_devicemapper mgoltzsche_ctnr_libcontainer
 LDFLAGS_STATIC=${LDFLAGS} -extldflags '-static'
 
 CNI_VERSION=0.6.0
 CNIGOPATH=${GOPATH}/cni
 
 COBRA=${GOPATH}/bin/cobra
-PACKAGES:=$(shell go list $(BUILDFLAGS) . | grep -v github.com/mgoltzsche/cntnr/vendor)
+PACKAGES:=$(shell go list $(BUILDFLAGS) . | grep -v github.com/mgoltzsche/ctnr/vendor)
 
 export PATH := dist/bin:$(PATH)
 
@@ -38,19 +38,19 @@ generate: dependencies
 	GOPATH="${GOPATH}" \
 	go get github.com/golang/protobuf/protoc-gen-go
 	# GOPATH="${GOPATH}"
-	cd "${GOPATH}"/src/github.com/mgoltzsche/cntnr/vendor/github.com/rootless-containers/proto && \
+	cd "${GOPATH}"/src/github.com/mgoltzsche/ctnr/vendor/github.com/rootless-containers/proto && \
 	"${GOPATH}/bin/protoc-gen-go" --go_out=. rootlesscontainers.proto
 
 test: dependencies
 	# Run tests
 	export GOPATH="${GOPATH}"; \
-	#go test -tags "${BUILDTAGS}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS}" ./... | grep -Ev '/vendor/|^${PKGNAME}/build/'`
-	export GOPATH="${GOPATH}"; cd "${GOPATH}/src/github.com/mgoltzsche/cntnr/image/builder" && go test -tags "${BUILDTAGS}" -run ImageBuilder
+	go test -tags "${BUILDTAGS}" -coverprofile "${GOPATH}/coverage.out" -cover $(shell export GOPATH="${GOPATH}"; cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS_STATIC}" ./... 2>/dev/null | grep -Ev '/vendor/|^${PKGNAME}/build/')
+	#export GOPATH="${GOPATH}"; cd "${GOPATH}/src/github.com/mgoltzsche/ctnr/image/builder" && go test -tags "${BUILDTAGS}" -run ImageBuilder
 
 test-static: dependencies
 	# Run tests using BUILDTAGS_STATIC
 	export GOPATH="${GOPATH}"; \
-	go test -tags "${BUILDTAGS_STATIC}" -coverprofile "${GOPATH}/coverage.out" -cover `cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS_STATIC}" ./... | grep -Ev '/vendor/|^${PKGNAME}/build/'`
+	go test -tags "${BUILDTAGS_STATIC}" -coverprofile "${GOPATH}/coverage.out" -cover $(shell export GOPATH="${GOPATH}"; cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS_STATIC}" ./... 2>/dev/null | grep -Ev '/vendor/|^${PKGNAME}/build/')
 
 test-coverage: test
 	GOPATH="${GOPATH}" go tool cover -html="${GOPATH}/coverage.out"
@@ -99,7 +99,7 @@ cni-plugins:
 
 .buildimage:
 	# Building build image:
-	docker build -t ${BUILDIMAGE} --target cntnr-build .
+	docker build -t ${BUILDIMAGE} --target ctnr-build .
 
 build-sh: .buildimage
 	# Running dockerized interactive build shell
@@ -136,8 +136,8 @@ cobra: .workspace
 	"${GOPATH}/bin/cobra"
 
 proot:
-	cntnr image create --verbose --dockerfile Dockerfile --target proot --tag local/proot
-	cntnr bundle create -b "${GOPATH}/proot-bundle" --update local/proot
+	ctnr image build --verbose --dockerfile Dockerfile --target proot --tag local/proot
+	ctnr bundle create -b "${GOPATH}/proot-bundle" --update local/proot
 	cp "${GOPATH}/proot-bundle/rootfs/proot" "${REPODIR}/dist/bin/proot"
 
 liteide: dependencies
@@ -163,24 +163,24 @@ liteide: dependencies
 
 ide: .liteideimage
 	# Make sure to lock the build path to the top-level directory
-	cntnr bundle create -b cntnr-liteide --update=true -w /work \
-		--mount "src=${REPODIR},dst=/work/src/github.com/mgoltzsche/cntnr" \
+	ctnr bundle create -b ctnr-liteide --update=true -w /work \
+		--mount "src=${REPODIR},dst=/work/src/github.com/mgoltzsche/ctnr" \
 		--mount "src=${REPODIR}/liteide.ini,dst=/root/.config/liteide/liteide.ini" \
 		--mount src=/etc/machine-id,dst=/etc/machine-id,opt=ro \
 		--mount src=/tmp/.X11-unix,dst=/tmp/.X11-unix \
 		--env DISPLAY=$$DISPLAY \
 		--env GOPATH=/work \
 		${LITEIDEIMAGE} \
-		liteide /work/src/github.com/mgoltzsche/cntnr
-	cntnr bundle run --verbose cntnr-liteide &
+		liteide /work/src/github.com/mgoltzsche/ctnr
+	ctnr bundle run --verbose ctnr-liteide &
 
 .liteideimage:
-	cntnr image create --dockerfile=Dockerfile --target=liteide --tag=${LITEIDEIMAGE}
+	ctnr image build --dockerfile=Dockerfile --target=liteide --tag=${LITEIDEIMAGE}
 
 LITEIDE_PKGS=g++ qt5-qttools qt5-qtbase-dev qt5-qtbase-x11 qt5-qtwebkit xkeyboard-config libcanberra-gtk3 adwaita-icon-theme ttf-dejavu
 .OLD_liteideimage: .buildimage
 	# TODO: clean this up when --workdir and --env options are supported
-	cntnr image create \
+	ctnr image build \
 		--from=docker-daemon:${BUILDIMAGE} \
 		--author='Max Goltzsche <max.goltzsche@gmail.com>' \
 		--run-sh='cd / && git clone https://github.com/visualfc/liteide.git \
@@ -191,7 +191,7 @@ LITEIDE_PKGS=g++ qt5-qttools qt5-qtbase-dev qt5-qtbase-x11 qt5-qtwebkit xkeyboar
 		--tag=${LITEIDEIMAGE}
 
 install:
-	cp dist/bin/cntnr /usr/local/bin/cntnr
+	cp dist/bin/ctnr /usr/local/bin/ctnr
 
 clean:
 	rm -rf ./build ./dist

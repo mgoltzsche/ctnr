@@ -18,7 +18,7 @@ import (
 	"os"
 	"time"
 
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
 	"github.com/spf13/cobra"
 )
 

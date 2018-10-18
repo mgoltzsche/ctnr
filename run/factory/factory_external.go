@@ -1,11 +1,11 @@
-// +build !mgoltzsche_cntnr_libcontainer
+// +build !mgoltzsche_ctnr_libcontainer
 
 package factory
 
 import (
-	"github.com/mgoltzsche/cntnr/pkg/log"
-	"github.com/mgoltzsche/cntnr/run"
-	"github.com/mgoltzsche/cntnr/run/runcrunner"
+	"github.com/mgoltzsche/ctnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/run"
+	"github.com/mgoltzsche/ctnr/run/runcrunner"
 )
 
 func NewContainerManager(rootDir string, rootless bool, loggers log.Loggers) (run.ContainerManager, error) {

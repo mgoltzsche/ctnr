@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
-	"github.com/mgoltzsche/cntnr/pkg/fs/testutils"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs/testutils"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDirWriter(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "cntnr-test-dirfswriter-")
+	tmpDir, err := ioutil.TempDir("", "ctnr-test-dirfswriter-")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 	opts := fs.NewFSOptions(true)

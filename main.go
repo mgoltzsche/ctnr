@@ -16,7 +16,7 @@ package main
 
 import (
 	"github.com/containers/storage/pkg/reexec"
-	"github.com/mgoltzsche/cntnr/cmd"
+	"github.com/mgoltzsche/ctnr/cmd"
 )
 
 func main() {

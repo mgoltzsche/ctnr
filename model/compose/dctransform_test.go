@@ -5,8 +5,8 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/model"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

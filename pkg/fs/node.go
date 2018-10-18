@@ -3,7 +3,7 @@ package fs
 import (
 	"io"
 
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/opencontainers/go-digest"
 )

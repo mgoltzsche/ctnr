@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
 	"github.com/pkg/errors"
 )
 

@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mgoltzsche/cntnr/pkg/atomic"
+	"github.com/mgoltzsche/ctnr/pkg/atomic"
 	"github.com/pkg/errors"
 )
 

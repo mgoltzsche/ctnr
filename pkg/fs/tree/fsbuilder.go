@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
-	"github.com/mgoltzsche/cntnr/pkg/fs/source"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/fs/source"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"

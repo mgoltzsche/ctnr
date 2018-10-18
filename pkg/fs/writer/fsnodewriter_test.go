@@ -5,7 +5,7 @@ package writer
 import (
 	"testing"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs/testutils"
+	"github.com/mgoltzsche/ctnr/pkg/fs/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

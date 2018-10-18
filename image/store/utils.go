@@ -5,7 +5,7 @@ import (
 
 	"github.com/containers/image/transports/alltransports"
 	"github.com/containers/image/types"
-	"github.com/mgoltzsche/cntnr/image"
+	"github.com/mgoltzsche/ctnr/image"
 )
 
 func normalizeImageName(nameAndTag string) *image.TagName {

@@ -1,7 +1,7 @@
 package logrusadapt
 
 import (
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 	"github.com/sirupsen/logrus"
 )
 

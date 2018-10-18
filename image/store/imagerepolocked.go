@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mgoltzsche/cntnr/pkg/atomic"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	lock "github.com/mgoltzsche/cntnr/pkg/lock"
+	"github.com/mgoltzsche/ctnr/pkg/atomic"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	lock "github.com/mgoltzsche/ctnr/pkg/lock"
 	"github.com/opencontainers/go-digest"
 	ispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"

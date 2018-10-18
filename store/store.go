@@ -4,11 +4,11 @@ import (
 	"path/filepath"
 
 	"github.com/containers/image/types"
-	"github.com/mgoltzsche/cntnr/bundle"
-	bstore "github.com/mgoltzsche/cntnr/bundle/store"
-	"github.com/mgoltzsche/cntnr/image"
-	istore "github.com/mgoltzsche/cntnr/image/store"
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	"github.com/mgoltzsche/ctnr/bundle"
+	bstore "github.com/mgoltzsche/ctnr/bundle/store"
+	"github.com/mgoltzsche/ctnr/image"
+	istore "github.com/mgoltzsche/ctnr/image/store"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 	"github.com/pkg/errors"
 )
 

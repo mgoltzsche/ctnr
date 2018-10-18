@@ -17,7 +17,7 @@ package cmd
 import (
 	"strings"
 
-	"github.com/mgoltzsche/cntnr/net"
+	"github.com/mgoltzsche/ctnr/net"
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 )

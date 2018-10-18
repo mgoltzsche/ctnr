@@ -3,8 +3,8 @@ package cmd
 import (
 	"testing"
 
-	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/pkg/sliceutils"
+	"github.com/mgoltzsche/ctnr/model"
+	"github.com/mgoltzsche/ctnr/pkg/sliceutils"
 )
 
 func TestParseBool(t *testing.T) {

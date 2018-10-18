@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	shellwords "github.com/mattn/go-shellwords"
-	"github.com/mgoltzsche/cntnr/model"
+	"github.com/mgoltzsche/ctnr/model"
 	"github.com/pkg/errors"
 )
 

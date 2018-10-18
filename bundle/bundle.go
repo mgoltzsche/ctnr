@@ -9,16 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/pkg/atomic"
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/lock"
+	"github.com/mgoltzsche/ctnr/pkg/atomic"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/pkg/lock"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	digest "github.com/opencontainers/go-digest"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
-const ANNOTATION_BUNDLE_ID = "com.github.mgoltzsche.cntnr.bundle.id"
+const ANNOTATION_BUNDLE_ID = "com.github.mgoltzsche.ctnr.bundle.id"
 
 type Bundle struct {
 	id      string

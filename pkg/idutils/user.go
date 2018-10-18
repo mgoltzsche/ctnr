@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
 	idmap "github.com/openSUSE/umoci/pkg/idtools"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"

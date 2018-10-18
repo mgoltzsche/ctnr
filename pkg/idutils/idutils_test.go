@@ -30,7 +30,7 @@ var (
 func TestLookupGid(t *testing.T) {
 	rootfs := newTestRootfs(t)
 	defer os.RemoveAll(rootfs)
-	dir, err := ioutil.TempDir("", "cntnr-test-gid-")
+	dir, err := ioutil.TempDir("", "ctnr-test-gid-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	for _, c := range []struct {
@@ -59,7 +59,7 @@ func TestLookupGid(t *testing.T) {
 func TestLookupUser(t *testing.T) {
 	rootfs := newTestRootfs(t)
 	defer os.RemoveAll(rootfs)
-	dir, err := ioutil.TempDir("", "cntnr-test-usr-")
+	dir, err := ioutil.TempDir("", "ctnr-test-usr-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	for _, c := range []struct {
@@ -88,7 +88,7 @@ func TestLookupUser(t *testing.T) {
 }
 
 func newTestRootfs(t *testing.T) string {
-	rootfs, err := ioutil.TempDir("", "cntnr-idutils-test-")
+	rootfs, err := ioutil.TempDir("", "ctnr-idutils-test-")
 	require.NoError(t, err)
 	err = os.Mkdir(filepath.Join(rootfs, "etc"), 0755)
 	require.NoError(t, err)

@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	exterrors "github.com/mgoltzsche/cntnr/pkg/errors"
-	"github.com/mgoltzsche/cntnr/pkg/log"
+	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
+	"github.com/mgoltzsche/ctnr/pkg/log"
 	"github.com/pkg/errors"
 )
 
-const errCacheKeyNotExist = "github.com/mgoltzsche/cntnr/image/builder/cache/notexist"
+const errCacheKeyNotExist = "github.com/mgoltzsche/ctnr/image/builder/cache/notexist"
 
 func IsCacheKeyNotExist(err error) bool {
 	return exterrors.HasType(err, errCacheKeyNotExist)

@@ -3,8 +3,8 @@ FROM alpine:3.7
 ARG TESTARG1
 ARG TESTARG2=argval
 LABEL maintainer Max Goltzsche "max.goltzsche@gmail.com"
-LABEL com.github.mgoltzsche.cntnr.test.label1="test value1"
-LABEL "com.github.mgoltzsche.cntnr.test.label2"="test value2"
+LABEL com.github.mgoltzsche.ctnr.test.label1="test value1"
+LABEL "com.github.mgoltzsche.ctnr.test.label2"="test value2"
 ENV CONFIGX configxval
 ENV CFG1=val1 CFG2="$TESTARG2 suffix"
 RUN set -x \

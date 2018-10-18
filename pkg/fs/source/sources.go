@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mgoltzsche/cntnr/pkg/fs"
-	"github.com/mgoltzsche/cntnr/pkg/idutils"
+	"github.com/mgoltzsche/ctnr/pkg/fs"
+	"github.com/mgoltzsche/ctnr/pkg/idutils"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"

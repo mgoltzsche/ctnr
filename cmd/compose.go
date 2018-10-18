@@ -15,8 +15,8 @@
 package cmd
 
 import (
-	"github.com/mgoltzsche/cntnr/model"
-	"github.com/mgoltzsche/cntnr/model/compose"
+	"github.com/mgoltzsche/ctnr/model"
+	"github.com/mgoltzsche/ctnr/model/compose"
 	"github.com/spf13/cobra"
 )
 
