@@ -59,6 +59,12 @@ fmt:
 	# Format the go code
 	(find . -mindepth 1 -maxdepth 1 -type d; ls *.go) | grep -Ev '^(./vendor|./dist|./build|./.git)(/.*)?$$' | xargs -n1 gofmt -w
 
+# TODO: Run lint per default if hints fixed
+lint:
+	export GOPATH="${GOPATH}"; \
+	go get golang.org/x/lint/golint && \
+	"${GOPATH}/bin/golint" $(shell export GOPATH="${GOPATH}"; cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS_STATIC}" ./... 2>/dev/null | grep -Ev '/vendor/|^${PKGNAME}/build/')
+
 runc: dependencies
 	rm -rf "${GOPATH}/src/github.com/opencontainers/runc"
 	mkdir -p "${GOPATH}/src/github.com/opencontainers"
