@@ -67,6 +67,7 @@ func Execute() {
 	RootCmd.AddCommand(killCmd)
 	RootCmd.AddCommand(listCmd)
 	RootCmd.AddCommand(imageCmd)
+	RootCmd.AddCommand(imageBuildCmd)
 	RootCmd.AddCommand(bundleCmd)
 	RootCmd.AddCommand(composeCmd)
 	RootCmd.AddCommand(netCmd)

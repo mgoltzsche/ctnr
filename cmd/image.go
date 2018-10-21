@@ -247,8 +247,16 @@ func runImageCatConfig(cmd *cobra.Command, args []string) (err error) {
 }
 
 func runImageBuildRun(cmd *cobra.Command, args []string) (err error) {
-	if len(args) != 0 {
-		return usageError(fmt.Sprintf("No arguments supported but %q provided", args[0]))
+	if len(args) > 0 {
+		flagImageBuildOps.dockerfileDir = args[0]
+	} else if flagImageBuildOps.dockerfileDir, err = os.Getwd(); err != nil {
+		return
+	}
+	if flagImageBuildOps.dockerfileDir, err = filepath.Abs(flagImageBuildOps.dockerfileDir); err != nil {
+		return
+	}
+	if len(args) > 1 {
+		return usageError(fmt.Sprintf("Only one context path supported as argument but provided: %v", args[1:]))
 	}
 	lockedStore, err := openImageStore()
 	if err != nil {

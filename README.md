@@ -183,7 +183,6 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 - setup CI/CD
 - **0.7 beta release**
 - system.Context aware processes, unpacking/packing images
-- improved docker CLI compatibility regarding `build` and `run` commands in order to use ctnr to substitute docker easily in common build operations
 - improved multi-user support (store per user group, file permissions, lock location)
 - CLI integration tests
 - rootless networking (using proot port mapping or tun/tap CNI plugin)

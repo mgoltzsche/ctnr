@@ -32,6 +32,7 @@ type bundleFlags struct {
 	stdin        bool
 	tty          bool
 	readonly     bool
+	privileged   bool
 	noPivot      bool
 	noNewKeyring bool
 	proot        bool
@@ -40,7 +41,9 @@ type bundleFlags struct {
 
 func (c *bundleFlags) InitContainerFlags(f *pflag.FlagSet) {
 	f.Var((*cName)(c), "name", "container name. Also used as hostname when hostname is not set explicitly")
-	f.BoolVar(&c.update, "update", false, "Updates an existing bundle's configuration and rootfs if changed")
+	f.BoolVar(&c.update, "update", false, "update an existing bundle's configuration and rootfs if changed")
+	f.BoolVar(&c.update, "rm", false, "alias for update")
+	f.MarkHidden("rm") // docker compatibility
 	f.VarP((*cBundle)(c), "bundle", "b", "bundle name or directory")
 	c.InitProcessFlags(f)
 	f.Var((*cSeccomp)(c), "seccomp", "seccomp profile file or 'default' or 'unconfined'")
@@ -50,6 +53,7 @@ func (c *bundleFlags) InitContainerFlags(f *pflag.FlagSet) {
 	f.MarkHidden("volume")
 	f.Var((*cExpose)(c), "expose", "container ports to be exposed")
 	f.BoolVar(&c.readonly, "readonly", false, "mounts the root file system in read only mode")
+	f.BoolVar(&c.privileged, "privileged", false, "give extended privileges to the container")
 	f.BoolVar(&c.proot, "proot", false, "enables PRoot")
 	initNetConfFlags(f, &c.netCfg)
 	// Stop parsing after first non flag argument (which is the image)
@@ -108,6 +112,11 @@ func (c *bundleFlags) Read() (*model.Service, error) {
 	s.NoPivot = c.noPivot
 	s.NoNewKeyring = c.noNewKeyring
 	s.PRoot = c.proot
+	if c.privileged {
+		s.CapAdd = append(s.CapAdd, "SYS_ADMIN")
+		s.MountCgroups = "rw"
+		s.Seccomp = "unconfined"
+	}
 	c.app = nil
 	c.net = model.NetConf{}
 	return s, nil
@@ -138,6 +147,21 @@ func (c *cName) Type() string {
 
 func (c *cName) String() string {
 	return (*bundleFlags)(c).curr().Name
+}
+
+type cStopSignal bundleFlags
+
+func (c *cStopSignal) Set(s string) error {
+	(*bundleFlags)(c).curr().StopSignal = s
+	return nil
+}
+
+func (c *cStopSignal) Type() string {
+	return "string"
+}
+
+func (c *cStopSignal) String() string {
+	return (*bundleFlags)(c).curr().StopSignal
 }
 
 type cBundle bundleFlags

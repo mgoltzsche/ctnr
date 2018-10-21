@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -37,6 +36,7 @@ var (
 
 type imageBuildFlags struct {
 	ops           []func(*builder.ImageBuilder) error
+	dockerfileDir string
 	dockerfileCtx *dockerfileBuildContext
 }
 
@@ -46,7 +46,7 @@ func (s *imageBuildFlags) add(op func(*builder.ImageBuilder) error) {
 
 func initImageBuildFlags(f *pflag.FlagSet) {
 	ops := &flagImageBuildOps
-	f.Var((*iDockerfile)(ops), "dockerfile", "Builds the dockerfile at the provided path")
+	f.VarP((*iDockerfile)(ops), "dockerfile", "f", "Builds the dockerfile at the provided path")
 	f.Var((*iDockerfileTarget)(ops), "target", "Specifies the last --dockerfile's build target")
 	f.Var((*iDockerfileArg)(ops), "build-arg", "Specifies the last --dockerfile's build arg")
 	f.Var((*iFromImage)(ops), "from", "Extends the provided parent")
@@ -61,7 +61,7 @@ func initImageBuildFlags(f *pflag.FlagSet) {
 	// TODO: remove?!
 	f.Var((*iRunShell)(ops), "run-sh", "Runs the provided commands using a shell in the current image")
 	f.Var((*iAdd)(ops), "add", "Adds glob pattern matching files to image: SRC... [DEST[:USER[:GROUP]]]")
-	f.Var((*iTag)(ops), "tag", "Tags the image")
+	f.VarP((*iTag)(ops), "tag", "t", "Tags the image")
 	f.BoolVar(&flagProot, "proot", false, "Enables PRoot")
 	f.BoolVar(&flagNoCache, "no-cache", false, "Disables caches")
 	f.BoolVar(&flagRm, "rm", true, "Remove intermediate containers after successful build")
@@ -91,27 +91,22 @@ func (o *iFromImage) String() string {
 type iDockerfile imageBuildFlags
 
 func (o *iDockerfile) Set(file string) (err error) {
-	err = checkNonEmpty(file)
-	if err != nil {
-		return
-	}
-	d, err := ioutil.ReadFile(file)
-	if err != nil {
-		return
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return
-	}
-	if wd, err = filepath.Abs(wd); err != nil {
+	if err = checkNonEmpty(file); err != nil {
 		return
 	}
 	s := (*imageBuildFlags)(o)
 	ctx := &dockerfileBuildContext{map[string]string{}, nil}
 	s.dockerfileCtx = ctx
 	s.add(func(b *builder.ImageBuilder) (err error) {
+		if !filepath.IsAbs(file) {
+			file = filepath.Join(o.dockerfileDir, file)
+		}
+		d, err := ioutil.ReadFile(file)
+		if err != nil {
+			return
+		}
 		// TODO: load dockerfile first and defer build only - when args can be provided after dockerfile has been loaded
-		df, err := dockerfile.LoadDockerfile(d, wd, ctx.args, loggers.Warn)
+		df, err := dockerfile.LoadDockerfile(d, o.dockerfileDir, ctx.args, loggers.Warn)
 		if err != nil {
 			return
 		}

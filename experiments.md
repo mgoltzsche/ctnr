@@ -5,7 +5,7 @@
 
 ## Run ctnr container inside privileged docker container
 ```
-docker run -ti --privileged --name cnestedpriv --rm \
+docker run -ti --rm --privileged \
 	-v $(pwd)/dist/bin/ctnr:/bin/ctnr \
 	alpine:3.7
 > ctnr run -t --network=host docker://alpine:3.7
@@ -14,11 +14,8 @@ docker run -ti --privileged --name cnestedpriv --rm \
 
 ## Run ctnr container inside unprivileged user's privileged ctnr container
 ```
-dist/bin/ctnr run -b outerc --update -t \
-	--cap-add=SYS_ADMIN \
-	--mount=src=./dist/bin/ctnr,dst=/bin/ctnr:exec:ro \
-	--mount=src=/dist/cni-plugins,dst=/cni \
-	--mount=src=/boot/config-4.4.0-104-generic,dst=/boot/config-4.4.0-104-generic \
+dist/bin/ctnr run -t --privileged \
+	-v $(pwd)/dist/bin/ctnr:/bin/ctnr \
 	docker://alpine:3.7
 > ctnr run -t --rootless --no-new-keyring --no-pivot --network=host docker://alpine:3.7
 ```
@@ -31,9 +28,8 @@ an unprivileged user.
 
 ## Not working: Run ctnr container inside unprivileged docker container
 ```
-docker run -ti --name cnested --rm \
+docker run -ti --rm \
 	-v $(pwd)/dist/bin/ctnr:/bin/ctnr \
-	-v /boot/config-4.4.0-104-generic:/boot/config-4.4.0-104-generic \
 	alpine:3.7
 > ctnr run  -ti --rootless --network=host docker://alpine:3.7
 ```
@@ -43,7 +39,7 @@ Error: Cannot change the process namespace ("running exec setns process for init
 Adding a custom seccomp profile solves this problem but...
 (TODO: use docker-default apparmor profile without `deny mount`, see https://github.com/moby/moby/blob/master/profiles/apparmor/template.go)
 ```
-docker run -ti --name test --rm --user=`id -u`:`id -g` \
+docker run -ti --rm --user=`id -u`:`id -g` \
 	--security-opt apparmor=unconfined \
 	--security-opt seccomp="$(pwd)/seccomp-container.json" \
 	-v /sys/fs/cgroup:/sys/fs/cgroup:ro \

@@ -1,6 +1,8 @@
 BUILDIMAGE=local/ctnr-build:latest
 LITEIDEIMAGE=local/ctnr-build:liteide
-DOCKERRUN=docker run --name ctnr-build --rm -v "${REPODIR}:/work" -w /work -u `id -u`:`id -u`
+DOCKER=docker
+USER=$(shell [ '${DOCKER}' = docker ] && id -u || echo 0)
+DOCKERRUN=${DOCKER} run --name ctnr-build --rm -v "${REPODIR}:/work" -w /work -u ${USER}:${USER}
 
 REPODIR=$(shell pwd)
 GOPATH=${REPODIR}/build
@@ -47,10 +49,11 @@ test: dependencies
 	go test -tags "${BUILDTAGS}" -coverprofile "${GOPATH}/coverage.out" -cover $(shell export GOPATH="${GOPATH}"; cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS_STATIC}" ./... 2>/dev/null | grep -Ev '/vendor/|^${PKGNAME}/build/')
 	#export GOPATH="${GOPATH}"; cd "${GOPATH}/src/github.com/mgoltzsche/ctnr/image/builder" && go test -tags "${BUILDTAGS}" -run ImageBuilder
 
-test-static: dependencies
+test-static: dependencies .buildimage
 	# Run tests using BUILDTAGS_STATIC
-	export GOPATH="${GOPATH}"; \
-	go test -tags "${BUILDTAGS_STATIC}" -coverprofile "${GOPATH}/coverage.out" -cover $(shell export GOPATH="${GOPATH}"; cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS_STATIC}" ./... 2>/dev/null | grep -Ev '/vendor/|^${PKGNAME}/build/')
+	#export GOPATH="${GOPATH}"; \
+	#go test -tags "${BUILDTAGS_STATIC}" -coverprofile "${GOPATH}/coverage.out" -cover $(shell export GOPATH="${GOPATH}"; cd "${GOPATH}/src/${PKGNAME}" && go list -tags "${BUILDTAGS_STATIC}" ./... 2>/dev/null | grep -Ev '/vendor/|^${PKGNAME}/build/')
+	${DOCKERRUN} --privileged ${BUILDIMAGE} make test BUILDTAGS="${BUILDTAGS_STATIC}" LDFLAGS="${LDFLAGS_STATIC}"
 
 test-coverage: test
 	GOPATH="${GOPATH}" go tool cover -html="${GOPATH}/coverage.out"
@@ -99,7 +102,7 @@ cni-plugins:
 
 .buildimage:
 	# Building build image:
-	docker build -t ${BUILDIMAGE} --target ctnr-build .
+	${DOCKER} build -f Dockerfile --target ctnr-build -t ${BUILDIMAGE} .
 
 build-sh: .buildimage
 	# Running dockerized interactive build shell
