@@ -12,10 +12,15 @@ PKGRELATIVEROOT=$(shell echo /src/${PKGNAME} | sed -E 's/\/+[^\/]*/..\//g')
 VENDORLOCK=${REPODIR}/vendor/ready
 BINARY=ctnr
 
+COMMIT_ID=$(shell git rev-parse HEAD)
+COMMIT_TAG=$(shell describe --exact-match ${COMMIT_ID} || echo -n "dev")
+COMMIT_DATE=$(shell git show -s --format=%ci ${COMMIT_ID})
+
 # 'apparmor' tag cannot be used for runc yet since package is not yet available in alpine:3.7
 BUILDTAGS_RUNC=seccomp selinux ambient
 BUILDTAGS?=containers_image_ostree_stub containers_image_storage_stub containers_image_openpgp libdm_no_deferred_remove btrfs_noversion ${BUILDTAGS_RUNC}
 BUILDTAGS_STATIC=${BUILDTAGS} linux static_build exclude_graphdriver_devicemapper mgoltzsche_ctnr_libcontainer
+LDFLAGS+=-X main.commit=${COMMIT_ID} -X main.version=${COMMIT_TAG} -X 'main.date=${COMMIT_DATE}'
 LDFLAGS_STATIC=${LDFLAGS} -extldflags '-static'
 
 CNI_VERSION=0.6.0
@@ -29,13 +34,15 @@ export PATH := dist/bin:$(PATH)
 all: binary-static cni-plugins-static
 
 binary-static: .buildimage
-	${DOCKERRUN} -u ${USER}:${USER} ${BUILDIMAGE} make binary BUILDTAGS="${BUILDTAGS_STATIC}" LDFLAGS="${LDFLAGS_STATIC}" && chown -R ${USER}:${USER} .
+	${DOCKERRUN} -u ${USER}:${USER} ${BUILDIMAGE} make binary BUILDTAGS="${BUILDTAGS_STATIC}" LDFLAGS="${LDFLAGS_STATIC}"
+
+check: binary-static test-static
 
 binary: dependencies
 	# Building application:
 	GOPATH="${GOPATH}" \
 	go build -o dist/bin/${BINARY} -a -ldflags "${LDFLAGS}" -tags "${BUILDTAGS}" "${PKGNAME}"
-	ln -s bin/${BINARY} dist/${BINARY}.linux-amd64
+	ln -sf bin/${BINARY} dist/${BINARY}.linux-amd64
 
 generate: dependencies
 	GOPATH="${GOPATH}" \

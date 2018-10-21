@@ -10,7 +10,7 @@ deploy:
   provider: releases
   api_key:
     secure: kJXI8TZXaVzC06yURtBqeqtDjd+Hvjr8129PriiXLMIge4ADPWJDXgt2rWwg/OEBQ9KWYd4MK0lGk58CehcLqPqmEp1DHjV5zgvD56+6xUxCRAUZp/kME1aYWbIEFd2FFKCWGccAceCu8QiYsYvk6DDyKieGNdSWgDLh3cvMcQSWElDOOQVz/B5Pbm0prqM2y0/uzSjatm0/Xcu3Ye55c84A0UeRv6JBEh6Am3+8MkxTDewlmUDp8K7YMaNFdVJpP35C1METqf7lKAD3FEi6MMDoirES1Nz6VOAJEh+n9a3tvDGqb/eGN161PWndKl4VYRQUiNTE5zqYuX4g3QEmSQnhj/gHuM7ZrMdsz0qNKpIoSjJEnZxvV9Lzg319rv74PQ4T4KZKYUbGAhhLGkhU2MEB/AOAsgsiVOET46xc4e1lehcKtwHxjkNVVK2a9+rCZhqH/M4nmsdkTuJt8uCUpy26H711rNtN+DOpaxUfuBa5cyCGLwo3Fifxptv+nE9HPEt8VLqUxju7kM/ZK5q7W3uVPZgYYq9a/zJXnxyqbwANEWBJOGlJefl6POj1jGFxg1pzy3p47uuLkzyQcw3L17v2fXnE2WBCyZUyPnPhvO9mpJ2gyMwvFYxQyiKJB6yiHG1nqZDxH+/h+z9uttYGMy2DBs/WdpIDIlLqtkQCEFg=
-  file: dist/bin/ctnr
+  file: dist/bin/ctnr.linux-amd64
   skip_cleanup: true
   on:
     repo: mgoltzsche/ctnr
