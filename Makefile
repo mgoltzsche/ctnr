@@ -13,7 +13,7 @@ VENDORLOCK=${REPODIR}/vendor/ready
 BINARY=ctnr
 
 COMMIT_ID=$(shell git rev-parse HEAD)
-COMMIT_TAG=$(shell describe --exact-match ${COMMIT_ID} || echo -n "dev")
+COMMIT_TAG=$(shell git describe --exact-match ${COMMIT_ID} || echo -n "dev")
 COMMIT_DATE=$(shell git show -s --format=%ci ${COMMIT_ID})
 
 # 'apparmor' tag cannot be used for runc yet since package is not yet available in alpine:3.7
