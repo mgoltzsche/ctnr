@@ -17,13 +17,8 @@ docker run -ti --rm --privileged \
 dist/bin/ctnr run -t --privileged \
 	-v $(pwd)/dist/bin/ctnr:/bin/ctnr \
 	docker://alpine:3.7
-> ctnr run -t --rootless --no-new-keyring --no-pivot --network=host docker://alpine:3.7
+> ctnr run -t --rootless --network=host docker://alpine:3.7
 ```
-Attention: The parent container has low isolation to the calling user due to the
-CAP_SYS_ADMIN capability and the `--no-new-keyring` option allows the inner
-container to obtain secrets from the parent.  
-This still may provide a sufficient level of security in some use cases when run by
-an unprivileged user.
 
 
 ## Not working: Run ctnr container inside unprivileged docker container

@@ -40,13 +40,14 @@ func TestTarWriter(t *testing.T) {
 	times.Mtime = time.Unix(times.Mtime.Unix(), 123)
 	times.Atime, err = time.Parse(time.RFC3339, "2018-01-23T01:01:43Z")
 	require.NoError(t, err)
-	dirAttrs := fs.FileAttrs{Mode: os.ModeDir | 0755, UserIds: idutils.UserIds{0, 0}, FileTimes: times}
+	usr := idutils.UserIds{uint(os.Getuid()), uint(os.Getgid())}
+	dirAttrs := fs.FileAttrs{Mode: os.ModeDir | 0755, UserIds: usr, FileTimes: times}
 	dirAttrs2 := dirAttrs
 	dirAttrs2.Mode = os.ModeDir | 0775
-	fileAttrsA := fs.NodeAttrs{NodeInfo: fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0640, UserIds: idutils.UserIds{0, 0}, Size: 1, FileTimes: times}}}
-	fileAttrsB := fs.NodeAttrs{NodeInfo: fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0755, UserIds: idutils.UserIds{0, 0}, Size: 3, FileTimes: times}}}
-	linkAttrs := fs.FileAttrs{Mode: os.ModeSymlink, UserIds: idutils.UserIds{0, 0}, FileTimes: times}
-	fifoAttrs := fs.DeviceAttrs{fs.FileAttrs{Mode: syscall.S_IFIFO | 0640, UserIds: idutils.UserIds{0, 0}, FileTimes: times}, 1, 1}
+	fileAttrsA := fs.NodeAttrs{NodeInfo: fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0640, UserIds: usr, Size: 1, FileTimes: times}}}
+	fileAttrsB := fs.NodeAttrs{NodeInfo: fs.NodeInfo{fs.TypeFile, fs.FileAttrs{Mode: 0755, UserIds: usr, Size: 3, FileTimes: times}}}
+	linkAttrs := fs.FileAttrs{Mode: os.ModeSymlink, UserIds: usr, FileTimes: times}
+	fifoAttrs := fs.DeviceAttrs{fs.FileAttrs{Mode: syscall.S_IFIFO | 0640, UserIds: usr, FileTimes: times}, 1, 1}
 	fileA := source.NewSourceFile(fs.NewReadableBytes([]byte("a")), fileAttrsA.FileAttrs)
 	fileB := source.NewSourceFile(fs.NewReadableBytes([]byte("bbb")), fileAttrsB.FileAttrs)
 	err = testee.Dir("/", "", dirAttrs2)
@@ -72,7 +73,7 @@ func TestTarWriter(t *testing.T) {
 	require.NoError(t, err)
 	_, err = testee.File("/dir/file2", fileB)
 	require.NoError(t, err)
-	err = testee.Dir("/dir/ndir", "", fs.FileAttrs{Mode: os.ModeDir | 0754, UserIds: idutils.UserIds{0, 0}})
+	err = testee.Dir("/dir/ndir", "", fs.FileAttrs{Mode: os.ModeDir | 0754, UserIds: usr})
 	require.NoError(t, err)
 	_, err = testee.File("/dir/ndir/nestedfile", fileA)
 	require.NoError(t, err)

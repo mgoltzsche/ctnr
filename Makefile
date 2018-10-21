@@ -2,7 +2,7 @@ BUILDIMAGE=local/ctnr-build:latest
 LITEIDEIMAGE=local/ctnr-build:liteide
 DOCKER=docker
 USER=$(shell [ '${DOCKER}' = docker ] && id -u || echo 0)
-DOCKERRUN=${DOCKER} run --name ctnr-build --rm -v "${REPODIR}:/work" -w /work -u ${USER}:${USER}
+DOCKERRUN=${DOCKER} run --name ctnr-build --rm -v "${REPODIR}:/work" -w /work
 
 REPODIR=$(shell pwd)
 GOPATH=${REPODIR}/build
@@ -29,7 +29,7 @@ export PATH := dist/bin:$(PATH)
 all: binary-static cni-plugins-static
 
 binary-static: .buildimage
-	${DOCKERRUN} ${BUILDIMAGE} make binary BUILDTAGS="${BUILDTAGS_STATIC}" LDFLAGS="${LDFLAGS_STATIC}"
+	${DOCKERRUN} -u ${USER}:${USER} ${BUILDIMAGE} make binary BUILDTAGS="${BUILDTAGS_STATIC}" LDFLAGS="${LDFLAGS_STATIC}" && chown -R ${USER}:${USER} .
 
 binary: dependencies
 	# Building application:
