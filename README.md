@@ -1,4 +1,5 @@
-# ctnr
+ctnr [![Build Status](https://travis-ci.org/mgoltzsche/ctnr.svg?branch=master)](https://travis-ci.org/mgoltzsche/ctnr)
+=
 
 ctnr is a CLI built on top of [runc](https://github.com/opencontainers/runc)
 to manage and build OCI images as well as containers.  
