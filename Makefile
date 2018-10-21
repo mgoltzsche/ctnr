@@ -35,6 +35,7 @@ binary: dependencies
 	# Building application:
 	GOPATH="${GOPATH}" \
 	go build -o dist/bin/${BINARY} -a -ldflags "${LDFLAGS}" -tags "${BUILDTAGS}" "${PKGNAME}"
+	ln -s bin/${BINARY} dist/${BINARY}.linux-amd64
 
 generate: dependencies
 	GOPATH="${GOPATH}" \
