@@ -40,7 +40,7 @@ Container execution as unprivileged user is limited:
 **Container networks cannot be configured.**
 As a result in a restrictive environment without root access only the host network can be used.
 As a workaround ports could be mapped to higher free ranges on the host network and back using [PRoot](https://github.com/rootless-containers/PRoot)*.
-The best solution so far would be a tun/tap network device that is setup by root and then can be used by an unprivileged container.
+Alternatively a daemon process could manage networks for unprivileged users.
 
 
 **Inside the container a process' or file's user cannot be changed.**
@@ -183,7 +183,7 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 - system.Context aware processes, unpacking/packing images
 - improved multi-user support (store per user group, file permissions, lock location)
 - CLI integration tests
-- rootless networking (using proot port mapping or tun/tap CNI plugin)
+- rootless networking (using proot port mapping or a network daemon run by root)
 - separate OCI CNI network hook binary
 - support starting a rootless container with a user other than 0 (using proot)
 - health check
