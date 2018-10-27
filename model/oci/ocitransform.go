@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mgoltzsche/ctnr/bundle"
 	"github.com/mgoltzsche/ctnr/model"
 	"github.com/mgoltzsche/ctnr/pkg/generate"
 	"github.com/mgoltzsche/ctnr/pkg/idutils"
@@ -22,7 +23,7 @@ const (
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.ctnr.bundle.id"
 )
 
-func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, prootPath string, spec *generate.SpecBuilder) (err error) {
+func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, prootPath string, spec *bundle.BundleBuilder) (err error) {
 	defer func() {
 		err = errors.Wrap(err, "generate OCI bundle spec")
 	}()
@@ -33,7 +34,7 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 
 	sp := spec.Generator.Spec()
 
-	if err = ToSpecProcess(&service.Process, prootPath, spec); err != nil {
+	if err = ToSpecProcess(&service.Process, prootPath, spec.SpecBuilder); err != nil {
 		return
 	}
 
@@ -227,70 +228,70 @@ func mountHostFile(spec *specs.Spec, file string) error {
 	return nil
 }
 
-func ToSpecProcess(p *model.Process, prootPath string, spec *generate.SpecBuilder) (err error) {
+func ToSpecProcess(p *model.Process, prootPath string, builder *generate.SpecBuilder) (err error) {
 	// Entrypoint & command
 	if p.Entrypoint != nil {
-		spec.SetProcessEntrypoint(p.Entrypoint)
-		spec.SetProcessCmd([]string{})
+		builder.SetProcessEntrypoint(p.Entrypoint)
+		builder.SetProcessCmd([]string{})
 	}
 	if p.Command != nil {
-		spec.SetProcessCmd(p.Command)
+		builder.SetProcessCmd(p.Command)
 	}
 	// Add proot
 	if p.PRoot {
 		if prootPath == "" {
 			return errors.New("proot enabled but no proot path configured")
 		}
-		spec.SetPRootPath(prootPath)
+		builder.SetPRootPath(prootPath)
 	}
 
 	// Env
 	for k, v := range p.Environment {
-		spec.AddProcessEnv(k, v)
+		builder.AddProcessEnv(k, v)
 	}
 
 	// Working dir
 	if p.Cwd != "" {
-		spec.SetProcessCwd(p.Cwd)
+		builder.SetProcessCwd(p.Cwd)
 	}
 
 	// Terminal
-	spec.SetProcessTerminal(p.Tty)
+	builder.SetProcessTerminal(p.Tty)
 
 	// User
 	if p.User != nil {
 		// TODO: map additional groups
-		spec.SetProcessUser(idutils.User{p.User.User, p.User.Group})
+		builder.SetProcessUser(idutils.User{p.User.User, p.User.Group})
 	}
 
 	// Capabilities
 	if p.CapAdd != nil {
 		for _, addCap := range p.CapAdd {
 			if strings.ToUpper(addCap) == "ALL" {
-				spec.AddAllProcessCapabilities()
+				builder.AddAllProcessCapabilities()
 				break
-			} else if err = spec.AddProcessCapability("CAP_" + addCap); err != nil {
+			} else if err = builder.AddProcessCapability("CAP_" + addCap); err != nil {
 				return
 			}
 		}
 		for _, dropCap := range p.CapDrop {
-			if err = spec.DropProcessCapability("CAP_" + dropCap); err != nil {
+			if err = builder.DropProcessCapability("CAP_" + dropCap); err != nil {
 				return
 			}
 		}
 	}
 
-	spec.SetProcessApparmorProfile(p.ApparmorProfile)
-	spec.SetProcessNoNewPrivileges(p.NoNewPrivileges)
-	spec.SetProcessSelinuxLabel(p.SelinuxLabel)
+	builder.SetProcessApparmorProfile(p.ApparmorProfile)
+	builder.SetProcessNoNewPrivileges(p.NoNewPrivileges)
+	builder.SetProcessSelinuxLabel(p.SelinuxLabel)
 	if p.OOMScoreAdj != nil {
-		spec.SetProcessOOMScoreAdj(*p.OOMScoreAdj)
+		builder.SetProcessOOMScoreAdj(*p.OOMScoreAdj)
 	}
 
 	return nil
 }
 
-func toMounts(mounts []model.VolumeMount, res model.ResourceResolver, spec *generate.SpecBuilder) error {
+func toMounts(mounts []model.VolumeMount, res model.ResourceResolver, spec *bundle.BundleBuilder) error {
 	for _, m := range mounts {
 		src, err := res.ResolveMountSource(m)
 		if err != nil {

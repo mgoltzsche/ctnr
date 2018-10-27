@@ -71,7 +71,7 @@ func (b *Bundle) loadSpec() (r rspecs.Spec, err error) {
 func (b *Bundle) Image() *digest.Digest {
 	if imgIdb, err := ioutil.ReadFile(b.imageFile()); err == nil {
 		d, err := digest.Parse(strings.Trim(string(imgIdb), " \n"))
-		if err == nil {
+		if err == nil && d.Validate() == nil {
 			return &d
 		}
 	}
@@ -137,25 +137,23 @@ func OpenLockedBundle(bundle Bundle) (*LockedBundle, error) {
 		return nil, err
 	}
 	if err := bundle.resetExpiryTime(); err != nil {
+		lck.Unlock()
 		return nil, errors.Wrap(err, "lock bundle")
 	}
 	return &LockedBundle{bundle, nil, nil, lck}, nil
 }
 
-func CreateLockedBundle(dir string, spec SpecGenerator, image BundleImage, update bool) (r *LockedBundle, err error) {
+func CreateLockedBundle(dir string, update bool) (r *LockedBundle, err error) {
 	defer exterrors.Wrapd(&err, "create bundle")
 
 	// Create bundle
-	id := ""
-	if id == "" {
-		id = filepath.Base(dir)
-	}
+	id := filepath.Base(dir)
 	bundle := Bundle{id, dir, time.Now()}
 
 	// Lock bundle
 	lck, err := lockBundle(&bundle)
 	if err != nil {
-		return nil, err
+		return
 	}
 	r = &LockedBundle{bundle, nil, nil, lck}
 	defer func() {
@@ -167,16 +165,13 @@ func CreateLockedBundle(dir string, spec SpecGenerator, image BundleImage, updat
 	// Create or update bundle
 	err = os.Mkdir(dir, 0770)
 	exists := err != nil && os.IsExist(err)
-	updateRootfs := true
 
 	if exists {
 		if !update {
-			return r, errors.Errorf("bundle %q directory already exists", id)
+			return r, errors.Errorf("bundle %q already exists", id)
 		}
-		lastImageId := bundle.Image()
-		rootfs := filepath.Join(dir, "rootfs")
-		if _, e := os.Stat(rootfs); e == nil && (lastImageId == nil && image == nil || lastImageId != nil && *lastImageId == image.ID()) {
-			updateRootfs = false
+		if err = bundle.resetExpiryTime(); err != nil {
+			return
 		}
 	} else {
 		if err != nil {
@@ -191,17 +186,9 @@ func CreateLockedBundle(dir string, spec SpecGenerator, image BundleImage, updat
 		}
 	}
 
-	// Update rootfs if not exists or image changed
-	if updateRootfs {
-		if err = r.UpdateRootfs(image); err != nil {
-			return
-		}
-	}
-
-	// TODO: resolve user/group names here
-	// Write spec
-	if err = r.SetSpec(spec); err != nil {
-		return
+	r.spec = &rspecs.Spec{
+		Root:        &rspecs.Root{Path: "rootfs"},
+		Annotations: map[string]string{ANNOTATION_BUNDLE_ID: id},
 	}
 
 	return
@@ -235,11 +222,30 @@ func (b *LockedBundle) Spec() (*rspecs.Spec, error) {
 	return b.spec, nil
 }
 
+// Returns the bundle's image ID
+func (b *LockedBundle) Image() *digest.Digest {
+	if b.image == nil {
+		b.image = b.bundle.Image()
+	}
+	return b.image
+}
+
+func (b *LockedBundle) Delete() (err error) {
+	err = DeleteDirSafely(b.Dir())
+	err = exterrors.Append(err, b.Close())
+	return
+}
+
+// Updates the rootfs if the image changed
 func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
 	var (
-		rootfs = filepath.Join(b.Dir(), "rootfs")
-		imgId  *digest.Digest
+		rootfs    = filepath.Join(b.Dir(), "rootfs")
+		imgId     *digest.Digest
+		lastImgId = b.Image()
 	)
+	if _, e := os.Stat(rootfs); e == nil && (lastImgId == nil && image == nil || lastImgId != nil && *lastImgId == image.ID()) {
+		return // don't update since the bundle is already based on the provided image
+	}
 	if image != nil {
 		id := image.ID()
 		imgId = &id
@@ -253,24 +259,32 @@ func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
 	return b.SetParentImageId(imgId)
 }
 
-func (b *LockedBundle) SetSpec(specgen SpecGenerator) (err error) {
-	spec, err := specgen.Spec(filepath.Join(b.Dir(), "rootfs"))
+func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) (err error) {
+	if imageID == nil {
+		if e := os.Remove(b.bundle.imageFile()); e != nil && !os.IsNotExist(e) {
+			err = errors.New(e.Error())
+		}
+	} else {
+		_, err = atomic.WriteFile(b.bundle.imageFile(), bytes.NewBufferString((*imageID).String()))
+	}
+	if err == nil {
+		b.image = imageID
+	} else {
+		err = errors.Wrapf(err, "set bundle's (%s) parent image id", b.ID())
+	}
+	return
+}
+
+func (b *LockedBundle) SetSpec(spec *rspecs.Spec) (err error) {
 	if err == nil {
 		err = createVolumeDirectories(spec, b.Dir())
 	}
 	if err != nil {
 		return errors.Wrap(err, "set bundle spec")
 	}
-	if spec.Root != nil {
-		spec.Root.Path = "rootfs"
-	}
-	if spec.Annotations == nil {
-		spec.Annotations = map[string]string{}
-	}
-	spec.Annotations[ANNOTATION_BUNDLE_ID] = b.ID()
 	confFile := filepath.Join(b.Dir(), "config.json")
 	if _, err = atomic.WriteJson(confFile, spec); err != nil {
-		err = errors.Wrapf(err, "write bundle %q spec", b.ID())
+		return errors.Wrapf(err, "write bundle %q spec", b.ID())
 	}
 	b.spec = spec
 	return
@@ -303,36 +317,6 @@ func createVolumeDirectories(spec *rspecs.Spec, dir string) (err error) {
 	if err != nil {
 		err = errors.New("volume directories: " + err.Error())
 	}
-	return
-}
-
-// Reads image ID from cached spec
-func (b *LockedBundle) Image() *digest.Digest {
-	if b.image == nil {
-		b.image = b.bundle.Image()
-	}
-	return b.image
-}
-
-func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) (err error) {
-	if imageID == nil {
-		if e := os.Remove(b.bundle.imageFile()); e != nil && !os.IsNotExist(e) {
-			err = errors.New(e.Error())
-		}
-	} else {
-		_, err = atomic.WriteFile(b.bundle.imageFile(), bytes.NewBufferString((*imageID).String()))
-	}
-	if err == nil {
-		b.image = imageID
-	} else {
-		err = errors.Wrap(err, "set bundle's parent image id")
-	}
-	return
-}
-
-func (b *LockedBundle) Delete() (err error) {
-	err = DeleteDirSafely(b.Dir())
-	err = exterrors.Append(err, b.Close())
 	return
 }
 

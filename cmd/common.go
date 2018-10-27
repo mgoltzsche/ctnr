@@ -255,32 +255,34 @@ func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b 
 		bundleId = ""
 	}
 
-	// Load image and bundle builder
-	var builder *bundle.BundleBuilder
-	if service.Image == "" {
-		builder = bundle.Builder(bundleId)
-	} else {
-		var img image.Image
-		if img, err = image.GetImage(istore, service.Image); err != nil {
-			return
-		}
-		if builder, err = bundle.BuilderFromImage(bundleId, image.NewUnpackableImage(&img, istore)); err != nil {
-			return
-		}
-	}
-
-	// Generate config.json
-	if err = oci.ToSpec(service, res, flagRootless, flagPRootPath, builder.SpecBuilder); err != nil {
-		return
-	}
-
 	// Create bundle
 	if bundleDir != "" {
-		b, err = builder.Build(bundleDir, service.BundleUpdate)
+		b, err = bundle.CreateLockedBundle(bundleDir, service.BundleUpdate)
 	} else {
-		b, err = store.CreateBundle(builder, service.BundleUpdate)
+		b, err = store.CreateBundle(bundleId, service.BundleUpdate)
 	}
-	return
+	defer func() {
+		if err != nil {
+			b.Delete()
+		}
+	}()
+
+	// Apply image
+	builder := bundle.Builder(b.ID())
+	if service.Image != "" {
+		var img image.Image
+		if img, err = image.GetImage(istore, service.Image); err != nil {
+			return nil, err
+		}
+		builder.SetImage(image.NewUnpackableImage(&img, istore))
+	}
+
+	// Apply config.json
+	if err = oci.ToSpec(service, res, flagRootless, flagPRootPath, builder); err != nil {
+		return nil, err
+	}
+
+	return b, builder.Build(b)
 }
 
 func isFile(file string) bool {

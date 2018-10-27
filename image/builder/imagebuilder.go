@@ -188,29 +188,30 @@ func (b *ImageBuilder) initBundle() (err error) {
 		return
 	}
 
-	// Derive bundle from image
-	var bb *bundle.BundleBuilder
-	if b.image == nil {
-		bb = bundle.Builder("")
-	} else if bb, err = bundle.BuilderFromImage("", image.NewUnpackableImage(b.image, b.images)); err != nil {
-		return errors.Wrap(err, "image builder")
+	// Create locked bundle
+	newBundle, err := b.bundles.CreateBundle("", false)
+	if err != nil {
+		return
+	}
+	b.bundle = newBundle
+	b.lockedBundles = append(b.lockedBundles, newBundle)
+
+	// Derive bundle spec from image
+	builder := bundle.Builder(newBundle.ID())
+	if b.image != nil {
+		builder.SetImage(image.NewUnpackableImage(b.image, b.images))
 	}
 	if b.rootless {
-		bb.ToRootless()
+		builder.ToRootless()
 	}
 	if b.proot != "" {
-		bb.SetPRootPath(b.proot)
+		builder.SetPRootPath(b.proot)
 	}
 	// TODO: use separate default network when not in rootless mode
-	bb.UseHostNetwork()
-	bb.SetProcessTerminal(false)
-	bb.SetLinuxSeccompDefault()
-	bundle, err := b.bundles.CreateBundle(bb, false)
-	if err == nil {
-		b.bundle = bundle
-		b.lockedBundles = append(b.lockedBundles, bundle)
-	}
-	return
+	builder.UseHostNetwork()
+	builder.SetProcessTerminal(false)
+	builder.SetLinuxSeccompDefault()
+	return builder.Build(newBundle)
 }
 
 func (b *ImageBuilder) initContainer() (err error) {
@@ -731,16 +732,17 @@ func (b *ImageBuilder) resolveUser(u *idutils.User) (usrp *idutils.UserIds, err 
 	}
 
 	// TODO: better resolve user using bundle's rootfs only when available, otherwise image's rootfs
-	if err = b.initBundle(); err == nil {
-		s, _ := b.bundle.Spec()
-		if s.Root != nil {
-			rootfs := filepath.Join(b.bundle.Dir(), s.Root.Path)
-			user, err = u.Resolve(rootfs)
-		} else {
-			err = errors.New("no rootfs available")
-		}
+	if err = b.initBundle(); err != nil {
+		return &user, errors.Wrap(err, "resolve user name")
 	}
-	return &user, errors.Wrap(err, "resolve user name")
+	s, _ := b.bundle.Spec()
+	if s.Root != nil {
+		rootfs := filepath.Join(b.bundle.Dir(), s.Root.Path)
+		user, err = u.Resolve(rootfs)
+	} else {
+		err = errors.New("no rootfs available to resolve user/group name from")
+	}
+	return &user, err
 }
 
 func (b *ImageBuilder) commitConfig(createdBy string) (err error) {

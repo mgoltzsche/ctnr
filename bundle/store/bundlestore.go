@@ -47,8 +47,18 @@ func (s *BundleStore) Bundle(id string) (r bundle.Bundle, err error) {
 	return bundle.NewBundle(filepath.Join(s.dir, id))
 }
 
-func (s *BundleStore) CreateBundle(builder *bundle.BundleBuilder, update bool) (b *bundle.LockedBundle, err error) {
-	return builder.Build(filepath.Join(s.dir, builder.GetID()), update)
+func (s *BundleStore) CreateBundle(id string, update bool) (b *bundle.LockedBundle, err error) {
+	dir := filepath.Join(s.dir, id)
+	if id == "" {
+		if err = os.MkdirAll(s.dir, 0770); err != nil {
+			return nil, errors.Wrap(err, "create bundle")
+		}
+		if dir, err = ioutil.TempDir(s.dir, ""); err != nil {
+			return nil, errors.Wrap(err, "create bundle")
+		}
+		update = true
+	}
+	return bundle.CreateLockedBundle(dir, update)
 }
 
 // Deletes all bundles that have not been used longer than the given TTL.

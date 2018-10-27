@@ -17,6 +17,7 @@ package generate
 import (
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,12 @@ func NewSpecBuilder() SpecBuilder {
 }
 
 func FromSpec(spec *rspecs.Spec) SpecBuilder {
+	user := idutils.User{"0", "0"}
+	if spec.Process != nil {
+		user.User = strconv.Itoa(int(spec.Process.User.UID))
+		user.Group = strconv.Itoa(int(spec.Process.User.GID))
+		// TODO: map additional gids
+	}
 	return SpecBuilder{Generator: generate.NewFromSpec(spec)}
 }
 
@@ -238,6 +245,7 @@ func (b *SpecBuilder) ApplyImage(img *ispecs.Image) {
 	}
 }
 
+// Returns the generated spec with resolved user/group names
 func (b *SpecBuilder) Spec(rootfs string) (spec *rspecs.Spec, err error) {
 	usr, err := b.user.Resolve(rootfs)
 	if err != nil {
