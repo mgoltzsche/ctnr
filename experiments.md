@@ -1,12 +1,13 @@
 # Experiments with nested containers
 
-... on an ubuntu 16.04 host
+... in the repository directory on an ubuntu 16.04 host.
 
 
 ## Run ctnr container inside privileged docker container
 ```
 docker run -ti --rm --privileged \
-	-v $(pwd)/dist/bin/ctnr:/bin/ctnr \
+	-v "$(pwd)/dist/bin/ctnr:/bin/ctnr" \
+	-v "$(pwd)/image-policy-example.json:/etc/containers/policy.json" \
 	alpine:3.7
 > ctnr run -t --network=host docker://alpine:3.7
 ```
@@ -15,7 +16,9 @@ docker run -ti --rm --privileged \
 ## Run ctnr container inside unprivileged user's privileged ctnr container
 ```
 dist/bin/ctnr run -t --privileged \
-	-v $(pwd)/dist/bin/ctnr:/bin/ctnr \
+	-v "$(pwd)/dist/bin/ctnr:/bin/ctnr" \
+	-v "$(pwd)/image-policy-example.json:/etc/containers/policy.json" \
+	--image-policy=image-policy-example.json \
 	docker://alpine:3.7
 > ctnr run -t --rootless --network=host docker://alpine:3.7
 ```
@@ -24,7 +27,8 @@ dist/bin/ctnr run -t --privileged \
 ## Not working: Run ctnr container inside unprivileged docker container
 ```
 docker run -ti --rm \
-	-v $(pwd)/dist/bin/ctnr:/bin/ctnr \
+	-v "$(pwd)/dist/bin/ctnr:/bin/ctnr" \
+	-v "$(pwd)/image-policy-example.json:/etc/containers/policy.json" \
 	alpine:3.7
 > ctnr run  -ti --rootless --network=host docker://alpine:3.7
 ```
@@ -40,6 +44,7 @@ docker run -ti --rm --user=`id -u`:`id -g` \
 	-v /sys/fs/cgroup:/sys/fs/cgroup:ro \
 	-v "$HOME/.ctnr:/.ctnr" \
 	-v "$(pwd)/dist/bin:/usr/local/bin" \
+	-v "$(pwd)/image-policy-example.json:/etc/containers/policy.json" \
 	debian:9 /bin/bash
 $ ctnr --state-dir /tmp/ctnr run --verbose -ti -b test --update --rootless --no-new-keyring --no-pivot docker://alpine:3.8
 ```

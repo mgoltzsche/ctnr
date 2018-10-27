@@ -104,7 +104,7 @@ func init() {
 	if uid != 0 {
 		flagStateDir = "/run/user/" + strconv.Itoa(uid) + "/ctnr"
 	}
-	flagImagePolicy = "insecure"
+	flagImagePolicy = "reject"
 	policyFile := "/etc/containers/policy.json"
 	if _, err = os.Stat(policyFile); err == nil {
 		flagImagePolicy = policyFile

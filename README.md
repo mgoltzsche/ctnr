@@ -77,7 +77,7 @@ make ide
 
 ## Examples
 
-The following examples assume your policy accepts docker images or you have copied [policy-example.json](policy-example.json) to `/etc/containers/policy.json` on your host.
+The following examples assume your policy accepts docker images or you have copied [image-policy-example.json](image-policy-example.json) to `/etc/containers/policy.json` on your host.
 
 ### Create and run container from Docker image
 ```
