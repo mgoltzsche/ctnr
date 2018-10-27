@@ -20,17 +20,14 @@ type BundleStore struct {
 	info  log.FieldLogger
 }
 
-func NewBundleStore(dir string, info log.FieldLogger, debug log.FieldLogger) (s *BundleStore, err error) {
-	if dir, err = filepath.Abs(dir); err == nil {
-		err = os.MkdirAll(dir, 0755)
-	}
-	return &BundleStore{dir, debug, info}, errors.Wrap(err, "init bundle store")
+func NewBundleStore(dir string, info log.FieldLogger, debug log.FieldLogger) *BundleStore {
+	return &BundleStore{dir, debug, info}
 }
 
 func (s *BundleStore) Bundles() (l []bundle.Bundle, err error) {
-	fl, err := ioutil.ReadDir(s.dir)
+	fl, e := ioutil.ReadDir(s.dir)
 	l = make([]bundle.Bundle, 0, len(fl))
-	if err != nil {
+	if e != nil && !os.IsNotExist(e) {
 		return l, errors.Wrap(err, "bundles")
 	}
 	for _, f := range fl {
@@ -50,7 +47,7 @@ func (s *BundleStore) Bundle(id string) (r bundle.Bundle, err error) {
 	return bundle.NewBundle(filepath.Join(s.dir, id))
 }
 
-func (s *BundleStore) CreateBundle(builder *bundle.BundleBuilder, update bool) (*bundle.LockedBundle, error) {
+func (s *BundleStore) CreateBundle(builder *bundle.BundleBuilder, update bool) (b *bundle.LockedBundle, err error) {
 	return builder.Build(filepath.Join(s.dir, builder.GetID()), update)
 }
 

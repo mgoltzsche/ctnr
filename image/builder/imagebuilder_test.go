@@ -188,8 +188,7 @@ func withNewTestee(t *testing.T, tmpDir string, loggers extlog.Loggers, assertio
 
 	// Init bundle store
 	bundleDir := filepath.Join(tmpDir, "bundle-store")
-	bundleStore, err := bstore.NewBundleStore(bundleDir, loggers.Info, loggers.Debug)
-	require.NoError(t, err)
+	bundleStore := bstore.NewBundleStore(bundleDir, loggers.Info, loggers.Debug)
 
 	// Init testee
 	builderTmpDir := filepath.Join(tmpDir, "tmp")

@@ -36,7 +36,7 @@ func NewExclusiveDirLocker(dir string) (r ExclusiveLocker, err error) {
 		return nil, errors.Wrap(err, "init lock directory")
 	}
 	l := exclusiveLocker{}
-	if l.lockfile, err = LockFile(filepath.Join(dir, "exclusive.lock")); err != nil {
+	if l.lockfile, err = LockFile(filepath.Join(dir, ".exclusive.lock")); err != nil {
 		return
 	}
 	l.dir = dir
@@ -129,7 +129,7 @@ func (l *sharedLocker) Lock() (err error) {
 	defer l.exclusive.Unlock()
 
 	// Register shared lock file
-	file, err := ioutil.TempFile(l.dir, fmt.Sprintf("sharedlock-%d-", os.Getpid()))
+	file, err := ioutil.TempFile(l.dir, fmt.Sprintf(".sharedlock-%d-", os.Getpid()))
 	if err != nil {
 		err = errors.Wrap(err, "shared lock")
 		return
