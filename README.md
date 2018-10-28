@@ -189,7 +189,7 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 - health check
 - improved Docker Compose support
 - service discovery integration (hook / DNS; consul, etcd)
-- daemon mode
+- detached mode
 - systemd integration (cgroup, startup notification)
 - **1.0 release**
 - advanced logging

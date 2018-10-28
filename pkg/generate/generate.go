@@ -61,6 +61,7 @@ func (b *SpecBuilder) ToRootless() {
 
 func (b *SpecBuilder) UseHostNetwork() {
 	b.RemoveLinuxNamespace(rspecs.NetworkNamespace)
+	b.SetHostname("") // empty hostname results in host's hostname
 	opts := []string{"bind", "mode=0444", "nosuid", "noexec", "nodev", "ro"}
 	b.AddBindMount("/etc/hosts", "/etc/hosts", opts)
 	b.AddBindMount("/etc/resolv.conf", "/etc/resolv.conf", opts)

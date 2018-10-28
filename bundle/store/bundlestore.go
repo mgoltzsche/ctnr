@@ -50,7 +50,7 @@ func (s *BundleStore) Bundle(id string) (r bundle.Bundle, err error) {
 func (s *BundleStore) CreateBundle(id string, update bool) (b *bundle.LockedBundle, err error) {
 	dir := filepath.Join(s.dir, id)
 	if id == "" {
-		if err = os.MkdirAll(s.dir, 0770); err != nil {
+		if err = os.MkdirAll(s.dir, 0750); err != nil {
 			return nil, errors.Wrap(err, "create bundle")
 		}
 		if dir, err = ioutil.TempDir(s.dir, ""); err != nil {

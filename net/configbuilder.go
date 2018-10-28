@@ -81,17 +81,10 @@ func (b *ConfigFileGenerator) AddDnsOptions(opts []string) {
 	}
 }
 
-func (b *ConfigFileGenerator) WriteConfigFiles(rootfs string) error {
-	// Create /etc dir in bundle's rootfs
-	etcDir := filepath.Join(rootfs, "etc")
-	if _, err := os.Stat(etcDir); os.IsNotExist(err) {
-		if err = os.Mkdir(etcDir, 0755); err != nil {
-			return err
-		}
-	}
-	hostnameFile := filepath.Join(etcDir, "hostname")
-	hostsFile := filepath.Join(etcDir, "hosts")
-	resolvConfFile := filepath.Join(etcDir, "resolv.conf")
+func (b *ConfigFileGenerator) WriteConfigFiles(rootfs, overlay string) error {
+	hostnameFile := filepath.Join(overlay, "etc", "hostname")
+	hostsFile := filepath.Join(overlay, "etc", "hosts")
+	resolvConfFile := filepath.Join(overlay, "etc", "resolv.conf")
 
 	// Write /etc/hostname
 	hostname := b.hostname
@@ -102,11 +95,13 @@ func (b *ConfigFileGenerator) WriteConfigFiles(rootfs string) error {
 	}
 
 	// Write /etc/resolv.conf if value set
+	// TODO: apply existing resolv.conf first
 	if err := b.writeResolvConf(resolvConfFile); err != nil {
 		return err
 	}
 
 	// Write /etc/hosts if not empty
+	// TODO: apply existing hosts first
 	return b.writeHosts(hostsFile)
 }
 
@@ -181,7 +176,11 @@ func (b *ConfigFileGenerator) writeHosts(dest string) error {
 func writeFile(dest, content string) error {
 	f, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			errors.Errorf("file %s does not exist. needs to exist and bind mounted into the containers's rootfs", dest)
+		} else {
+			return err
+		}
 	}
 	if _, err := f.Write([]byte(content)); err != nil {
 		f.Close()

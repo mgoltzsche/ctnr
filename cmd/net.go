@@ -101,7 +101,9 @@ func runNetInit(cmd *cobra.Command, args []string) (err error) {
 	// Generate hostname, hosts, resolv.conf files
 	cfg.SetHostname(spec.Hostname)
 	applyArgs(&cfg)
-	return cfg.WriteConfigFiles(filepath.Join(state.Bundle, spec.Root.Path))
+	rootfs := filepath.Join(state.Bundle, spec.Root.Path)
+	mounts := filepath.Join(state.Bundle, "mount")
+	return cfg.WriteConfigFiles(rootfs, mounts)
 }
 
 func runNetRemove(cmd *cobra.Command, args []string) (err error) {

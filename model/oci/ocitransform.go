@@ -136,20 +136,23 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 		return errors.New("transform: no networks supported in rootless mode")
 	}
 
-	// Use host networks by removing 'network' namespace
+	// Use host network by removing 'network' namespace
 	if useHostNetwork {
 		spec.UseHostNetwork()
 	} else {
 		spec.AddOrReplaceLinuxNamespace(specs.NetworkNamespace, "")
 	}
 
-	// Add hostname. Empty string results in host's hostname
-	if service.Hostname != "" || useHostNetwork {
+	// Add hostname
+	if service.Hostname != "" {
 		spec.SetHostname(service.Hostname)
 	}
 
 	// Add network hook
 	if len(networks) > 0 {
+		spec.AddBindMountConfig("/etc/hostname")
+		spec.AddBindMountConfig("/etc/hosts")
+		spec.AddBindMountConfig("/etc/resolv.conf")
 		hook, err := generate.NewHookBuilderFromSpec(sp)
 		if err != nil {
 			return err
