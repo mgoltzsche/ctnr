@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mgoltzsche/ctnr/bundle"
+	"github.com/mgoltzsche/ctnr/bundle/builder"
 	"github.com/mgoltzsche/ctnr/image"
 	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
 	"github.com/mgoltzsche/ctnr/pkg/fs"
@@ -139,20 +140,32 @@ func (b *ImageBuilder) deleteBundle(lb *bundle.LockedBundle) error { return lb.D
 
 func (b *ImageBuilder) Close() (err error) {
 	succeededBundles := b.lockedBundles
+	b.lockedBundles = nil
+	fmt.Println("###### CLOSE: ", succeededBundles)
 	var failedBundle *bundle.LockedBundle
 	hasFailedBundle := b.bundle == nil && len(succeededBundles) > 0
 	if hasFailedBundle {
 		failedBundle = succeededBundles[len(succeededBundles)-1]
 		succeededBundles = succeededBundles[:len(succeededBundles)-1]
 	}
+	if b.bundle != nil {
+		fmt.Println("CLOSE LAST BUNDLE", b.bundle.ID())
+	}
 	err = exterrors.Append(err, b.resetBundle())
 	closeBundle := b.closeBundle
 	if b.removeSucceededBundles {
 		closeBundle = b.deleteBundle
 	}
+	fmt.Println("###### 1")
 	for _, lb := range succeededBundles {
+		// TODO: do not unlock bundle when container is closed but
+		// - create container immediately (also in runc impl),
+		// - unlock bundle after creation and
+		// - consider running containers in bundle gc
+		fmt.Println("CLOSE", lb.ID())
 		err = exterrors.Append(err, closeBundle(lb))
 	}
+	fmt.Println("###### 2")
 	if failedBundle != nil {
 		closeBundle = b.closeBundle
 		if b.removeFailedBundle {
@@ -160,7 +173,6 @@ func (b *ImageBuilder) Close() (err error) {
 		}
 		err = exterrors.Append(err, closeBundle(failedBundle))
 	}
-	b.lockedBundles = nil
 	for _, imgfs := range b.tmpImgFsDirs {
 		err = exterrors.Append(err, bundle.DeleteDirSafely(imgfs))
 	}
@@ -197,7 +209,7 @@ func (b *ImageBuilder) initBundle() (err error) {
 	b.lockedBundles = append(b.lockedBundles, newBundle)
 
 	// Derive bundle spec from image
-	builder := bundle.Builder(newBundle.ID())
+	builder := builder.Builder(newBundle.ID())
 	if b.image != nil {
 		builder.SetImage(image.NewUnpackableImage(b.image, b.images))
 	}

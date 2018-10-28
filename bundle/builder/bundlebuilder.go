@@ -1,24 +1,24 @@
-package bundle
+package builder
 
 import (
 	"os"
 	"path/filepath"
 
 	"github.com/cyphar/filepath-securejoin"
-	"github.com/mgoltzsche/ctnr/pkg/generate"
+	"github.com/mgoltzsche/ctnr/bundle"
 	"github.com/openSUSE/umoci/pkg/fseval"
 	"github.com/pkg/errors"
 )
 
 type BundleBuilder struct {
 	id string
-	*generate.SpecBuilder
-	image        BundleImage
+	*SpecBuilder
+	image        bundle.BundleImage
 	managedFiles map[string]bool
 }
 
 func Builder(id string) *BundleBuilder {
-	specgen := generate.NewSpecBuilder()
+	specgen := NewSpecBuilder()
 	specgen.SetRootPath("rootfs")
 	b := &BundleBuilder{"", &specgen, nil, map[string]bool{}}
 	b.SetID(id)
@@ -31,10 +31,10 @@ func (b *BundleBuilder) SetID(id string) {
 	}
 	b.id = id
 	b.SetHostname(id)
-	b.AddAnnotation(ANNOTATION_BUNDLE_ID, id)
+	b.AddAnnotation(bundle.ANNOTATION_BUNDLE_ID, id)
 }
 
-func (b *BundleBuilder) SetImage(image BundleImage) {
+func (b *BundleBuilder) SetImage(image bundle.BundleImage) {
 	b.ApplyImage(image.Config())
 	b.image = image
 }
@@ -48,7 +48,7 @@ func (b *BundleBuilder) AddBindMountConfig(path string) {
 	b.AddBindMount(filepath.Join("mount", path), path, opts)
 }
 
-func (b *BundleBuilder) Build(bundle *LockedBundle) (err error) {
+func (b *BundleBuilder) Build(bundle *bundle.LockedBundle) (err error) {
 	// Prepare rootfs
 	if err = bundle.UpdateRootfs(b.image); err != nil {
 		return errors.Wrap(err, "build bundle")

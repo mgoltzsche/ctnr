@@ -167,32 +167,11 @@ func runBundleRun(cmd *cobra.Command, args []string) (err error) {
 		return usageError("Exactly one argument required")
 	}
 
-	containers, err := newContainerManager()
-	if err != nil {
-		return err
-	}
-
 	b, err := bundleByIdOrDir(args[0])
 	if err != nil {
 		return
 	}
-
-	lockedBundle, err := b.Lock()
-	if err != nil {
-		return err
-	}
-	ioe := run.NewStdContainerIO()
-	if flagsBundle.stdin {
-		ioe.Stdin = os.Stdin
-	}
-	c, err := containers.NewContainer(&run.ContainerConfig{
-		Id:             "",
-		Bundle:         lockedBundle,
-		Io:             ioe,
-		NoPivotRoot:    flagsBundle.noPivot,
-		NoNewKeyring:   flagsBundle.noNewKeyring,
-		DestroyOnClose: true,
-	})
+	c, err := containerFromBundle(&b)
 	if err != nil {
 		return
 	}
@@ -221,6 +200,34 @@ func runBundleRun(cmd *cobra.Command, args []string) (err error) {
 	}()
 
 	return c.Wait()
+}
+
+func containerFromBundle(b *bundle.Bundle) (c run.Container, err error) {
+	containers, err := newContainerManager()
+	if err != nil {
+		return
+	}
+	lockedBundle, err := b.Lock()
+	if err != nil {
+		return
+	}
+	defer func() {
+		if e := lockedBundle.Close(); e != nil && err == nil {
+			err = e
+		}
+	}()
+	ioe := run.NewStdContainerIO()
+	if flagsBundle.stdin {
+		ioe.Stdin = os.Stdin
+	}
+	return containers.NewContainer(&run.ContainerConfig{
+		Id:             "",
+		Bundle:         lockedBundle,
+		Io:             ioe,
+		NoPivotRoot:    flagsBundle.noPivot,
+		NoNewKeyring:   flagsBundle.noNewKeyring,
+		DestroyOnClose: true,
+	})
 }
 
 func bundleByIdOrDir(idOrDir string) (b bundle.Bundle, err error) {

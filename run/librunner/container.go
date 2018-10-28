@@ -2,7 +2,6 @@ package librunner
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -34,16 +33,13 @@ func init() {
 type Container struct {
 	process        *Process
 	container      libcontainer.Container
-	id             string
 	destroyOnClose bool
-	bundle         io.Closer
 	log            log.Loggers
 }
 
-func LoadContainer(id string, factory libcontainer.Factory, loggers log.Loggers) (r *Container, err error) {
+func LoadContainer(id string, factory libcontainer.Factory, loggers log.Loggers) (*Container, error) {
 	c, err := factory.Load(id)
 	return &Container{
-		id:        c.ID(),
 		container: c,
 		log:       loggers,
 	}, err
@@ -59,26 +55,25 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	defer exterrors.Wrapd(&err, "new container")
 
 	loggers = loggers.WithField("id", id)
 	loggers.Debug.Println("Creating container")
 
 	spec, err := cfg.Bundle.Spec()
 	if err != nil {
-		return
+		return nil, errors.Wrap(err, "new container")
 	}
 	if spec.Process == nil {
-		return nil, errors.New("bundle spec declares no process to run")
+		return nil, errors.Errorf("new container %s: bundle spec declares no process to run", id)
 	}
 	orgwd, err := os.Getwd()
 	if err != nil {
-		return nil, errors.New(err.Error())
+		return nil, errors.Wrap(err, "new container")
 	}
 
 	// Must change to bundle dir because CreateLibcontainerConfig assumes it is in the bundle directory
 	if err = os.Chdir(cfg.Bundle.Dir()); err != nil {
-		return nil, errors.New("change to bundle directory: " + err.Error())
+		return nil, errors.New("new container: change to bundle directory: " + err.Error())
 	}
 	defer func() {
 		if e := os.Chdir(orgwd); e != nil {
@@ -96,7 +91,7 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 		Rootless:         rootless,
 	})
 	if err != nil {
-		return nil, errors.New(err.Error())
+		return nil, errors.Wrap(err, "create container config")
 	}
 	if spec.Root != nil {
 		if filepath.IsAbs(spec.Root.Path) {
@@ -107,22 +102,21 @@ func NewContainer(cfg *run.ContainerConfig, rootless bool, factory libcontainer.
 	}
 	container, err := factory.Create(id, config)
 	if err != nil {
-		return nil, errors.New(err.Error())
+		return nil, errors.Wrap(err, "create container")
 	}
 
 	r = &Container{
 		container:      container,
-		id:             id,
-		bundle:         cfg.Bundle,
 		destroyOnClose: cfg.DestroyOnClose,
 		log:            loggers,
 	}
 	r.process, err = NewProcess(r, spec.Process, cfg.Io, loggers)
+	err = errors.Wrap(err, "configure container process")
 	return
 }
 
 func (c *Container) ID() string {
-	return c.id
+	return c.container.ID()
 }
 
 func (c *Container) Rootfs() string {
@@ -179,13 +173,6 @@ func (c *Container) Close() (err error) {
 	// Destroy container
 	if c.destroyOnClose {
 		err = exterrors.Append(err, c.Destroy())
-	}
-
-	// Release bundle
-	b := c.bundle
-	if b != nil {
-		err = exterrors.Append(err, b.Close())
-		c.bundle = nil
 	}
 	return
 }

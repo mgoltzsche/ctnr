@@ -15,8 +15,8 @@
 package cmd
 
 import (
+	"github.com/mgoltzsche/ctnr/bundle/builder"
 	"github.com/mgoltzsche/ctnr/model/oci"
-	"github.com/mgoltzsche/ctnr/pkg/generate"
 	"github.com/mgoltzsche/ctnr/run"
 	"github.com/spf13/cobra"
 )
@@ -54,7 +54,7 @@ func runExec(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	spec := generate.NewSpecBuilder()
+	spec := builder.NewSpecBuilder()
 	if err = oci.ToSpecProcess(&service.Process, flagPRootPath, &spec); err != nil {
 		return
 	}

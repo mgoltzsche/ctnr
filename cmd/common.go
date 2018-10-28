@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/mgoltzsche/ctnr/bundle"
+	"github.com/mgoltzsche/ctnr/bundle/builder"
 	"github.com/mgoltzsche/ctnr/image"
 	"github.com/mgoltzsche/ctnr/model"
 	"github.com/mgoltzsche/ctnr/model/oci"
@@ -218,9 +219,7 @@ func createContainer(model *model.Service, res model.ResourceResolver, manager r
 		return
 	}
 	defer func() {
-		if err != nil {
-			err = exterrors.Append(err, bundle.Close())
-		}
+		err = exterrors.Append(err, bundle.Close())
 	}()
 
 	ioe := run.NewStdContainerIO()
@@ -261,6 +260,9 @@ func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b 
 	} else {
 		b, err = store.CreateBundle(bundleId, service.BundleUpdate)
 	}
+	if err != nil {
+		return
+	}
 	defer func() {
 		if err != nil {
 			b.Delete()
@@ -268,7 +270,7 @@ func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b 
 	}()
 
 	// Apply image
-	builder := bundle.Builder(b.ID())
+	builder := builder.Builder(b.ID())
 	if service.Image != "" {
 		var img image.Image
 		if img, err = image.GetImage(istore, service.Image); err != nil {

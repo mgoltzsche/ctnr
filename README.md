@@ -2,7 +2,7 @@ ctnr [![Build Status](https://travis-ci.org/mgoltzsche/ctnr.svg?branch=master)](
 =
 
 ctnr is a CLI built on top of [runc](https://github.com/opencontainers/runc)
-to manage and build OCI images as well as containers.  
+to manage and build OCI images as well as containers on Linux.  
 ctnr aims to ease system container creation and execution as unprivileged user.  
 Also ctnr is a tool to experiment with runc features.
 
@@ -26,10 +26,11 @@ Concerning accessibility, usability and security a rootless container engine has
 - **Containers can be run by unprivileged users.**  
   _Required in restrictive environments and useful for graphical applications._
 - **Container images can be built in almost every Linux environment.**  
-  _More flexibility in unprivileged CI/CD builds - nesting unprivileged containers still doesn't work (see experiments below)._
+  _More flexibility in unprivileged builds - nesting containers is still limited (see [experiments](experiments.md))._
 - **A higher degree and more flexible level of security.**  
   _Less likely for an attacker to gain root access when run as unprivileged user._  
   _User/group-based container access control._
+  _Separation of responsibilities._
 
 
 ### Limitations & challenges
@@ -39,8 +40,8 @@ Container execution as unprivileged user is limited:
 
 **Container networks cannot be configured.**
 As a result in a restrictive environment without root access only the host network can be used.
-As a workaround ports could be mapped to higher free ranges on the host network and back using [PRoot](https://github.com/rootless-containers/PRoot)*.
-Alternatively a daemon process could manage networks for unprivileged users.
+As a workaround ports can be mapped on the host network using [PRoot](https://github.com/rootless-containers/PRoot)*.
+Alternatively a daemon process could manage networks for unprivileged users (TBD).
 
 
 **Inside the container a process' or file's user cannot be changed.**
@@ -56,8 +57,18 @@ For more details see Aleksa Sarai's [summary](https://rootlesscontaine.rs/) of t
 \* _[PRoot](https://github.com/rootless-containers/PRoot) is a binary that hooks its child processes' kernel-space system calls using `ptrace` to simulate them in the user-space. This is more reliable but slower than hooking libc calls using `LD_PRELOAD` as [fakechroot](https://github.com/dex4er/fakechroot) does it._  
 
 
-## Build
+## Installation
+Download the binary:
+```
+wget -O ctnr https://github.com/mgoltzsche/ctnr/releases/download/v0.7.0-alpha/ctnr.linux-amd64 &&
+chmod +x ctnr &&
+sudo mv ctnr /usr/local/bin/
+```
+If you need [PRoot](https://github.com/rootless-containers/PRoot) or [CNI plugins](https://github.com/containernetworking/plugins)
+you can build them by calling `make proot cni-plugins` within this repository's directory.
 
+
+## Build
 Build the binary `dist/bin/ctnr` as well as `dist/bin/cni-plugins` on a Linux machine with git, make and docker:
 ```
 git clone https://github.com/mgoltzsche/ctnr.git
@@ -141,6 +152,46 @@ $ ctnr run example/cowsay hello from container
 ```
 
 
+### Port mapping
+ctnr supports port mapping using the `-p, --publish` option.
+Unprivileged users can use the `--proot` option in addition.
+
+#### Port mapping as root using a contained CNI network
+When a container is run as root in a contained network (`--network default`, default as root)
+the [portmap CNI plugin](https://github.com/containernetworking/plugins/tree/master/plugins/meta/portmap)
+is used to map ports from a specified IP or the host network to the container.
+
+Map the container network's port 80 to port 8080 on the host:
+```
+$ sudo ctnr run -p 8080:80 docker://alpine:3.8 nc -l -p 80 -e echo hello from container
+```
+Connectivity test on the host on another shell:
+```
+$ nc 127.0.0.1 8080
+hello from container
+```
+
+#### Port mapping as unprivileged user using proot
+Unprivileged users can enable the `--proot` option to map ports
+within the host network namespace on a syscall level.
+
+Map `bind`/`connect` syscalls with port 80 to port 8080:
+```
+$ ctnr run --proot -p 8080:80 docker://alpine:3.8 nc -l -p 80 -e echo hello from container
+```
+You can now also run another container using the same port as long as you don't
+map it on the same host port (proot maps it to a random free port and back within the container):
+```
+$ ctnr run --proot docker://alpine:3.8 /bin/sh -c 'nc -l -p 80 -e echo hello & sleep 1; timeout -t 1 nc 127.0.0.1 80'
+hello
+```
+Connectivity test on the host on another shell:
+```
+$ nc 127.0.0.1 8080
+hello from container
+```
+
+
 ## OCI specs and this implementation
 
 An *[OCI image](https://github.com/opencontainers/image-spec/tree/v1.0.0)* provides a base [configuration](https://github.com/opencontainers/image-spec/blob/v1.0.0/config.md) and file system to create an OCI bundle from. The file system consists of a list of layers represented by tar files each containing the diff to its predecessor.  
@@ -183,19 +234,13 @@ to either use an external runc binary or use libcontainer (no runtime dependenci
 - system.Context aware processes, unpacking/packing images
 - improved multi-user support (store per user group, file permissions, lock location)
 - CLI integration tests
-- rootless networking (using proot port mapping or a network daemon run by root)
+- advanced rootless networking (using a network daemon run by root)
 - separate OCI CNI network hook binary
-- support starting a rootless container with a user other than 0 (using proot)
 - health check
 - improved Docker Compose support
 - service discovery integration (hook / DNS; consul, etcd)
 - detached mode
 - systemd integration (cgroup, startup notification)
-- **1.0 release**
 - advanced logging
 - support additional read-only image stores
 
-
-## Experiments
-
-[Experiments with nested containers](experiments.md)

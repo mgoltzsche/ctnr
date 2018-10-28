@@ -49,10 +49,10 @@ func (m *ContainerManager) Get(id string) (run.Container, error) {
 
 func (m *ContainerManager) Kill(id string, signal os.Signal, all bool) (err error) {
 	c, err := LoadContainer(id, m.factory, m.loggers)
-	if err != nil {
-		return
+	if err == nil {
+		err = c.container.Signal(signal, all)
 	}
-	return c.container.Signal(signal, all)
+	return errors.Wrap(err, "kill")
 }
 
 func (m *ContainerManager) List() (r []run.ContainerInfo, err error) {

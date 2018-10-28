@@ -24,23 +24,6 @@ type Store struct {
 	bundle.BundleStore
 }
 
-type LockedStore struct {
-	image.ImageStoreRW
-	bundle.BundleStore
-}
-
-/*func (s *Store) ImageBuilderFromBundle(bundle bundle.Bundle, author string) (b *builder.ImageBuilder, err error) {
-	rwstore, err := s.OpenLockedImageStore()
-	if err != nil {
-		return
-	}
-	if b, err = builder.NewImageBuilderFromBundle(rwstore, bundle, author); err != nil {
-		err = errors.Wrap(err, "image builder from bundle")
-		rwstore.Close()
-	}
-	return
-}*/
-
 func NewStore(dir string, rootless bool, systemContext *types.SystemContext, trustPolicy istore.TrustPolicyContext, loggers log.Loggers) (r Store, err error) {
 	if dir == "" {
 		return r, errors.New("init store: no store directory provided")

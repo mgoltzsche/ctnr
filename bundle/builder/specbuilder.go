@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package generate
+package builder
 
 import (
 	"os"
@@ -33,11 +33,17 @@ import (
 
 type SpecBuilder struct {
 	generate.Generator
-	entrypoint []string
-	cmd        []string
-	user       idutils.User
-	prootPath  string
-	rootless   bool
+	entrypoint    []string
+	cmd           []string
+	user          idutils.User
+	customSeccomp bool
+	proot         *prootOptions
+	rootless      bool
+}
+
+type prootOptions struct {
+	Path  string
+	Ports []string
 }
 
 func NewSpecBuilder() SpecBuilder {
@@ -110,6 +116,7 @@ func (b *SpecBuilder) SetLinuxSeccompUnconfined() {
 	profile.DefaultAction = rspecs.ActAllow
 	profile.Syscalls = nil
 	spec.Linux.Seccomp = profile
+	b.customSeccomp = true
 }
 
 func (b *SpecBuilder) SetLinuxSeccomp(profile *rspecs.LinuxSeccomp) {
@@ -118,6 +125,7 @@ func (b *SpecBuilder) SetLinuxSeccomp(profile *rspecs.LinuxSeccomp) {
 		spec.Linux = &rspecs.Linux{}
 	}
 	spec.Linux.Seccomp = profile
+	b.customSeccomp = true
 }
 
 func (b *SpecBuilder) AddExposedPorts(ports []string) {
@@ -149,26 +157,32 @@ func (b *SpecBuilder) AddExposedPorts(ports []string) {
 }
 
 func (b *SpecBuilder) SetPRootPath(prootPath string) {
-	b.prootPath = prootPath
+	if b.proot == nil {
+		b.proot = &prootOptions{}
+	}
+	b.proot.Path = prootPath
 	// This has been derived from https://github.com/AkihiroSuda/runrootless/blob/b9a7df0120a7fee15c0223fd0fbc8c3885edd9b3/bundle/spec.go
 	b.AddTmpfsMount("/dev/proot", []string{"exec", "mode=755", "size=32256k"})
 	b.AddBindMount(prootPath, "/dev/proot/proot", []string{"bind", "ro"})
 	b.AddProcessEnv("PROOT_TMP_DIR", "/dev/proot")
 	b.AddProcessEnv("PROOT_NO_SECCOMP", "1")
 	b.AddProcessCapability("CAP_" + capability.CAP_SYS_PTRACE.String())
-	b.applyEntrypoint()
-	b.SetLinuxSeccompDefault()
+}
+
+func (b *SpecBuilder) AddPRootPortMapping(published, target string) {
+	if b.proot == nil {
+		b.proot = &prootOptions{}
+	}
+	b.proot.Ports = append(b.proot.Ports, published+":"+target)
 }
 
 func (b *SpecBuilder) SetProcessEntrypoint(v []string) {
 	b.entrypoint = v
 	b.cmd = nil
-	b.applyEntrypoint()
 }
 
 func (b *SpecBuilder) SetProcessCmd(v []string) {
 	b.cmd = v
-	b.applyEntrypoint()
 }
 
 func (b *SpecBuilder) applyEntrypoint() {
@@ -184,8 +198,18 @@ func (b *SpecBuilder) applyEntrypoint() {
 	} else {
 		args = []string{}
 	}
-	if b.prootPath != "" {
-		args = append([]string{"/dev/proot/proot", "-0"}, args...)
+	if b.proot != nil {
+		prootArgs := []string{"/dev/proot/proot", "--kill-on-exit", "-n"}
+		user := b.user.String()
+		if user == "0:0" {
+			prootArgs = append(prootArgs, "-0")
+		} else {
+			prootArgs = append(prootArgs, "-i", b.user.String())
+		}
+		for _, port := range b.proot.Ports {
+			prootArgs = append(prootArgs, "-p", port)
+		}
+		args = append(prootArgs, args...)
 	}
 	b.SetProcessArgs(args)
 }
@@ -248,30 +272,51 @@ func (b *SpecBuilder) ApplyImage(img *ispecs.Image) {
 
 // Returns the generated spec with resolved user/group names
 func (b *SpecBuilder) Spec(rootfs string) (spec *rspecs.Spec, err error) {
+	// Resolve user name
 	usr, err := b.user.Resolve(rootfs)
 	if err != nil {
 		return
 	}
-	if b.rootless && (usr.Uid != 0 || usr.Gid != 0) {
-		return nil, errors.Errorf("rootless containers support UID/GID 0 only but %q provided", b.user.String())
-	}
+	b.user = usr.User()
 	if usr.Uid > 1<<32 {
 		return nil, errors.Errorf("uid %d exceeds range", usr.Uid)
 	}
 	if usr.Gid > 1<<32 {
 		return nil, errors.Errorf("gid %d exceeds range", usr.Gid)
 	}
+
+	// Check uid/gid constraints and proot support
+	if b.proot != nil {
+		if b.proot.Path == "" {
+			return nil, errors.New("proot user or port mappings specified but no proot path provided")
+		}
+		usr = idutils.UserIds{} // use 0 in native mapping
+	} else if b.rootless && (usr.Uid != 0 || usr.Gid != 0) {
+		return nil, errors.Errorf("rootless container: only user 0:0 supported but %s provided. hint: enable proot as a workaround", b.user.String())
+	}
+
+	// Apply entrypoint/command (using proot)
+	b.applyEntrypoint()
+
+	// Apply process uid/gid
 	b.SetProcessUID(uint32(usr.Uid))
 	b.SetProcessGID(uint32(usr.Gid))
 	// TODO: set additional gids
-	sp := b.Generator.Spec()
+
+	// Apply native process uid/gid mapping
 	if b.rootless {
 		b.ClearLinuxUIDMappings()
 		b.ClearLinuxGIDMappings()
 		b.AddLinuxUIDMapping(uint32(os.Geteuid()), uint32(usr.Uid), 1)
 		b.AddLinuxGIDMapping(uint32(os.Getegid()), uint32(usr.Gid), 1)
 	}
-	return sp, nil
+
+	// Generate default seccomp profile
+	if !b.customSeccomp {
+		b.SetLinuxSeccompDefault()
+	}
+
+	return b.Generator.Spec(), nil
 }
 
 func containsNamespace(ns rspecs.LinuxNamespaceType, l []rspecs.LinuxNamespace) bool {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package generate
+package builder
 
 import (
 	"encoding/json"
@@ -178,7 +178,6 @@ func (b *HookBuilder) Build(spec *generate.Generator) (err error) {
 	}
 
 	// Add hook args metadata as annotation to parse it when it should be modified
-	// TODO: better parse hook args directly by using same code the hook uses
 	j, err := json.Marshal(b.hook)
 	if err != nil {
 		return

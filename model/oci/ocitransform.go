@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
-	"github.com/mgoltzsche/ctnr/bundle"
+	"github.com/mgoltzsche/ctnr/bundle/builder"
 	"github.com/mgoltzsche/ctnr/model"
-	"github.com/mgoltzsche/ctnr/pkg/generate"
 	"github.com/mgoltzsche/ctnr/pkg/idutils"
 	"github.com/mgoltzsche/ctnr/pkg/sliceutils"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -23,7 +23,7 @@ const (
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.ctnr.bundle.id"
 )
 
-func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, prootPath string, spec *bundle.BundleBuilder) (err error) {
+func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, prootPath string, spec *builder.BundleBuilder) (err error) {
 	defer func() {
 		err = errors.Wrap(err, "generate OCI bundle spec")
 	}()
@@ -153,7 +153,7 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 		spec.AddBindMountConfig("/etc/hostname")
 		spec.AddBindMountConfig("/etc/hosts")
 		spec.AddBindMountConfig("/etc/resolv.conf")
-		hook, err := generate.NewHookBuilderFromSpec(sp)
+		hook, err := builder.NewHookBuilderFromSpec(sp)
 		if err != nil {
 			return err
 		}
@@ -176,7 +176,7 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 			hook.AddHost(e.Name, e.Ip)
 		}
 		for _, p := range service.Ports {
-			hook.AddPortMapEntry(generate.PortMapEntry{
+			hook.AddPortMapEntry(builder.PortMapEntry{
 				Target:    p.Target,
 				Published: p.Published,
 				Protocol:  p.Protocol,
@@ -187,9 +187,18 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 			return err
 		}
 	} else if len(service.Ports) > 0 {
-		return errors.New("transform: port mapping only supported with container network - add network or remove port mapping")
+		if prootPath == "" {
+			return errors.New("transform: port mapping only supported with contained container network. hint: add contained network, remove port mapping or, when rootless, enable proot")
+		} else {
+			for _, port := range service.Ports {
+				if port.IP != "" {
+					return errors.New("IP is not supported in proot port mappings")
+				}
+				spec.AddPRootPortMapping(strconv.Itoa(int(port.Published)), strconv.Itoa(int(port.Target)))
+			}
+		}
 	}
-	// TODO: register healthcheck (as Hook)
+	// TODO: support healthcheck (as Hook)
 	return nil
 }
 
@@ -231,7 +240,7 @@ func mountHostFile(spec *specs.Spec, file string) error {
 	return nil
 }
 
-func ToSpecProcess(p *model.Process, prootPath string, builder *generate.SpecBuilder) (err error) {
+func ToSpecProcess(p *model.Process, prootPath string, builder *builder.SpecBuilder) (err error) {
 	// Entrypoint & command
 	if p.Entrypoint != nil {
 		builder.SetProcessEntrypoint(p.Entrypoint)
@@ -294,7 +303,7 @@ func ToSpecProcess(p *model.Process, prootPath string, builder *generate.SpecBui
 	return nil
 }
 
-func toMounts(mounts []model.VolumeMount, res model.ResourceResolver, spec *bundle.BundleBuilder) error {
+func toMounts(mounts []model.VolumeMount, res model.ResourceResolver, spec *builder.BundleBuilder) error {
 	for _, m := range mounts {
 		src, err := res.ResolveMountSource(m)
 		if err != nil {

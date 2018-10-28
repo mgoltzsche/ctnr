@@ -103,6 +103,8 @@ func (b *Bundle) GC(before time.Time) (r bool, err error) {
 		return false, errors.New(err.Error())
 	}
 	if st.ModTime().Before(before) {
+		// TODO: let container provide additional lock and check it here,
+		// especially since bundles are now unlocked directly after container creation
 		var bl *lock.Lockfile
 		bl, err = lockBundle(b)
 		if err != nil {
@@ -208,10 +210,12 @@ func (b *LockedBundle) ID() string {
 }
 
 func (b *LockedBundle) Dir() string {
+	b.checkLocked()
 	return b.bundle.dir
 }
 
 func (b *LockedBundle) Spec() (*rspecs.Spec, error) {
+	b.checkLocked()
 	if b.spec == nil {
 		spec, err := b.bundle.loadSpec()
 		if err != nil {
@@ -224,6 +228,7 @@ func (b *LockedBundle) Spec() (*rspecs.Spec, error) {
 
 // Returns the bundle's image ID
 func (b *LockedBundle) Image() *digest.Digest {
+	b.checkLocked()
 	if b.image == nil {
 		b.image = b.bundle.Image()
 	}
@@ -231,13 +236,12 @@ func (b *LockedBundle) Image() *digest.Digest {
 }
 
 func (b *LockedBundle) Delete() (err error) {
-	err = DeleteDirSafely(b.Dir())
-	err = exterrors.Append(err, b.Close())
-	return
+	return exterrors.Append(DeleteDirSafely(b.Dir()), b.Close())
 }
 
 // Updates the rootfs if the image changed
 func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
+	b.checkLocked()
 	var (
 		rootfs    = filepath.Join(b.Dir(), "rootfs")
 		imgId     *digest.Digest
@@ -260,6 +264,7 @@ func (b *LockedBundle) UpdateRootfs(image BundleImage) (err error) {
 }
 
 func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) (err error) {
+	b.checkLocked()
 	if imageID == nil {
 		if e := os.Remove(b.bundle.imageFile()); e != nil && !os.IsNotExist(e) {
 			err = errors.New(e.Error())
@@ -276,6 +281,7 @@ func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) (err error) {
 }
 
 func (b *LockedBundle) SetSpec(spec *rspecs.Spec) (err error) {
+	b.checkLocked()
 	if err == nil {
 		err = createVolumeDirectories(spec, b.Dir())
 	}
@@ -288,6 +294,12 @@ func (b *LockedBundle) SetSpec(spec *rspecs.Spec) (err error) {
 	}
 	b.spec = spec
 	return
+}
+
+func (b *LockedBundle) checkLocked() {
+	if b.lock == nil {
+		panic("bundle accessed after unlocked")
+	}
 }
 
 func createVolumeDirectories(spec *rspecs.Spec, dir string) (err error) {

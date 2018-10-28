@@ -20,7 +20,7 @@ import (
 type RuncContainer struct {
 	io             run.ContainerIO
 	id             string
-	bundle         run.ContainerBundle
+	bundleDir      string
 	rootfs         string
 	noNewKeyring   bool
 	noPivot        bool
@@ -48,8 +48,8 @@ func NewRuncContainer(cfg *run.ContainerConfig, rootDir string, debug log.FieldL
 	// TODO: handle config option destroyOnClose
 	c = &RuncContainer{
 		id:             id,
+		bundleDir:      cfg.Bundle.Dir(),
 		io:             cfg.Io,
-		bundle:         cfg.Bundle,
 		rootfs:         filepath.Join(cfg.Bundle.Dir(), spec.Root.Path),
 		noPivot:        cfg.NoPivotRoot,
 		noNewKeyring:   cfg.NoNewKeyring,
@@ -59,7 +59,7 @@ func NewRuncContainer(cfg *run.ContainerConfig, rootDir string, debug log.FieldL
 	}
 
 	// Create process
-	c.process = NewRuncProcess(c.runcCreateArgs("run", "--bundle", c.bundle.Dir(), c.ID()), spec.Process.Terminal, cfg.Io, c.debug)
+	c.process = NewRuncProcess(c.runcCreateArgs("run", "--bundle", cfg.Bundle.Dir(), c.ID()), spec.Process.Terminal, cfg.Io, c.debug)
 	return
 }
 
@@ -69,7 +69,6 @@ func (c *RuncContainer) Close() (err error) {
 	if c.destroyOnClose {
 		err = exterrors.Append(err, c.destroy())
 	}
-	err = exterrors.Append(err, c.bundle.Close())
 	return
 }
 
@@ -165,7 +164,7 @@ func (c *RuncContainer) Exec(process *specs.Process, io run.ContainerIO) (proc r
 
 func (c *RuncContainer) create() (err error) {
 	c.debug.Println("Creating container")
-	args := c.runcCreateArgs("create", "--bundle", c.bundle.Dir(), c.ID())
+	args := c.runcCreateArgs("create", "--bundle", c.bundleDir, c.ID())
 	p := exec.Command(args[0], args[1:]...)
 	var wg sync.WaitGroup
 	stderr, err := p.StderrPipe()

@@ -25,6 +25,10 @@ func (u UserIds) IsZero() bool {
 	return u.Uid == 0 && u.Gid == 0
 }
 
+func (u UserIds) User() User {
+	return User{strconv.Itoa(int(u.Uid)), strconv.Itoa(int(u.Gid))}
+}
+
 type IdMappings interface {
 	UidToHost(int) (int, error)
 	GidToHost(int) (int, error)
