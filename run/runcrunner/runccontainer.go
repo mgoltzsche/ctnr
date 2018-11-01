@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
 	"github.com/mgoltzsche/ctnr/pkg/log"
@@ -115,7 +116,16 @@ func (c *RuncContainer) Destroy() (err error) {
 
 func (c *RuncContainer) destroy() (err error) {
 	c.debug.Println("Destroying container")
-	return c.run("", "runc", "--root", c.rootDir, "delete", c.ID()) // TODO: Add --force option
+
+	// Reset bundle expiry time
+	bundleDir := filepath.Join(c.Rootfs(), "..")
+	now := time.Now()
+	e := errors.Wrap(os.Chtimes(bundleDir, now, now), "reset bundle expiry time")
+	err = exterrors.Append(err, e)
+
+	// Destroy container
+	err = exterrors.Append(err, c.run("", "runc", "--root", c.rootDir, "delete", c.ID())) // TODO: Add --force option
+	return
 }
 
 func (c *RuncContainer) run(args ...string) (err error) {

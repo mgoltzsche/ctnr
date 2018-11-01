@@ -120,46 +120,60 @@ func runBundleDelete(cmd *cobra.Command, args []string) (err error) {
 	if len(args) == 0 {
 		return usageError("No bundle specified to remove")
 	}
+	cm, err := newContainerManager()
+	if err != nil {
+		return
+	}
 	failedIds := []string{}
 	for _, id := range args {
-		b, e := store.Bundle(id)
-		if e == nil {
-			bl, e := b.Lock()
-			if e == nil {
-				e = bl.Delete()
-				if e == nil {
-					loggers.Info.WithField("id", id).Println("Bundle deleted")
-				} else {
-					err = e
-					loggers.Error.WithField("id", id).Printf("bundle rm: %s", err)
-					failedIds = append(failedIds, id)
-				}
-			} else {
-				err = e
-				loggers.Error.WithField("id", id).Printf("bundle rm: %s", err)
-				failedIds = append(failedIds, id)
-			}
-		} else {
-			err = e
+		if err = deleteBundle(id, cm); err != nil {
 			loggers.Error.WithField("id", id).Printf("bundle rm: %s", err)
 			failedIds = append(failedIds, id)
 		}
 	}
-	if err != nil {
+	if len(failedIds) > 0 {
 		err = fmt.Errorf("cannot delete bundles %+v", failedIds)
 	}
 	return
 }
 
-func runBundleGc(cmd *cobra.Command, args []string) error {
+func deleteBundle(id string, cm run.ContainerManager) (err error) {
+	b, err := store.Bundle(id)
+	if err != nil {
+		return
+	}
+	bl, err := b.Lock()
+	if err != nil {
+		return
+	}
+	defer func() {
+		if e := bl.Close(); e != nil && err == nil {
+			err = e
+		}
+	}()
+	exist, err := cm.Exist(id)
+	if err != nil {
+		return
+	}
+	if exist {
+		return fmt.Errorf("bundle is in use")
+	}
+	return bl.Delete()
+}
+
+func runBundleGc(cmd *cobra.Command, args []string) (err error) {
 	if len(args) > 0 {
 		return usageError("No args expected")
 	}
-	gcd, err := store.BundleGC(flagBundleTTL)
+	cm, err := newContainerManager()
+	if err != nil {
+		return
+	}
+	gcd, err := store.BundleGC(flagBundleTTL, cm)
 	for _, b := range gcd {
 		os.Stdout.WriteString(b.ID() + "\n")
 	}
-	return err
+	return
 }
 
 func runBundleRun(cmd *cobra.Command, args []string) (err error) {

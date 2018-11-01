@@ -42,11 +42,15 @@ func init() {
 	gcCmd.Flags().IntVarP(&flagGcMaxImagesPerRepo, "max", "m", 0, "max entries per repo (default 0 == unlimited)")
 }
 
-func runGc(cmd *cobra.Command, args []string) error {
+func runGc(cmd *cobra.Command, args []string) (err error) {
 	if len(args) > 0 {
 		return usageError("No args expected")
 	}
-	gcd, err := store.BundleGC(flagGcBundleTTL)
+	cm, err := newContainerManager()
+	if err != nil {
+		return
+	}
+	gcd, err := store.BundleGC(flagGcBundleTTL, cm)
 	for _, b := range gcd {
 		os.Stdout.WriteString(b.ID() + "\n")
 	}

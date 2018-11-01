@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	exterrors "github.com/mgoltzsche/ctnr/pkg/errors"
 	"github.com/mgoltzsche/ctnr/pkg/log"
@@ -163,6 +164,12 @@ func (c *Container) Destroy() (err error) {
 func (c *Container) Close() (err error) {
 	c.log.Debug.Println("Closing container")
 
+	// Reset bundle expiry time
+	bundleDir := filepath.Join(c.Rootfs(), "..")
+	now := time.Now()
+	e := errors.Wrap(os.Chtimes(bundleDir, now, now), "reset bundle expiry time")
+	err = exterrors.Append(err, e)
+
 	// Close process
 	p := c.process
 	if p != nil {
@@ -174,5 +181,6 @@ func (c *Container) Close() (err error) {
 	if c.destroyOnClose {
 		err = exterrors.Append(err, c.Destroy())
 	}
+
 	return
 }

@@ -82,46 +82,27 @@ func (b *Bundle) imageFile() string {
 	return filepath.Join(b.dir, "rootfs.image")
 }
 
-func (b *Bundle) Lock() (*LockedBundle, error) {
-	return OpenLockedBundle(*b)
-}
-
-// Update mod time so that gc doesn't touch it for a while
-func (b *Bundle) resetExpiryTime() (err error) {
-	configFile := filepath.Join(b.dir)
-	now := time.Now()
-	if e := os.Chtimes(configFile, now, now); e != nil && !os.IsNotExist(e) {
-		err = errors.New("reset bundle expiry time: " + e.Error())
+func (b *Bundle) Lock() (lb *LockedBundle, err error) {
+	lb, err = OpenLockedBundle(*b)
+	if err == nil {
+		err = b.MarkUsed()
 	}
 	return
 }
 
-func (b *Bundle) GC(before time.Time) (r bool, err error) {
-	defer exterrors.Wrapd(&err, "bundle gc check")
-	st, err := os.Stat(b.dir)
+func (b *Bundle) LastUsed() (t time.Time, err error) {
+	fi, err := os.Stat(b.dir)
 	if err != nil {
-		return false, errors.New(err.Error())
+		return t, errors.Wrapf(err, "bundle %s last used", b.id)
 	}
-	if st.ModTime().Before(before) {
-		// TODO: let container provide additional lock and check it here,
-		// especially since bundles are now unlocked directly after container creation
-		var bl *lock.Lockfile
-		bl, err = lockBundle(b)
-		if err != nil {
-			return true, err
-		}
-		defer func() {
-			err = exterrors.Append(err, bl.Unlock())
-		}()
-		if st, err = os.Stat(b.dir); err != nil {
-			return true, err
-		}
-		if st.ModTime().Before(before) {
-			if err = DeleteDirSafely(b.dir); err != nil {
-				return true, err
-			}
-			return true, err
-		}
+	return fi.ModTime(), nil
+}
+
+// Update mod time so that gc doesn't touch it for a while
+func (b *Bundle) MarkUsed() (err error) {
+	now := time.Now()
+	if e := os.Chtimes(b.dir, now, now); e != nil && !os.IsNotExist(e) {
+		err = errors.New("reset bundle expiry time: " + e.Error())
 	}
 	return
 }
@@ -135,19 +116,10 @@ type LockedBundle struct {
 
 func OpenLockedBundle(bundle Bundle) (*LockedBundle, error) {
 	lck, err := lockBundle(&bundle)
-	if err != nil {
-		return nil, err
-	}
-	if err := bundle.resetExpiryTime(); err != nil {
-		lck.Unlock()
-		return nil, errors.Wrap(err, "lock bundle")
-	}
-	return &LockedBundle{bundle, nil, nil, lck}, nil
+	return &LockedBundle{bundle, nil, nil, lck}, err
 }
 
 func CreateLockedBundle(dir string, update bool) (r *LockedBundle, err error) {
-	defer exterrors.Wrapd(&err, "create bundle")
-
 	// Create bundle
 	id := filepath.Base(dir)
 	bundle := Bundle{id, dir, time.Now()}
@@ -155,13 +127,14 @@ func CreateLockedBundle(dir string, update bool) (r *LockedBundle, err error) {
 	// Lock bundle
 	lck, err := lockBundle(&bundle)
 	if err != nil {
-		return
+		return nil, errors.Wrap(err, "create bundle")
 	}
 	r = &LockedBundle{bundle, nil, nil, lck}
 	defer func() {
 		if err != nil {
 			err = exterrors.Append(err, r.Close())
 		}
+		err = errors.Wrap(err, "create bundle")
 	}()
 
 	// Create or update bundle
@@ -172,7 +145,7 @@ func CreateLockedBundle(dir string, update bool) (r *LockedBundle, err error) {
 		if !update {
 			return r, errors.Errorf("bundle %q already exists", id)
 		}
-		if err = bundle.resetExpiryTime(); err != nil {
+		if err = bundle.MarkUsed(); err != nil {
 			return
 		}
 	} else {
@@ -198,7 +171,6 @@ func CreateLockedBundle(dir string, update bool) (r *LockedBundle, err error) {
 
 func (b *LockedBundle) Close() (err error) {
 	if b.lock != nil {
-		err = b.bundle.resetExpiryTime()
 		err = exterrors.Append(err, errors.Wrap(b.lock.Unlock(), "unlock bundle"))
 		b.lock = nil
 	}
@@ -236,6 +208,7 @@ func (b *LockedBundle) Image() *digest.Digest {
 }
 
 func (b *LockedBundle) Delete() (err error) {
+	b.checkLocked()
 	return exterrors.Append(DeleteDirSafely(b.Dir()), b.Close())
 }
 
@@ -282,10 +255,7 @@ func (b *LockedBundle) SetParentImageId(imageID *digest.Digest) (err error) {
 
 func (b *LockedBundle) SetSpec(spec *rspecs.Spec) (err error) {
 	b.checkLocked()
-	if err == nil {
-		err = createVolumeDirectories(spec, b.Dir())
-	}
-	if err != nil {
+	if err = createVolumeDirectories(spec, b.Dir()); err != nil {
 		return errors.Wrap(err, "set bundle spec")
 	}
 	confFile := filepath.Join(b.Dir(), "config.json")

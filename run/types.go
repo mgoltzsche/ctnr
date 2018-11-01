@@ -45,6 +45,7 @@ type ContainerManager interface {
 	Get(id string) (Container, error)
 	List() ([]ContainerInfo, error)
 	Kill(id string, signal os.Signal, all bool) error
+	Exist(id string) (bool, error)
 }
 
 type Container interface {

@@ -38,6 +38,15 @@ func (m *ContainerManager) Get(id string) (run.Container, error) {
 	return nil, nil
 }
 
+func (m *ContainerManager) Exist(id string) (e bool, err error) {
+	if _, err = os.Stat(filepath.Join(m.rootDir, id, "state.json")); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+	}
+	return true, err
+}
+
 func (m *ContainerManager) Kill(id string, signal os.Signal, all bool) error {
 	var args []string
 	if all {
