@@ -38,10 +38,54 @@ func NewNetConfigs(confDir string) (*NetConfigs, error) {
 }
 
 func (n *NetConfigs) GetConfig(name string) (*libcni.NetworkConfigList, error) {
-	return libcni.LoadConfList(n.confDir, name)
+	l, err := libcni.LoadConfList(n.confDir, name)
+	if err != nil && name == "default" {
+		_, noConfDir := err.(libcni.NoConfigsFoundError)
+		_, confNotFound := err.(libcni.NotFoundError)
+		if noConfDir || confNotFound {
+			return defaultNetConf()
+		}
+	}
+	return l, err
 }
 
-func MapPorts(original *libcni.NetworkConfigList, portMap []PortMapEntry) (*libcni.NetworkConfigList, error) {
+func defaultNetConf() (cfg *libcni.NetworkConfigList, err error) {
+	ipamDataDir := os.Getenv("IPAMDATADIR")
+	if ipamDataDir == "" {
+		return nil, errors.New("default net conf: IPAMDATADIR env var not set")
+	}
+	rawConfigList := map[string]interface{}{
+		"cniVersion": version.Current(),
+		"name":       "default",
+		"plugins": []interface{}{
+			map[string]interface{}{
+				"cniVersion": version.Current(),
+				"type":       "ptp",
+				"ipMasq":     true,
+				"ipam": map[string]interface{}{
+					"type":   "host-local",
+					"subnet": "10.1.0.0/24",
+					"routes": []interface{}{
+						map[string]interface{}{
+							"dst": "0.0.0.0/0",
+						},
+					},
+					"dataDir": ipamDataDir,
+				},
+				"dns": map[string]interface{}{
+					"nameservers": []string{"1.1.1.1"},
+				},
+			},
+		},
+	}
+	b, err := json.Marshal(rawConfigList)
+	if err == nil {
+		cfg, err = libcni.ConfListFromBytes(b)
+	}
+	return cfg, errors.Wrap(err, "load default config")
+}
+
+func MapPorts(original *libcni.NetworkConfigList, portMap []PortMapEntry) (cfg *libcni.NetworkConfigList, err error) {
 	if len(portMap) == 0 {
 		return original, nil
 	}
@@ -67,10 +111,10 @@ func MapPorts(original *libcni.NetworkConfigList, portMap []PortMapEntry) (*libc
 		"plugins":    rawPlugins,
 	}
 	b, err := json.Marshal(rawConfigList)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		cfg, err = libcni.ConfListFromBytes(b)
 	}
-	return libcni.ConfListFromBytes(b)
+	return cfg, errors.Wrap(err, "load portmap config")
 }
 
 type NetManager struct {
@@ -127,13 +171,10 @@ func NewNetManager(state *specs.State) (r *NetManager, err error) {
 func (m *NetManager) AddNet(ifName string, netConf *libcni.NetworkConfigList) (r *current.Result, err error) {
 	rs, err := m.cni.AddNetworkList(netConf, m.rtConf(ifName))
 	if err != nil {
-		return
+		return nil, errors.Wrap(err, "add CNI network "+netConf.Name)
 	}
 	r, err = current.NewResultFromResult(rs)
-	if err != nil {
-		err = errors.Wrap(err, "CNI result for network "+netConf.Name)
-	}
-	return
+	return r, errors.Wrap(err, "convert CNI result for network "+netConf.Name)
 }
 
 func (m *NetManager) DelNet(ifName string, netConf *libcni.NetworkConfigList) (err error) {

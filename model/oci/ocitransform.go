@@ -23,7 +23,7 @@ const (
 	ANNOTATION_BUNDLE_ID         = "com.github.mgoltzsche.ctnr.bundle.id"
 )
 
-func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, prootPath string, spec *builder.BundleBuilder) (err error) {
+func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, ipamDataDir string, prootPath string, spec *builder.BundleBuilder) (err error) {
 	defer func() {
 		err = errors.Wrap(err, "generate OCI bundle spec")
 	}()
@@ -132,8 +132,6 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 		}
 	} else if useNoNetwork || useHostNetwork {
 		networks = []string{}
-	} else if rootless {
-		return errors.New("transform: no networks supported in rootless mode")
 	}
 
 	// Use host network by removing 'network' namespace
@@ -157,6 +155,7 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, p
 		if err != nil {
 			return err
 		}
+		hook.SetIPAMDataDir(ipamDataDir)
 		for _, net := range networks {
 			hook.AddNetwork(net)
 		}

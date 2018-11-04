@@ -179,7 +179,7 @@ func closeLockedImageStore() {
 }
 
 func newContainerManager() (run.ContainerManager, error) {
-	return factory.NewContainerManager(flagStateDir, flagRootless, loggers)
+	return factory.NewContainerManager(filepath.Join(flagStateDir, "containers"), flagRootless, loggers)
 }
 
 func resourceResolver(baseDir string, volumes map[string]model.Volume) model.ResourceResolver {
@@ -274,14 +274,15 @@ func createRuntimeBundle(service *model.Service, res model.ResourceResolver) (b 
 	if service.Image != "" {
 		var img image.Image
 		if img, err = image.GetImage(istore, service.Image); err != nil {
-			return nil, err
+			return b, err
 		}
 		builder.SetImage(image.NewUnpackableImage(&img, istore))
 	}
 
 	// Apply config.json
-	if err = oci.ToSpec(service, res, flagRootless, flagPRootPath, builder); err != nil {
-		return nil, err
+	netDataDir := filepath.Join(flagStateDir, "networks")
+	if err = oci.ToSpec(service, res, flagRootless, netDataDir, flagPRootPath, builder); err != nil {
+		return b, err
 	}
 
 	return b, builder.Build(b)

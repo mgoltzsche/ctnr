@@ -65,7 +65,7 @@ chmod +x ctnr &&
 sudo mv ctnr /usr/local/bin/
 ```
 If you need [PRoot](https://github.com/rootless-containers/PRoot) or [CNI plugins](https://github.com/containernetworking/plugins)
-you can build them by calling `make proot cni-plugins` within this repository's directory.
+you can build them by calling `make proot cni-plugins-static` within this repository's directory.
 
 
 ## Build

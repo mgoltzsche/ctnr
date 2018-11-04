@@ -141,31 +141,20 @@ func (b *ImageBuilder) deleteBundle(lb *bundle.LockedBundle) error { return lb.D
 func (b *ImageBuilder) Close() (err error) {
 	succeededBundles := b.lockedBundles
 	b.lockedBundles = nil
-	fmt.Println("###### CLOSE: ", succeededBundles)
 	var failedBundle *bundle.LockedBundle
 	hasFailedBundle := b.bundle == nil && len(succeededBundles) > 0
 	if hasFailedBundle {
 		failedBundle = succeededBundles[len(succeededBundles)-1]
 		succeededBundles = succeededBundles[:len(succeededBundles)-1]
 	}
-	if b.bundle != nil {
-		fmt.Println("CLOSE LAST BUNDLE", b.bundle.ID())
-	}
 	err = exterrors.Append(err, b.resetBundle())
 	closeBundle := b.closeBundle
 	if b.removeSucceededBundles {
 		closeBundle = b.deleteBundle
 	}
-	fmt.Println("###### 1")
 	for _, lb := range succeededBundles {
-		// TODO: do not unlock bundle when container is closed but
-		// - create container immediately (also in runc impl),
-		// - unlock bundle after creation and
-		// - consider running containers in bundle gc
-		fmt.Println("CLOSE", lb.ID())
 		err = exterrors.Append(err, closeBundle(lb))
 	}
-	fmt.Println("###### 2")
 	if failedBundle != nil {
 		closeBundle = b.closeBundle
 		if b.removeFailedBundle {

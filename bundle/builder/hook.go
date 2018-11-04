@@ -36,6 +36,7 @@ type NetConfig struct {
 	Hosts         map[string]string `json:"hosts,omitempty"`
 	Networks      []string          `json:"networks,omitempty"`
 	Ports         []PortMapEntry    `json:"ports,omitempty"`
+	IPAMDataDir   string            `json:"dataDir,omitempty"`
 }
 
 type PortMapEntry struct {
@@ -76,6 +77,10 @@ func NewHookBuilderFromSpec(spec *specs.Spec) (b HookBuilder, err error) {
 		}
 	}
 	return
+}
+
+func (b *HookBuilder) SetIPAMDataDir(ipamDataDir string) {
+	b.hook.IPAMDataDir = ipamDataDir
 }
 
 func (b *HookBuilder) SetDomainname(domainname string) {
@@ -135,6 +140,17 @@ func (b *HookBuilder) Build(spec *generate.Generator) (err error) {
 	cniEnv := []string{
 		"PATH=" + os.Getenv("PATH"),
 		"CNI_PATH=" + cniPluginPaths,
+	}
+	netConfPath := os.Getenv("NETCONFPATH")
+	if netConfPath != "" {
+		cniEnv = append(cniEnv, "NETCONFPATH="+netConfPath)
+	}
+	ipamDataDir := b.hook.IPAMDataDir
+	if ipamDataDir == "" {
+		ipamDataDir = os.Getenv("IPAMDATADIR")
+	}
+	if ipamDataDir != "" {
+		cniEnv = append(cniEnv, "IPAMDATADIR="+ipamDataDir)
 	}
 
 	netInitHookArgs := make([]string, 0, 10)
