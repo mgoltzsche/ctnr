@@ -86,7 +86,6 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 	//RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.ctnr.yaml)")
-
 	logrus.SetLevel(logrus.DebugLevel)
 	logger = logrus.New()
 	logger.Level = logrus.DebugLevel
@@ -133,12 +132,14 @@ func preRun(cmd *cobra.Command, args []string) {
 		// TODO: add docker auth
 		//DockerAuthConfig: dockerAuth,
 	}
-	var err error
 	if flagRootless && ctx.DockerCertPath == "" {
 		ctx.DockerCertPath = "./docker-certs"
 	}
 
-	var imagePolicy istore.TrustPolicyContext
+	var (
+		imagePolicy istore.TrustPolicyContext
+		err         error
+	)
 	if flagImagePolicy == "reject" {
 		imagePolicy = istore.TrustPolicyReject()
 	} else if flagImagePolicy == "insecure" {

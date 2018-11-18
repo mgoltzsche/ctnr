@@ -63,6 +63,7 @@ type Process struct {
 	Cwd         string            `json:"working_dir,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
 	User        *User             `json:"user,omitempty"`
+	Privileged  bool              `json:"privileged",omitempty"`
 	CapAdd      []string          `json:"cap_add,omitempty"`
 	CapDrop     []string          `json:"cap_drop,omitempty"`
 	StdinOpen   bool              `json:"stdin_open,omitempty"`
@@ -180,7 +181,7 @@ type Check struct {
 }
 
 func NewService(name string) Service {
-	return Service{Name: name, Seccomp: "default"}
+	return Service{Name: name}
 }
 
 func (c *CompoundServices) JSON() string {

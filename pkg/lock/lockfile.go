@@ -17,14 +17,9 @@ type Lockfile struct {
 }
 
 func LockFile(file string) (*Lockfile, error) {
-	file, err := normalizePath(file)
-	if err != nil {
-		return nil, errors.Wrap(err, "new lock file")
-	}
-
+	file = filepath.Clean(file)
 	l, err := lockfile.New(file)
-	lck := &Lockfile{file, l}
-	return lck, err
+	return &Lockfile{file, l}, err
 }
 
 func (l *Lockfile) TryLock() (err error) {

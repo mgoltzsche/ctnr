@@ -32,9 +32,6 @@ func (l *NoopLocker) Locker {
 }*/
 
 func NewExclusiveDirLocker(dir string) (r ExclusiveLocker, err error) {
-	if err = os.MkdirAll(dir, 0755); err != nil {
-		return nil, errors.Wrap(err, "init lock directory")
-	}
 	l := exclusiveLocker{}
 	if l.lockfile, err = LockFile(filepath.Join(dir, ".exclusive.lock")); err != nil {
 		return
@@ -43,11 +40,19 @@ func NewExclusiveDirLocker(dir string) (r ExclusiveLocker, err error) {
 	return &l, err
 }
 
+func (l *exclusiveLocker) mkdir() (err error) {
+	err = os.MkdirAll(l.dir, 0755)
+	return errors.Wrap(err, "init lock directory")
+}
+
 func (l *exclusiveLocker) NewSharedLocker() Locker {
 	return &sharedLocker{"", l.dir, l.lockfile}
 }
 
 func (l *exclusiveLocker) Lock() (err error) {
+	if err = l.mkdir(); err != nil {
+		return
+	}
 	if err = l.lockfile.Lock(); err != nil {
 		return
 	}

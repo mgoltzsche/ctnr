@@ -45,8 +45,22 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, i
 		return
 	}
 
-	if service.MountCgroups != "" {
-		if err = spec.AddCgroupsMount(service.MountCgroups); err != nil {
+	// privileged
+	seccomp := service.Seccomp
+	cgroupsMount := service.MountCgroups
+	if service.Privileged {
+		if cgroupsMount == "" {
+			cgroupsMount = "rw"
+		}
+		if seccomp == "" {
+			seccomp = "unconfined"
+		}
+		spec.AddBindMount("/dev/net", "/dev/net", []string{"bind"})
+	}
+
+	// Mount cgroups
+	if cgroupsMount != "" {
+		if err = spec.AddCgroupsMount(cgroupsMount); err != nil {
 			return
 		}
 	}
@@ -83,16 +97,16 @@ func ToSpec(service *model.Service, res model.ResourceResolver, rootless bool, i
 	}
 
 	// Seccomp
-	if service.Seccomp == "" || service.Seccomp == "default" {
+	if seccomp == "" || seccomp == "default" {
 		// Derive seccomp configuration (must be called as last)
 		spec.SetLinuxSeccompDefault()
-	} else if service.Seccomp == "unconfined" {
+	} else if seccomp == "unconfined" {
 		// Do not restrict operations with seccomp
 		spec.SetLinuxSeccompUnconfined()
 	} else {
 		// Use seccomp configuration from file
 		var j []byte
-		if j, err = ioutil.ReadFile(res.ResolveFile(service.Seccomp)); err != nil {
+		if j, err = ioutil.ReadFile(res.ResolveFile(seccomp)); err != nil {
 			return
 		}
 		seccomp := &specs.LinuxSeccomp{}
@@ -275,20 +289,24 @@ func ToSpecProcess(p *model.Process, prootPath string, builder *builder.SpecBuil
 		builder.SetProcessUser(idutils.User{p.User.User, p.User.Group})
 	}
 
+	// Privileged
+	capAdd := p.CapAdd
+	if p.Privileged {
+		capAdd = []string{"ALL"}
+	}
+
 	// Capabilities
-	if p.CapAdd != nil {
-		for _, addCap := range p.CapAdd {
-			if strings.ToUpper(addCap) == "ALL" {
-				builder.AddAllProcessCapabilities()
-				break
-			} else if err = builder.AddProcessCapability("CAP_" + addCap); err != nil {
-				return
-			}
+	for _, addCap := range capAdd {
+		if strings.ToUpper(addCap) == "ALL" {
+			builder.AddAllProcessCapabilities()
+			break
+		} else if err = builder.AddProcessCapability("CAP_" + addCap); err != nil {
+			return
 		}
-		for _, dropCap := range p.CapDrop {
-			if err = builder.DropProcessCapability("CAP_" + dropCap); err != nil {
-				return
-			}
+	}
+	for _, dropCap := range p.CapDrop {
+		if err = builder.DropProcessCapability("CAP_" + dropCap); err != nil {
+			return
 		}
 	}
 
@@ -318,7 +336,7 @@ func toMounts(mounts []model.VolumeMount, res model.ResourceResolver, spec *buil
 			// Apply default mount options. See man7.org/linux/man-pages/man8/mount.8.html
 			opts = []string{"bind", "nodev", "mode=0755"}
 		} else {
-			sliceutils.AddToSet(&opts, "rbind")
+			sliceutils.AddToSet(&opts, "bind")
 		}
 
 		sp := spec.Generator.Spec()

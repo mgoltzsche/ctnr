@@ -28,9 +28,8 @@ func NewStore(dir string, rootless bool, systemContext *types.SystemContext, tru
 	if dir == "" {
 		return r, errors.New("init store: no store directory provided")
 	}
-	dir, err = filepath.Abs(dir)
-	if err != nil {
-		return r, errors.Wrap(err, "init store")
+	if !filepath.IsAbs(dir) {
+		return r, errors.New("no absolute --store-dir provided")
 	}
 	locker, err := lock.NewExclusiveDirLocker(dir)
 	if err != nil {

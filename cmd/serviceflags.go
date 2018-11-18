@@ -56,8 +56,6 @@ func (c *bundleFlags) InitContainerFlags(f *pflag.FlagSet) {
 	f.BoolVar(&c.privileged, "privileged", false, "give extended privileges to the container")
 	f.BoolVar(&c.proot, "proot", false, "enables PRoot")
 	initNetConfFlags(f, &c.netCfg)
-	// Stop parsing after first non flag argument (which is the image)
-	f.SetInterspersed(false)
 }
 
 func (c *bundleFlags) InitRunFlags(f *pflag.FlagSet) {
@@ -75,6 +73,8 @@ func (c *bundleFlags) InitProcessFlags(f *pflag.FlagSet) {
 	f.BoolVarP(&c.tty, "tty", "t", false, "binds a terminal to the container")
 	f.Var((*cCapAdd)(c), "cap-add", "add process capability ('all' adds all)")
 	f.Var((*cCapDrop)(c), "cap-drop", "drop process capability ('all' drops all)")
+	// Stop parsing after first non flag argument (either <IMAGE> <CMD> or <CONTAINERID> <CMD>)
+	f.SetInterspersed(false)
 }
 
 func initNetConfFlags(f *pflag.FlagSet, c *netCfg) {
@@ -108,15 +108,11 @@ func (c *bundleFlags) Read() (*model.Service, error) {
 	s.NetConf = c.net
 	s.Tty = c.tty
 	s.StdinOpen = c.stdin
+	s.Privileged = c.privileged
 	s.ReadOnly = c.readonly
 	s.NoPivot = c.noPivot
 	s.NoNewKeyring = c.noNewKeyring
 	s.PRoot = c.proot
-	if c.privileged {
-		s.CapAdd = append(s.CapAdd, "SYS_ADMIN")
-		s.MountCgroups = "rw"
-		s.Seccomp = "unconfined"
-	}
 	c.app = nil
 	c.net = model.NetConf{}
 	return s, nil
@@ -544,7 +540,12 @@ func (c *cPortBinding) String() string {
 type cNetworks netCfg
 
 func (c *cNetworks) Set(s string) error {
-	return addStringEntries(s, &(*netCfg)(c).net.Networks)
+	if s == "" {
+		return errors.New("no network names provided")
+	}
+	n := &(*netCfg)(c).net.Networks
+	*n = append(*n, strings.Split(s, ",")...)
+	return nil
 }
 
 func (c *cNetworks) Type() string {
@@ -552,5 +553,5 @@ func (c *cNetworks) Type() string {
 }
 
 func (c *cNetworks) String() string {
-	return entriesToString((*netCfg)(c).net.Networks)
+	return strings.Join((*netCfg)(c).net.Networks, ",")
 }

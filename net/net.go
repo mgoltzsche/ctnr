@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/containernetworking/cni/libcni"
@@ -22,41 +21,37 @@ type NetConfigs struct {
 	confDir string
 }
 
-func NewNetConfigs(confDir string) (*NetConfigs, error) {
-	if confDir == "" {
-		confDir = os.Getenv("NETCONFPATH")
-		if confDir == "" {
-			confDir = "/etc/cni/net.d"
-		}
-	}
-	confFiles, err := libcni.ConfFiles(confDir, []string{".conf", ".json"})
-	if err != nil {
-		return nil, errors.Wrap(err, "read CNI network configuration")
-	}
-	sort.Strings(confFiles)
-	return &NetConfigs{confDir}, nil
+func NewNetConfigs(confDir string) *NetConfigs {
+	return &NetConfigs{confDir}
 }
 
 func (n *NetConfigs) GetConfig(name string) (*libcni.NetworkConfigList, error) {
 	l, err := libcni.LoadConfList(n.confDir, name)
-	if err != nil && name == "default" {
+	if err != nil {
 		_, noConfDir := err.(libcni.NoConfigsFoundError)
 		_, confNotFound := err.(libcni.NotFoundError)
 		if noConfDir || confNotFound {
-			return defaultNetConf()
+			switch name {
+			case "default":
+				return defaultPtpConf()
+			case "slirp":
+				return defaultSlirpConf()
+			case "bridge":
+				return defaultBridgeConf()
+			}
 		}
 	}
 	return l, err
 }
 
-func defaultNetConf() (cfg *libcni.NetworkConfigList, err error) {
+func defaultPtpConf() (cfg *libcni.NetworkConfigList, err error) {
 	ipamDataDir := os.Getenv("IPAMDATADIR")
 	if ipamDataDir == "" {
 		return nil, errors.New("default net conf: IPAMDATADIR env var not set")
 	}
-	rawConfigList := map[string]interface{}{
+	return toConfList(map[string]interface{}{
 		"cniVersion": version.Current(),
-		"name":       "default",
+		"name":       "ptp",
 		"plugins": []interface{}{
 			map[string]interface{}{
 				"cniVersion": version.Current(),
@@ -77,12 +72,66 @@ func defaultNetConf() (cfg *libcni.NetworkConfigList, err error) {
 				},
 			},
 		},
+	})
+}
+
+func defaultSlirpConf() (cfg *libcni.NetworkConfigList, err error) {
+	ipamDataDir := os.Getenv("IPAMDATADIR")
+	if ipamDataDir == "" {
+		return nil, errors.New("default net conf: IPAMDATADIR env var not set")
 	}
+	return toConfList(map[string]interface{}{
+		"cniVersion": version.Current(),
+		"name":       "slirp",
+		"plugins": []interface{}{
+			map[string]interface{}{
+				"cniVersion": version.Current(),
+				"type":       "slirp",
+				"mtu":        1500,
+			},
+		},
+	})
+}
+
+func defaultBridgeConf() (cfg *libcni.NetworkConfigList, err error) {
+	ipamDataDir := os.Getenv("IPAMDATADIR")
+	if ipamDataDir == "" {
+		return nil, errors.New("default net conf: IPAMDATADIR env var not set")
+	}
+	return toConfList(map[string]interface{}{
+		"cniVersion": version.Current(),
+		"name":       "bridge",
+		"plugins": []interface{}{
+			map[string]interface{}{
+				"cniVersion": version.Current(),
+				"type":       "bridge",
+				"bridge":     "ctnr-bridge",
+				"ipMasq":     false,
+				"isGateway":  true,
+				"ipam": map[string]interface{}{
+					"type":   "host-local",
+					"subnet": "10.2.0.0/24",
+					"routes": []interface{}{
+						map[string]interface{}{
+							"dst": "0.0.0.0/0",
+						},
+					},
+					"dataDir": ipamDataDir,
+				},
+				"dns": map[string]interface{}{
+					"nameservers": []string{"10.2.0.1"},
+				},
+			},
+		},
+	})
+}
+
+func toConfList(rawConfigList map[string]interface{}) (cfg *libcni.NetworkConfigList, err error) {
 	b, err := json.Marshal(rawConfigList)
 	if err == nil {
 		cfg, err = libcni.ConfListFromBytes(b)
 	}
-	return cfg, errors.Wrap(err, "load default config")
+	return cfg, errors.Wrapf(err, "load default config %q", rawConfigList["name"])
 }
 
 func MapPorts(original *libcni.NetworkConfigList, portMap []PortMapEntry) (cfg *libcni.NetworkConfigList, err error) {

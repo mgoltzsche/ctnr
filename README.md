@@ -26,7 +26,7 @@ Concerning accessibility, usability and security a rootless container engine has
 - **Containers can be run by unprivileged users.**  
   _Required in restrictive environments and useful for graphical applications._
 - **Container images can be built in almost every Linux environment.**  
-  _More flexibility in unprivileged builds - nesting containers is still limited (see [experiments](experiments.md))._
+  _More flexibility in unprivileged builds - nesting containers is also possible (see [experiments and limitations](nested-containers.md))._
 - **A higher degree and more flexible level of security.**  
   _Less likely for an attacker to gain root access when run as unprivileged user._  
   _User/group-based container access control._
@@ -38,16 +38,20 @@ Concerning accessibility, usability and security a rootless container engine has
 Container execution as unprivileged user is limited:
 
 
-**Container networks cannot be configured.**
-As a result in a restrictive environment without root access only the host network can be used.
-As a workaround ports can be mapped on the host network using [PRoot](https://github.com/rootless-containers/PRoot)*.
-Alternatively a daemon process could manage networks for unprivileged users (TBD).
+**Container networking is limited.**
+With plain ctnr/runc only the host network can be used.
+The standard [CNI plugins](https://github.com/containernetworking/plugins) require root privileges.  
+One workaround is to map ports on the host network using [PRoot](https://github.com/rootless-containers/PRoot)* accepting bad performance.  
+A better solution is to use [slirp4netns](https://github.com/rootless-containers/slirp4netns) which emulates the TCP/IP stack in a user namespace efficiently.
+It can be used with ctnr via the [slirp-cni-plugin](https://github.com/mgoltzsche/slirp-cni-plugin).
+Once container initialization is also moved into a user namespace with slirp the standard CNI plugins can be used again.
+For instance the [bridge](https://github.com/containernetworking/plugins/tree/master/plugins/main/bridge) can be used to achieve communication between containers (see [user-mode networking](user-mode-networking.md)).  
 
 
 **Inside the container a process' or file's user cannot be changed.**
 This is caused by the fact that all operations in the container are still run by the host user (who is just mapped to user 0 inside the container).
 Unfortunately this stops many package managers as well as official docker images from working:
-While `apk` already works with plain [runc](https://github.com/opencontainers/runc) `apt-get` does not since it requires to change a user permanently.  
+While `apk` or `dnf` already work with plain [runc](https://github.com/opencontainers/runc) `apt-get` does not since it requires to change a user permanently.  
 To overcome this limitation ctnr supports the `user.rootlesscontainers` xattr and integrates with [PRoot](https://github.com/rootless-containers/PRoot)*.  
 
 

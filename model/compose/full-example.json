@@ -39,7 +39,6 @@
         "NET_ADMIN",
         "SYS_ADMIN"
       ],
-      "seccomp": "default",
       "hostname": "my-web-container",
       "domainname": "foo.com",
       "dns": [

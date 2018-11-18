@@ -23,6 +23,7 @@ import (
 
 	"github.com/containernetworking/cni/libcni"
 	"github.com/mgoltzsche/ctnr/net"
+	"github.com/mitchellh/go-homedir"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -154,13 +155,14 @@ func applyArgs(cfg *net.ConfigFileGenerator) {
 }
 
 func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {
-	networks, err := net.NewNetConfigs("")
+	netConfPath, err := getNetConfPath()
 	if err != nil {
 		return
 	}
 	if len(args) == 0 && len(flagPorts) > 0 {
 		return nil, errors.New("Cannot publish a port without a container network! Please remove the --publish option or add --network")
 	}
+	networks := net.NewNetConfigs(netConfPath)
 	r = make([]*libcni.NetworkConfigList, len(args))
 	for i, name := range args {
 		cfg, err := networks.GetConfig(name)
@@ -175,6 +177,24 @@ func loadNetConfigs(args []string) (r []*libcni.NetworkConfigList, err error) {
 			}
 		}
 		r[i] = cfg
+	}
+	return
+}
+
+func getNetConfPath() (confDir string, err error) {
+	if confDir = os.Getenv("NETCONFPATH"); confDir == "" {
+		var homeDir string
+		homeDir, err = homedir.Dir()
+		if err != nil {
+			return "", errors.Wrap(err, "derive NETCONFPATH from home dir")
+		}
+		confDir = filepath.Join(homeDir, ".cni/net.d")
+		if _, e := os.Stat(confDir); e != nil {
+			// fall back to global cni conf dir when user conf dir does not exist
+			confDir = "/etc/cni/net.d"
+		}
+	} else if confDir, err = homedir.Expand(confDir); err != nil {
+		err = errors.Wrap(err, "expand NETCONFPATH")
 	}
 	return
 }

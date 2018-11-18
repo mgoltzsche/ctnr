@@ -128,21 +128,16 @@ func (b *HookBuilder) Build(spec *generate.Generator) (err error) {
 	}
 	cniPluginPaths := os.Getenv("CNI_PATH")
 	if cniPluginPaths == "" {
-		pluginPath := filepath.Join(filepath.Dir(executable), "..", "cni-plugins")
-		if s, err := os.Stat(pluginPath); err == nil && s.IsDir() {
-			cniPluginPaths = pluginPath
+		cniPluginPaths = filepath.Join(filepath.Dir(executable), "..", "cni-plugins")
+		if s, err := os.Stat(cniPluginPaths); err != nil || !s.IsDir() {
+			return errors.New("CNI plugin directory cannot be derived from executable (../cni-plugins) and CNI_PATH env var is not specified. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
 		}
 	}
-	if cniPluginPaths == "" {
-		return errors.New("CNI_PATH environment variable empty. It must contain paths to CNI plugins. See https://github.com/containernetworking/cni/blob/master/SPEC.md")
-	}
-	// TODO: add all CNI env vars
 	cniEnv := []string{
 		"PATH=" + os.Getenv("PATH"),
 		"CNI_PATH=" + cniPluginPaths,
 	}
-	netConfPath := os.Getenv("NETCONFPATH")
-	if netConfPath != "" {
+	if netConfPath := os.Getenv("NETCONFPATH"); netConfPath != "" {
 		cniEnv = append(cniEnv, "NETCONFPATH="+netConfPath)
 	}
 	ipamDataDir := b.hook.IPAMDataDir

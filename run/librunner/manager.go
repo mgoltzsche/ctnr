@@ -34,7 +34,7 @@ func NewContainerManager(rootDir string, rootless bool, loggers log.Loggers) (r 
 	}
 	// TODO: also support systemd cgroup usage: libcontainer.SystemdCgroups
 	if r.factory, err = libcontainer.New(rootDir, libcontainer.Cgroupfs, libcontainer.InitArgs(binary, "init")); err != nil {
-		return
+		return nil, errors.Wrap(err, "new container manager")
 	}
 	return
 }
