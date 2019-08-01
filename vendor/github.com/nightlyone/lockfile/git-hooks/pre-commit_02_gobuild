@@ -1,0 +1,15 @@
+#!/bin/sh
+#
+# git gobuild pre-commit hook
+
+gofiles=$(git diff --cached --name-only --diff-filter=ACM | grep '.go$')
+[ -z "$gofiles" ] && exit 0
+
+if go build . ./...
+then
+	exit 0
+else
+	echo >&2 "Build failed, please commit only stuff that builds."
+fi
+
+exit 1

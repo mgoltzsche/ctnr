@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# place this file in your $GIT_DIR/hooks directory and call it pre-commit
+# anyother scripts you want to execture on commit can then also be placed
+# in $GIT_DIR/hooks with the correct naming convention.. ie:
+# pre-commit_[whatevernameyouwant] make that file executable and this script
+# finds it and runs it.
+#
+echo "precommit\n";
+GIT_DIR=$(git rev-parse --git-dir 2>/dev/null)
+if [ -z "$GIT_DIR" ]; then
+	echo >&2 "fatal: hooks/functions: GIT_DIR not set"
+	exit 1
+fi
+
+# change directory, so we can find all stuff
+cd $(dirname $GIT_DIR)
+
+for i in `ls $GIT_DIR/hooks/pre-commit_*`; do
+	$i
+	if [ "$?" -ne "0" ]; then
+		exit 1
+	fi
+done
+
+exit 0

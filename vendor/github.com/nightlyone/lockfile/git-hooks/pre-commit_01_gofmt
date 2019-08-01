@@ -1,0 +1,23 @@
+#!/bin/sh
+
+# heavily inspired by http://tip.golang.org/misc/git/pre-commit
+#
+# git gofmt pre-commit hook
+
+gofiles=$(git diff --cached --name-only --diff-filter=ACM | grep '.go$')
+[ -z "$gofiles" ] && exit 0
+
+unformatted=$(gofmt -l $gofiles)
+[ -z "$unformatted" ] && exit 0
+
+# Some files are not gofmt'd. Print message and fail.
+
+echo >&2 "Go files must be formatted with gofmt. Please run:\n"
+printf >&2 "  gofmt -w"
+echo "$unformatted" | while read fn; do
+        echo >&2 " \\"
+        printf >&2 "    %s/%s" "${PWD}" "${fn}"
+done
+echo >&2
+
+exit 1

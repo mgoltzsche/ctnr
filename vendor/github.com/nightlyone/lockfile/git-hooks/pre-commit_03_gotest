@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# git gobuild pre-commit hook
+
+gofiles=$(git diff --cached --name-only --diff-filter=ACM | grep '.go$')
+[ -z "$gofiles" ] && exit 0
+
+if go test ./...
+then
+	exit 0
+else
+	echo >&2 "Test failed, please commit only stuff that works."
+fi
+
+exit 1
