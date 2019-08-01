@@ -6,6 +6,7 @@ to manage and build OCI images as well as containers on Linux.
 ctnr aims to ease system container creation and execution as unprivileged user.  
 Also ctnr is a tool to experiment with runc features.
 
+THIS PROJECT IS NOT MAINTAINED ANYMORE IN FAVOUR OF [podman](https://github.com/containers/libpod).
 
 ## Features
 - OCI bundle and container preparation as well as execution as unprivileged user using [runc](https://github.com/opencontainers/runc)
